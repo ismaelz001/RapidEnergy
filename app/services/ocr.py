@@ -5,15 +5,27 @@ from google.oauth2 import service_account
 from google.cloud import vision
 
 def get_vision_client():
-    # 1. Prioridad: Archivo Secret de Render (evita problemas de formato env var)
-    secret_path = "/etc/secrets/google-credentials.json"
-    if os.path.exists(secret_path):
-        print(f"DEBUG: Loading credentials from Secret File: {secret_path}")
+    # 1. Prioridad: Archivo Secret de Render (Iterar todo el directorio por si acaso)
+    secret_dir = "/etc/secrets"
+    if os.path.exists(secret_dir):
+        print(f"DEBUG: Checking secrets dir: {secret_dir}")
         try:
-            creds = service_account.Credentials.from_service_account_file(secret_path)
-            return vision.ImageAnnotatorClient(credentials=creds)
+            files = os.listdir(secret_dir)
+            print(f"DEBUG: Files in secrets: {files}")
+            for fname in files:
+                fpath = os.path.join(secret_dir, fname)
+                if os.path.isdir(fpath):
+                    continue
+                try:
+                    print(f"DEBUG: Trying to load credential from: {fname}")
+                    creds = service_account.Credentials.from_service_account_file(fpath)
+                    print(f"DEBUG: Success! Loaded for: {creds.service_account_email}")
+                    return vision.ImageAnnotatorClient(credentials=creds)
+                except Exception as e:
+                    # Si falla uno, seguimos probando otros
+                    print(f"DEBUG: Failed to load {fname}: {e}")
         except Exception as e:
-            print(f"Error cargando Secret File: {e}")
+            print(f"Error scanning secrets dir: {e}")
 
     # 2. Fallback: Variable de entorno (Local o si falla el archivo)
     creds_json = os.getenv("GOOGLE_CREDENTIALS")
