@@ -13,6 +13,11 @@ def get_vision_client():
     
     try:
         info = json.loads(creds_json)
+        
+        # fix: Render sometimes messes up \n in private_key
+        if 'private_key' in info:
+            info['private_key'] = info['private_key'].replace('\\n', '\n')
+
         creds = service_account.Credentials.from_service_account_info(info)
         print(f"DEBUG: Credentials loaded for project: {info.get('project_id')} / email: {info.get('client_email')}")
         return vision.ImageAnnotatorClient(credentials=creds)
