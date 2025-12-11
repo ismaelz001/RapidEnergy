@@ -1,42 +1,112 @@
-# Energia CRM Frontend (MVP)
+# RapidEnergy Backend (FastAPI + Neon + Render)
 
-Frontend en Next.js 14 para el MVP del CRM de automatización de facturas energéticas.
+Backend oficial del MVP RapidEnergy, una plataforma para automatizar el análisis de facturas energéticas, extraer datos mediante OCR y preparar información para estudios tarifarios. Backend desplegado en Render, conectado a Neon PostgreSQL y consumido por el frontend en Vercel.
 
-## Stack
+## Arquitectura
 
-- Next.js 14 (App Router)
-- React 18
-- TailwindCSS
-- Consumo de API externa (FastAPI) vía `NEXT_PUBLIC_API_URL`
+[Vercel - Frontend Next.js] → (HTTPS) → [Render - Backend FastAPI] → (PostgreSQL) → [Neon - Database]
 
-## Rutas principales
+## Stack Tecnológico
 
-- `/`              → Landing mínima
-- `/login`         → Placeholder de login
-- `/dashboard`     → Panel con KPIs (placeholders)
-- `/facturas/upload` → Subida de factura + llamada a `/webhook/upload`
-- `/facturas`      → Tabla de facturas (consume `/facturas` en FastAPI)
+- Python 3.10+
+- FastAPI
+- Uvicorn
+- SQLAlchemy
+- Neon PostgreSQL
+- Render
+- pytesseract / Pillow / pdf2image
+- python-dotenv
+
+## Estructura del Proyecto
+
+MecaEnergy/
+├── app/
+│   ├── main.py
+│   ├── routes/
+│   │   └── webhook.py
+│   ├── db/
+│   │   └── conn.py
+│   └── services/
+├── requirements.txt
+├── render.yaml
+└── README.md
 
 ## Configuración
 
-1. Copia el archivo de entorno:
+### Variables de entorno
 
-   ```bash
-   cp .env.local.example .env.local
-   ```
+Crear archivo `.env` en local (no subir a GitHub):
 
-2. Ajusta `NEXT_PUBLIC_API_URL` a la URL de tu backend FastAPI (por defecto `http://localhost:8000`).
+DATABASE_URL="postgresql://<user>:<password>@<host>.neon.tech/<db>?sslmode=require&channel_binding=require"
 
-3. Instala dependencias:
+En Render: Dashboard → Environment → Add Variable
 
-   ```bash
-   npm install
-   ```
+### Instalación local
 
-4. Ejecuta en desarrollo:
+pip install -r requirements.txt
 
-   ```bash
-   npm run dev
-   ```
+### Ejecutar en local
 
-La app estará en `http://localhost:3000`.
+uvicorn app.main:app --reload
+
+Backend disponible en: http://localhost:8000
+
+## Deploy en Render
+
+1. Subir repo a GitHub  
+2. Render → New Web Service → seleccionar repo  
+
+### Build Command
+
+pip install -r requirements.txt
+
+### Start Command
+
+uvicorn app.main:app --host 0.0.0.0 --port $PORT
+
+### Variables de entorno
+
+DATABASE_URL=postgresql://...
+
+Render generará una URL pública del tipo:
+
+https://rapidenergy.onrender.com
+
+Usar esa URL en el frontend como NEXT_PUBLIC_API_URL.
+
+## Endpoints actuales (MVP)
+
+### GET `/`
+
+{
+  "status": "ok",
+  "service": "RapidEnergy API",
+  "version": "1.0.0"
+}
+
+### POST `/webhook/upload`
+
+Subida de factura en multipart/form-data.
+
+Ejemplo de respuesta:
+
+{
+  "filename": "factura.pdf",
+  "message": "Factura recibida correctamente (MVP)"
+}
+
+## Próximas fases del backend
+
+- OCR avanzado
+- Parsing por proveedor
+- Modelo Factura en SQLAlchemy
+- CRUD en Neon
+- Endpoint /facturas
+- Algoritmo de recomendación tarifaria
+- Sistema de comisiones
+- Envío automático de ofertas
+
+## Contacto
+
+RapidEnergy — Backend MVP  
+Arquitectura FastAPI + Neon + Render.

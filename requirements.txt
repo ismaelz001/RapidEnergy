@@ -1,8 +1,6 @@
 fastapi
+python-multipart
 uvicorn
-pytesseract
-pillow
 sqlalchemy
 python-dotenv
-psycopg2
-pdf2image
+psycopg2-binary
