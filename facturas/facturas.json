@@ -1,0 +1,272 @@
+[
+  {
+    "id": 1,
+    "filename": "factura_001.pdf",
+    "cups": "ES00014012345678901AB",
+    "consumo_kwh": 105,
+    "importe": 23.1,
+    "fecha": "2025-11-02",
+    "raw_data": "Factura 1 - Consumo: 105 kWh - Importe: 23.1\u20ac - Fecha: 2025-11-02"
+  },
+  {
+    "id": 2,
+    "filename": "factura_002.pdf",
+    "cups": "ES00024012345678902AB",
+    "consumo_kwh": 110,
+    "importe": 24.2,
+    "fecha": "2025-11-03",
+    "raw_data": "Factura 2 - Consumo: 110 kWh - Importe: 24.2\u20ac - Fecha: 2025-11-03"
+  },
+  {
+    "id": 3,
+    "filename": "factura_003.pdf",
+    "cups": "ES00034012345678903AB",
+    "consumo_kwh": 115,
+    "importe": 25.3,
+    "fecha": "2025-11-04",
+    "raw_data": "Factura 3 - Consumo: 115 kWh - Importe: 25.3\u20ac - Fecha: 2025-11-04"
+  },
+  {
+    "id": 4,
+    "filename": "factura_004.pdf",
+    "cups": "ES00044012345678904AB",
+    "consumo_kwh": 120,
+    "importe": 26.4,
+    "fecha": "2025-11-05",
+    "raw_data": "Factura 4 - Consumo: 120 kWh - Importe: 26.4\u20ac - Fecha: 2025-11-05"
+  },
+  {
+    "id": 5,
+    "filename": "factura_005.pdf",
+    "cups": "ES00054012345678905AB",
+    "consumo_kwh": 125,
+    "importe": 27.5,
+    "fecha": "2025-11-06",
+    "raw_data": "Factura 5 - Consumo: 125 kWh - Importe: 27.5\u20ac - Fecha: 2025-11-06"
+  },
+  {
+    "id": 6,
+    "filename": "factura_006.pdf",
+    "cups": "ES00064012345678906AB",
+    "consumo_kwh": 130,
+    "importe": 28.6,
+    "fecha": "2025-11-07",
+    "raw_data": "Factura 6 - Consumo: 130 kWh - Importe: 28.6\u20ac - Fecha: 2025-11-07"
+  },
+  {
+    "id": 7,
+    "filename": "factura_007.pdf",
+    "cups": "ES00074012345678907AB",
+    "consumo_kwh": 135,
+    "importe": 29.7,
+    "fecha": "2025-11-08",
+    "raw_data": "Factura 7 - Consumo: 135 kWh - Importe: 29.7\u20ac - Fecha: 2025-11-08"
+  },
+  {
+    "id": 8,
+    "filename": "factura_008.pdf",
+    "cups": "ES00084012345678908AB",
+    "consumo_kwh": 140,
+    "importe": 30.8,
+    "fecha": "2025-11-09",
+    "raw_data": "Factura 8 - Consumo: 140 kWh - Importe: 30.8\u20ac - Fecha: 2025-11-09"
+  },
+  {
+    "id": 9,
+    "filename": "factura_009.pdf",
+    "cups": "ES00094012345678909AB",
+    "consumo_kwh": 145,
+    "importe": 31.9,
+    "fecha": "2025-11-10",
+    "raw_data": "Factura 9 - Consumo: 145 kWh - Importe: 31.9\u20ac - Fecha: 2025-11-10"
+  },
+  {
+    "id": 10,
+    "filename": "factura_010.pdf",
+    "cups": "ES00104012345678910AB",
+    "consumo_kwh": 150,
+    "importe": 33.0,
+    "fecha": "2025-11-11",
+    "raw_data": "Factura 10 - Consumo: 150 kWh - Importe: 33.0\u20ac - Fecha: 2025-11-11"
+  },
+  {
+    "id": 11,
+    "filename": "factura_011.pdf",
+    "cups": "ES00114012345678911AB",
+    "consumo_kwh": 155,
+    "importe": 34.1,
+    "fecha": "2025-11-12",
+    "raw_data": "Factura 11 - Consumo: 155 kWh - Importe: 34.1\u20ac - Fecha: 2025-11-12"
+  },
+  {
+    "id": 12,
+    "filename": "factura_012.pdf",
+    "cups": "ES00124012345678912AB",
+    "consumo_kwh": 160,
+    "importe": 35.2,
+    "fecha": "2025-11-13",
+    "raw_data": "Factura 12 - Consumo: 160 kWh - Importe: 35.2\u20ac - Fecha: 2025-11-13"
+  },
+  {
+    "id": 13,
+    "filename": "factura_013.pdf",
+    "cups": "ES00134012345678913AB",
+    "consumo_kwh": 165,
+    "importe": 36.3,
+    "fecha": "2025-11-14",
+    "raw_data": "Factura 13 - Consumo: 165 kWh - Importe: 36.3\u20ac - Fecha: 2025-11-14"
+  },
+  {
+    "id": 14,
+    "filename": "factura_014.pdf",
+    "cups": "ES00144012345678914AB",
+    "consumo_kwh": 170,
+    "importe": 37.4,
+    "fecha": "2025-11-15",
+    "raw_data": "Factura 14 - Consumo: 170 kWh - Importe: 37.4\u20ac - Fecha: 2025-11-15"
+  },
+  {
+    "id": 15,
+    "filename": "factura_015.pdf",
+    "cups": "ES00154012345678915AB",
+    "consumo_kwh": 175,
+    "importe": 38.5,
+    "fecha": "2025-11-16",
+    "raw_data": "Factura 15 - Consumo: 175 kWh - Importe: 38.5\u20ac - Fecha: 2025-11-16"
+  },
+  {
+    "id": 16,
+    "filename": "factura_016.pdf",
+    "cups": "ES00164012345678916AB",
+    "consumo_kwh": 180,
+    "importe": 39.6,
+    "fecha": "2025-11-17",
+    "raw_data": "Factura 16 - Consumo: 180 kWh - Importe: 39.6\u20ac - Fecha: 2025-11-17"
+  },
+  {
+    "id": 17,
+    "filename": "factura_017.pdf",
+    "cups": "ES00174012345678917AB",
+    "consumo_kwh": 185,
+    "importe": 40.7,
+    "fecha": "2025-11-18",
+    "raw_data": "Factura 17 - Consumo: 185 kWh - Importe: 40.7\u20ac - Fecha: 2025-11-18"
+  },
+  {
+    "id": 18,
+    "filename": "factura_018.pdf",
+    "cups": "ES00184012345678918AB",
+    "consumo_kwh": 190,
+    "importe": 41.8,
+    "fecha": "2025-11-19",
+    "raw_data": "Factura 18 - Consumo: 190 kWh - Importe: 41.8\u20ac - Fecha: 2025-11-19"
+  },
+  {
+    "id": 19,
+    "filename": "factura_019.pdf",
+    "cups": "ES00194012345678919AB",
+    "consumo_kwh": 195,
+    "importe": 42.9,
+    "fecha": "2025-11-20",
+    "raw_data": "Factura 19 - Consumo: 195 kWh - Importe: 42.9\u20ac - Fecha: 2025-11-20"
+  },
+  {
+    "id": 20,
+    "filename": "factura_020.pdf",
+    "cups": "ES00204012345678920AB",
+    "consumo_kwh": 200,
+    "importe": 44.0,
+    "fecha": "2025-11-21",
+    "raw_data": "Factura 20 - Consumo: 200 kWh - Importe: 44.0\u20ac - Fecha: 2025-11-21"
+  },
+  {
+    "id": 21,
+    "filename": "factura_021.pdf",
+    "cups": "ES00214012345678921AB",
+    "consumo_kwh": 205,
+    "importe": 45.1,
+    "fecha": "2025-11-22",
+    "raw_data": "Factura 21 - Consumo: 205 kWh - Importe: 45.1\u20ac - Fecha: 2025-11-22"
+  },
+  {
+    "id": 22,
+    "filename": "factura_022.pdf",
+    "cups": "ES00224012345678922AB",
+    "consumo_kwh": 210,
+    "importe": 46.2,
+    "fecha": "2025-11-23",
+    "raw_data": "Factura 22 - Consumo: 210 kWh - Importe: 46.2\u20ac - Fecha: 2025-11-23"
+  },
+  {
+    "id": 23,
+    "filename": "factura_023.pdf",
+    "cups": "ES00234012345678923AB",
+    "consumo_kwh": 215,
+    "importe": 47.3,
+    "fecha": "2025-11-24",
+    "raw_data": "Factura 23 - Consumo: 215 kWh - Importe: 47.3\u20ac - Fecha: 2025-11-24"
+  },
+  {
+    "id": 24,
+    "filename": "factura_024.pdf",
+    "cups": "ES00244012345678924AB",
+    "consumo_kwh": 220,
+    "importe": 48.4,
+    "fecha": "2025-11-25",
+    "raw_data": "Factura 24 - Consumo: 220 kWh - Importe: 48.4\u20ac - Fecha: 2025-11-25"
+  },
+  {
+    "id": 25,
+    "filename": "factura_025.pdf",
+    "cups": "ES00254012345678925AB",
+    "consumo_kwh": 225,
+    "importe": 49.5,
+    "fecha": "2025-11-26",
+    "raw_data": "Factura 25 - Consumo: 225 kWh - Importe: 49.5\u20ac - Fecha: 2025-11-26"
+  },
+  {
+    "id": 26,
+    "filename": "factura_026.pdf",
+    "cups": "ES00264012345678926AB",
+    "consumo_kwh": 230,
+    "importe": 50.6,
+    "fecha": "2025-11-27",
+    "raw_data": "Factura 26 - Consumo: 230 kWh - Importe: 50.6\u20ac - Fecha: 2025-11-27"
+  },
+  {
+    "id": 27,
+    "filename": "factura_027.pdf",
+    "cups": "ES00274012345678927AB",
+    "consumo_kwh": 235,
+    "importe": 51.7,
+    "fecha": "2025-11-28",
+    "raw_data": "Factura 27 - Consumo: 235 kWh - Importe: 51.7\u20ac - Fecha: 2025-11-28"
+  },
+  {
+    "id": 28,
+    "filename": "factura_028.pdf",
+    "cups": "ES00284012345678928AB",
+    "consumo_kwh": 240,
+    "importe": 52.8,
+    "fecha": "2025-11-01",
+    "raw_data": "Factura 28 - Consumo: 240 kWh - Importe: 52.8\u20ac - Fecha: 2025-11-01"
+  },
+  {
+    "id": 29,
+    "filename": "factura_029.pdf",
+    "cups": "ES00294012345678929AB",
+    "consumo_kwh": 245,
+    "importe": 53.9,
+    "fecha": "2025-11-02",
+    "raw_data": "Factura 29 - Consumo: 245 kWh - Importe: 53.9\u20ac - Fecha: 2025-11-02"
+  },
+  {
+    "id": 30,
+    "filename": "factura_030.pdf",
+    "cups": "ES00304012345678930AB",
+    "consumo_kwh": 250,
+    "importe": 55.0,
+    "fecha": "2025-11-03",
+    "raw_data": "Factura 30 - Consumo: 250 kWh - Importe: 55.0\u20ac - Fecha: 2025-11-03"
+  }
+]
