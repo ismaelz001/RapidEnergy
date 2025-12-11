@@ -16,7 +16,19 @@ def get_vision_client():
         
         # fix: Render sometimes messes up \n in private_key
         if 'private_key' in info:
-            info['private_key'] = info['private_key'].replace('\\n', '\n')
+            raw_key = info['private_key']
+            # Try to fix literal \n
+            fixed_key = raw_key.replace('\\n', '\n')
+            info['private_key'] = fixed_key
+            
+            # DEEP DEBUG: Inspect key format (safe)
+            key_len = len(fixed_key)
+            start_marker = fixed_key[:30] if key_len > 30 else "SHORT"
+            end_marker = fixed_key[-30:] if key_len > 30 else "SHORT"
+            has_newlines = '\n' in fixed_key
+            print(f"DEBUG: Key Len: {key_len} | Has Newlines: {has_newlines}")
+            print(f"DEBUG: Key Start: {repr(start_marker)}")
+            print(f"DEBUG: Key End:   {repr(end_marker)}")
 
         creds = service_account.Credentials.from_service_account_info(info)
         print(f"DEBUG: Credentials loaded for project: {info.get('project_id')} / email: {info.get('client_email')}")
