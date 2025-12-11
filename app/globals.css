@@ -1,0 +1,23 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  @apply bg-slate-950 text-slate-100;
+}
+
+.btn-primary {
+  @apply inline-flex items-center justify-center rounded-xl px-4 py-2 text-sm font-semibold bg-emerald-500 hover:bg-emerald-400 transition;
+}
+
+.card {
+  @apply rounded-2xl border border-slate-800 bg-slate-900/60 p-6 shadow-lg;
+}
+
+.input {
+  @apply w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500;
+}
+
+.label {
+  @apply block text-xs font-medium text-slate-300 mb-1;
+}
