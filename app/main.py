@@ -4,10 +4,16 @@ from fastapi.middleware.cors import CORSMiddleware
 # Importamos rutas
 from app.routes.webhook import router as webhook_router
 
+from app.db.conn import Base, engine
+from app.db import models
+
 app = FastAPI(
     title="RapidEnergy API",
     version="1.0.0"
 )
+
+# Inicializar Base de Datos (crear tablas)
+Base.metadata.create_all(bind=engine)
 
 # CORS (permitimos requests desde Vercel)
 app.add_middleware(
