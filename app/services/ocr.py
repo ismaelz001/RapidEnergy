@@ -14,6 +14,7 @@ def get_vision_client():
     try:
         info = json.loads(creds_json)
         creds = service_account.Credentials.from_service_account_info(info)
+        print(f"DEBUG: Credentials loaded for project: {info.get('project_id')} / email: {info.get('client_email')}")
         return vision.ImageAnnotatorClient(credentials=creds)
     except Exception as e:
         print(f"Error cargando credenciales de Google: {e}")
