@@ -5,37 +5,34 @@ from google.oauth2 import service_account
 from google.cloud import vision
 
 def get_vision_client():
-    # Cargar credenciales desde variable de entorno GOOGLE_CREDENTIALS (que contiene el JSON completo)
-    creds_json = os.getenv("GOOGLE_CREDENTIALS")
-    if not creds_json:
-        print("ADVERTENCIA: No se encontró GOOGLE_CREDENTIALS. OCR no funcionará.")
-        return None
-    
-    try:
-        info = json.loads(creds_json)
-        
-        # fix: Render sometimes messes up \n in private_key
-        if 'private_key' in info:
-            raw_key = info['private_key']
-            # Try to fix literal \n
-            fixed_key = raw_key.replace('\\n', '\n')
-            info['private_key'] = fixed_key
-            
-            # DEEP DEBUG: Inspect key format (safe)
-            key_len = len(fixed_key)
-            start_marker = fixed_key[:30] if key_len > 30 else "SHORT"
-            end_marker = fixed_key[-30:] if key_len > 30 else "SHORT"
-            has_newlines = '\n' in fixed_key
-            print(f"DEBUG: Key Len: {key_len} | Has Newlines: {has_newlines}")
-            print(f"DEBUG: Key Start: {repr(start_marker)}")
-            print(f"DEBUG: Key End:   {repr(end_marker)}")
+    # 1. Prioridad: Archivo Secret de Render (evita problemas de formato env var)
+    secret_path = "/etc/secrets/google-credentials.json"
+    if os.path.exists(secret_path):
+        print(f"DEBUG: Loading credentials from Secret File: {secret_path}")
+        try:
+            creds = service_account.Credentials.from_service_account_file(secret_path)
+            return vision.ImageAnnotatorClient(credentials=creds)
+        except Exception as e:
+            print(f"Error cargando Secret File: {e}")
 
-        creds = service_account.Credentials.from_service_account_info(info)
-        print(f"DEBUG: Credentials loaded for project: {info.get('project_id')} / email: {info.get('client_email')}")
-        return vision.ImageAnnotatorClient(credentials=creds)
-    except Exception as e:
-        print(f"Error cargando credenciales de Google: {e}")
-        return None
+    # 2. Fallback: Variable de entorno (Local o si falla el archivo)
+    creds_json = os.getenv("GOOGLE_CREDENTIALS")
+    if creds_json:
+        try:
+            info = json.loads(creds_json)
+            # fix: Render sometimes messes up \n in private_key
+            if 'private_key' in info:
+                info['private_key'] = info['private_key'].replace('\\n', '\n')
+            
+            creds = service_account.Credentials.from_service_account_info(info)
+            print(f"DEBUG: Credentials loaded from ENV for: {info.get('client_email')}")
+            return vision.ImageAnnotatorClient(credentials=creds)
+        except Exception as e:
+            print(f"Error cargando ENV Google Credentials: {e}")
+            return None
+
+    print("ADVERTENCIA: No se encontraron credenciales de Google (File nor Env).")
+    return None
 
 def extract_data_from_pdf(file_bytes: bytes) -> dict:
     client = get_vision_client()
