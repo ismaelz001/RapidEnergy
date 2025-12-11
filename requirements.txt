@@ -1,0 +1,8 @@
+fastapi
+uvicorn
+pytesseract
+pillow
+sqlalchemy
+python-dotenv
+psycopg2
+pdf2image
