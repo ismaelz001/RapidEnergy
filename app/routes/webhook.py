@@ -14,14 +14,44 @@ async def upload_factura(file: UploadFile, db: Session = Depends(get_db)):
     from app.services.ocr import extract_data_from_pdf
     ocr_data = extract_data_from_pdf(file_bytes)
 
-    # 3. Crear registro en BD con datos extraídos
+    # 3. Lógica Upsert Cliente
+    from app.db.models import Cliente
+    cups_extraido = ocr_data.get("cups")
+    cliente_db = None
+
+    if cups_extraido:
+        # Buscar cliente existente por CUPS
+        cliente_db = db.query(Cliente).filter(Cliente.cups == cups_extraido).first()
+        if not cliente_db:
+            # Crear nuevo cliente si no existe
+            cliente_db = Cliente(
+                cups=cups_extraido,
+                origen="factura_upload",
+                estado="lead"
+            )
+            db.add(cliente_db)
+            db.commit()
+            db.refresh(cliente_db)
+    else:
+        # Caso sin CUPS: Crear cliente 'lead' sin CUPS (opcional, según reglas de negocio)
+        # Por ahora creamos un cliente huérfano para no perder el lead
+        cliente_db = Cliente(
+            origen="factura_upload_no_cups",
+            estado="lead"
+        )
+        db.add(cliente_db)
+        db.commit()
+        db.refresh(cliente_db)
+
+    # 4. Crear factura vinculada
     nueva_factura = Factura(
         filename=file.filename,
         cups=ocr_data["cups"],
         consumo_kwh=ocr_data["consumo_kwh"],
         importe=ocr_data["importe"],
         fecha=ocr_data["fecha"],
-        raw_data=ocr_data["raw_text"]
+        raw_data=ocr_data["raw_text"],
+        cliente_id=cliente_db.id if cliente_db else None
     )
     
     db.add(nueva_factura)

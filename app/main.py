@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 # Importamos rutas
 from app.routes.webhook import router as webhook_router
+from app.routes.clientes import router as clientes_router
 
 from app.db.conn import Base, engine
 from app.db import models
@@ -29,3 +30,4 @@ def root():
 
 # Incluimos las rutas
 app.include_router(webhook_router)
+app.include_router(clientes_router)
