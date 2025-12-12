@@ -30,6 +30,9 @@ export default function RootLayout({ children }) {
                 <a href="/facturas" className="hover:text-emerald-400">
                   Facturas
                 </a>
+                <a href="/clientes" className="hover:text-emerald-400">
+                  Clientes
+                </a>
                 <a href="/login" className="hover:text-emerald-400">
                   Login
                 </a>
