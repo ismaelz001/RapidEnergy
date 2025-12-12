@@ -112,19 +112,20 @@ export default function ClienteEditor({ cliente, onUpdated }) {
             Estado
           </label>
           <select
-            id="estado"
-            name="estado"
-            className="input"
-            value={formData.estado || "lead"}
-            onChange={handleChange}
-          >
-            <option value="lead">Lead</option>
-            <option value="contactado">Contactado</option>
-            <option value="cliente">Cliente</option>
-            <option value="rechazado">Rechazado</option>
-          </select>
-        </div>
-      </div>
+        id="estado"
+        name="estado"
+        className="input"
+        value={formData.estado || "lead"}
+        onChange={handleChange}
+      >
+        <option value="lead">Lead</option>
+        <option value="seguimiento">Seguimiento</option>
+        <option value="oferta_enviada">Oferta enviada</option>
+        <option value="contratado">Contratado</option>
+        <option value="descartado">Descartado</option>
+      </select>
+    </div>
+  </div>
 
       <div className="flex items-center gap-3">
         <button

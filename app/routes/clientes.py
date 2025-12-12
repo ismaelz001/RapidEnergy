@@ -8,6 +8,9 @@ from typing import Optional, List
 router = APIRouter(prefix="/clientes", tags=["clientes"])
 
 
+# --- Constantes ---
+ALLOWED_ESTADOS = {"lead", "seguimiento", "oferta_enviada", "contratado", "descartado"}
+
 # --- Pydantic Schemas ---
 class ClienteBase(BaseModel):
     nombre: Optional[str] = None
@@ -60,12 +63,23 @@ def update_cliente(cliente_id: int, cliente_update: ClienteUpdate, db: Session =
 
     update_data = cliente_update.dict(exclude_unset=True)
 
+    # Validar estado antes de asignar
+    estado_val = update_data.get("estado")
+    if estado_val and estado_val not in ALLOWED_ESTADOS:
+        raise HTTPException(status_code=400, detail="Estado invalido")
+
     for key, value in update_data.items():
         setattr(cliente, key, value)
 
     db.commit()
-    db.refresh(cliente)
-    return cliente
+    # Recargamos con facturas para devolver respuesta consistente
+    cliente_refreshed = (
+        db.query(Cliente)
+        .options(joinedload(Cliente.facturas))
+        .filter(Cliente.id == cliente.id)
+        .first()
+    )
+    return cliente_refreshed
 
 
 @router.get("/", response_model=List[ClienteDetail])
@@ -89,6 +103,9 @@ def create_cliente(cliente: ClienteCreate, db: Session = Depends(get_db)):
         exists = db.query(Cliente).filter(Cliente.cups == cliente.cups).first()
         if exists:
             raise HTTPException(status_code=400, detail="Ya existe un cliente con este CUPS")
+
+    if cliente.estado and cliente.estado not in ALLOWED_ESTADOS:
+        raise HTTPException(status_code=400, detail="Estado invalido")
 
     db_cliente = Cliente(
         nombre=cliente.nombre,
