@@ -66,7 +66,7 @@ def get_vision_client():
     return None, "\n".join(logs)
 
 
-def parse_invoice_text(full_text: str) -> dict:
+def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
     """Parsea texto de factura proveniente de OCR/PDF para obtener campos clave."""
     result = _empty_result(full_text)
 
@@ -117,7 +117,7 @@ def parse_invoice_text(full_text: str) -> dict:
         # descartar si contiene numeros o keywords de otros campos
         if re.search(r"\d", cleaned):
             return False
-        keywords = ["dni", "cif", "nif", "direccion", "dirección", "telefono", "teléfono", "email"]
+        keywords = ["dni", "cif", "nif", "direccion", "dirección", "telefono", "teléfono", "email", "cups"]
         if any(k.lower() in cleaned.lower() for k in keywords):
             return False
         # requerir al menos dos palabras
@@ -135,28 +135,58 @@ def parse_invoice_text(full_text: str) -> dict:
 
     titular = None
 
-    # Primero, intentar capturar linea del titular y la siguiente
-    titular_block_match = re.search(
-        r"(titular|nombre del titular)\s*[:\-]?\s*(.*)", full_text, re.IGNORECASE
-    )
-    if titular_block_match:
-        # Resto de linea tras la etiqueta
-        linea = titular_block_match.group(2).strip()
-        if not linea:
-            # si la misma linea no tiene contenido, tomar siguiente linea completa
-            lines = full_text.splitlines()
-            start_idx = None
-            for idx, line in enumerate(lines):
-                if re.search(r"(titular|nombre del titular)", line, re.IGNORECASE):
-                    start_idx = idx
-                    break
-            if start_idx is not None and start_idx + 1 < len(lines):
-                linea = lines[start_idx + 1].strip()
-        linea = _clean_name(linea)
-        if _is_valid_name(linea):
-            titular = linea
+    if is_image:
+        # Tratamiento especial para imagenes sin estructura
+        raw_lines = [ln.strip() for ln in full_text.splitlines() if ln.strip()]
+        label_keywords = {"titular", "dni", "cif", "nif", "telefono", "teléfono", "email", "direccion", "dirección", "cups"}
+        filtered_lines = []
+        for ln in raw_lines:
+            ln_stripped = ln.strip(" :.-").lower()
+            if ln_stripped in label_keywords:
+                continue
+            filtered_lines.append(ln)
 
-    # Fallback: patrones genericos sin depender de saltos exactos
+        # Buscar nombre contextual: linea anterior a un DNI
+        dni_pattern = re.compile(r"\b\d{8}[A-Z]\b", re.IGNORECASE)
+        for idx, ln in enumerate(filtered_lines):
+            if dni_pattern.search(ln.replace(" ", "")):
+                if idx > 0:
+                    candidate = _clean_name(filtered_lines[idx - 1])
+                    if _is_valid_name(candidate):
+                        titular = candidate
+                        break
+
+        # Fallback: primer candidato valido
+        if not titular:
+            for ln in filtered_lines:
+                # solo letras y espacios
+                if not re.match(r"^[A-Za-zÁÉÍÓÚÜÑáéíóúüñ'´` ]+$", ln):
+                    continue
+                candidate = _clean_name(ln)
+                if _is_valid_name(candidate):
+                    titular = candidate
+                    break
+
+    # Si no es imagen o no encontramos, usar patrones genericos
+    if not titular:
+        titular_block_match = re.search(
+            r"(titular|nombre del titular)\s*[:\-]?\s*(.*)", full_text, re.IGNORECASE
+        )
+        if titular_block_match:
+            linea = titular_block_match.group(2).strip()
+            if not linea:
+                lines = full_text.splitlines()
+                start_idx = None
+                for idx, line in enumerate(lines):
+                    if re.search(r"(titular|nombre del titular)", line, re.IGNORECASE):
+                        start_idx = idx
+                        break
+                if start_idx is not None and start_idx + 1 < len(lines):
+                    linea = lines[start_idx + 1].strip()
+            linea = _clean_name(linea)
+            if _is_valid_name(linea):
+                titular = linea
+
     if not titular:
         titular_patterns = [
             r"(?:titular|nombre del titular)\s*[:\-]?\s*([^\n\r]{3,80})",
@@ -242,7 +272,7 @@ def extract_data_from_pdf(file_bytes: bytes) -> dict:
             )
 
         full_text = texts[0].description
-        return parse_invoice_text(full_text)
+        return parse_invoice_text(full_text, is_image=True)
 
     except Exception as e:
         print(f"Error en Vision API: {e}")
