@@ -2,3 +2,6 @@
 __pycache__/
 *.pyc
 files/
+google_creds.json
+debug_ocr_creds.py
+*.log

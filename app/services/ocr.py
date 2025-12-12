@@ -5,56 +5,56 @@ from google.oauth2 import service_account
 from google.cloud import vision
 
 def get_vision_client():
+    logs = ["DEBUG AUTH LOG:"]
+    
     # 1. Prioridad: Archivo Secret de Render (Iterar todo el directorio por si acaso)
     secret_dir = "/etc/secrets"
     if os.path.exists(secret_dir):
-        print(f"DEBUG: Checking secrets dir: {secret_dir}")
+        logs.append(f"Secrets dir found: {secret_dir}")
         try:
             files = os.listdir(secret_dir)
-            print(f"DEBUG: Files in secrets: {files}")
+            logs.append(f"Files in secrets: {files}")
             for fname in files:
                 fpath = os.path.join(secret_dir, fname)
                 if os.path.isdir(fpath):
                     continue
                 try:
-                    print(f"DEBUG: Trying to load credential from: {fname}")
+                    # logs.append(f"Trying to load: {fname}")
                     creds = service_account.Credentials.from_service_account_file(fpath)
-                    print(f"DEBUG: Success! Loaded for: {creds.service_account_email}")
-                    return vision.ImageAnnotatorClient(credentials=creds)
+                    logs.append(f"Success loading {fname}. Email: {creds.service_account_email}")
+                    return vision.ImageAnnotatorClient(credentials=creds), "\n".join(logs)
                 except Exception as e:
-                    # Si falla uno, seguimos probando otros
-                    print(f"DEBUG: Failed to load {fname}: {e}")
+                    logs.append(f"Failed loading {fname}: {str(e)}")
         except Exception as e:
-            print(f"Error scanning secrets dir: {e}")
+            logs.append(f"Error scanning secrets dir: {str(e)}")
+    else:
+        logs.append("Secrets dir /etc/secrets not found (local?)")
 
-    # 2. Fallback: Variable de entorno (Local o si falla el archivo)
+    # 2. Fallback: Variable de entorno
     creds_json = os.getenv("GOOGLE_CREDENTIALS")
     if creds_json:
+        logs.append("Found GOOGLE_CREDENTIALS env var.")
         try:
             info = json.loads(creds_json)
-            # fix: Render sometimes messes up \n in private_key
             if 'private_key' in info:
                 info['private_key'] = info['private_key'].replace('\\n', '\n')
             
             creds = service_account.Credentials.from_service_account_info(info)
-            print(f"DEBUG: Credentials loaded from ENV for: {info.get('client_email')}")
-            return vision.ImageAnnotatorClient(credentials=creds)
+            logs.append(f"Loaded from ENV. Email: {info.get('client_email')}")
+            return vision.ImageAnnotatorClient(credentials=creds), "\n".join(logs)
         except Exception as e:
-            print(f"Error cargando ENV Google Credentials: {e}")
-            return None
+            logs.append(f"Error parsing ENV credentials: {str(e)}")
+            return None, "\n".join(logs)
 
-    print("ADVERTENCIA: No se encontraron credenciales de Google (File nor Env).")
-    return None
+    logs.append("No credentials found in File or Env.")
+    return None, "\n".join(logs)
 
 def extract_data_from_pdf(file_bytes: bytes) -> dict:
-    client = get_vision_client()
+    client, auth_log = get_vision_client()
     if not client:
         return {
-            "cups": None,
-            "consumo_kwh": None,
-            "importe": None,
-            "fecha": None,
-            "raw_text": "Error: Credenciales no configuradas"
+            "cups": None, "consumo_kwh": None, "importe": None, "fecha": None, 
+            "raw_text": f"Error Configuración Credenciales:\n{auth_log}"
         }
 
     # Google Vision espera una imagen. Si es PDF, lo ideal es usar document_text_detection
@@ -95,14 +95,14 @@ def extract_data_from_pdf(file_bytes: bytes) -> dict:
         fecha = None
 
         # 1. CUPS: ES seguido de 16-18 digitos/letras
-        cups_match = re.search(r'(ES\d{16,18}[A-Z0-9]{0,2})', full_text, re.IGNORECASE)
+        cups_match = re.search(r'(ES\\d{16,18}[A-Z0-9]{0,2})', full_text, re.IGNORECASE)
         if cups_match:
             cups = cups_match.group(1)
 
         # 2. Consumo: numero seguido de kWh
         # Normalizamos comas a puntos para float
         # Buscamos "123,45 kWh" o "123.45 kWh"
-        consumo_match = re.search(r'(\d+[.,]?\d*)\s*kWh', full_text, re.IGNORECASE)
+        consumo_match = re.search(r'(\\d+[.,]?\\d*)\\s*kWh', full_text, re.IGNORECASE)
         if consumo_match:
             val_str = consumo_match.group(1).replace(',', '.')
             try:
@@ -111,7 +111,7 @@ def extract_data_from_pdf(file_bytes: bytes) -> dict:
                 pass
 
         # 3. Importe: numero seguido de € o EUR
-        importe_match = re.search(r'(\d+[.,]?\d*)\s*(?:€|EUR)', full_text, re.IGNORECASE)
+        importe_match = re.search(r'(\\d+[.,]?\\d*)\\s*(?:€|EUR)', full_text, re.IGNORECASE)
         if importe_match:
             val_str = importe_match.group(1).replace(',', '.')
             try:
@@ -120,7 +120,7 @@ def extract_data_from_pdf(file_bytes: bytes) -> dict:
                 pass
         
         # 4. Fecha: dd/mm/yyyy o dd-mm-yyyy
-        fecha_match = re.search(r'(\d{2}[/-]\d{2}[/-]\d{4})', full_text)
+        fecha_match = re.search(r'(\\d{2}[/-]\\d{2}[/-]\\d{4})', full_text)
         if fecha_match:
             fecha = fecha_match.group(1)
 
@@ -135,9 +135,6 @@ def extract_data_from_pdf(file_bytes: bytes) -> dict:
     except Exception as e:
         print(f"Error en Vision API: {e}")
         return {
-            "cups": None,
-            "consumo_kwh": None,
-            "importe": None,
-            "fecha": None,
-            "raw_text": f"Error procesando OCR: {str(e)}"
+            "cups": None, "consumo_kwh": None, "importe": None, "fecha": None, 
+            "raw_text": f"Error procesando OCR: {str(e)}\n\n--- DEBUG LOG ---\n{auth_log}"
         }
