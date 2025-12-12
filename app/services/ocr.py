@@ -58,14 +58,15 @@ def parse_invoice_text(full_text: str) -> dict:
     importe = None
     fecha = None
 
-    # 1. CUPS: ES seguido de 16-18 digitos/letras
-    cups_match = re.search(r'(ES\\d{16,18}[A-Z0-9]{0,2})', full_text, re.IGNORECASE)
+    # 1. CUPS: ES seguido de 16-24 caracteres alfanuméricos
+    # Antes fallaba porque esperaba solo dígitos tras ES. Ahora acepta letras también.
+    cups_match = re.search(r'(ES[A-Z0-9]{16,24})', full_text, re.IGNORECASE)
     if cups_match:
         cups = cups_match.group(1)
 
     # 2. Consumo: numero seguido de kWh
     # Normalizamos comas a puntos para float
-    consumo_match = re.search(r'(\\d+[.,]?\\d*)\\s*kWh', full_text, re.IGNORECASE)
+    consumo_match = re.search(r'(\d+[.,]?\d*)\s*kWh', full_text, re.IGNORECASE)
     if consumo_match:
         val_str = consumo_match.group(1).replace(',', '.')
         try:
@@ -73,19 +74,42 @@ def parse_invoice_text(full_text: str) -> dict:
         except:
             pass
 
-    # 3. Importe: numero seguido de € o EUR
-    importe_match = re.search(r'(\\d+[.,]?\\d*)\\s*(?:€|EUR)', full_text, re.IGNORECASE)
-    if importe_match:
-        val_str = importe_match.group(1).replace(',', '.')
+    # 3. Importe: Buscamos "TOTAL" para ser más precisos, si no, buscamos cualquier importe
+    # Estrategia: Buscar "Total Factura" o similar primero
+    total_match = re.search(r'TOTAL.*?\s+(\d+[.,]?\d*)\s*(?:€|EUR)', full_text, re.IGNORECASE)
+    if total_match:
+        val_str = total_match.group(1).replace(',', '.')
         try:
             importe = float(val_str)
         except:
             pass
     
-    # 4. Fecha: dd/mm/yyyy o dd-mm-yyyy
-    fecha_match = re.search(r'(\\d{2}[/-]\\d{2}[/-]\\d{4})', full_text)
-    if fecha_match:
-        fecha = fecha_match.group(1)
+    if importe is None:
+        # Fallback: Buscar el importe más alto (heuristic simple) o el último
+        # Buscamos todos los patrones de precio
+        matches = re.findall(r'(\d+[.,]?\d*)\s*(?:€|EUR)', full_text, re.IGNORECASE)
+        if matches:
+            try:
+                # Convertir a float y coger el máximo (asumiendo que el total es el mayor)
+                vals = [float(m.replace(',', '.')) for m in matches]
+                importe = max(vals)
+            except:
+                pass
+    
+    # 4. Fecha: Soporte para dd/mm/yyyy Y yyyy-mm-dd
+    # Buscamos fechas en formato ISO (2025-10-09) o ES (09/10/2025)
+    # Prioridad: Fecha Vencimiento o Periodo? Por definición, "fecha factura" suele ser la de emisión.
+    # Aquí buscaremos la primera que parezca válida o la de vencimiento si dice "Vencimiento"
+    
+    # Intento 1: Buscar "Fecha" explícita
+    # match_fecha = re.search(r'Fecha.*(?:\s|:)(\d{2}[/-]\d{2}[/-]\d{4}|\d{4}[/-]\d{2}[/-]\d{2})', full_text, re.IGNORECASE)
+    
+    # Intento 2: Buscar cualquier fecha y coger la primera (o la última?)
+    # En este ejemplo: Periodo 2025-10-09 ... Vencimiento 2025-11-17
+    # Vamos a capturar la primera fecha que encontremos, que suele ser la de emisión/periodo inicio.
+    date_matches = re.findall(r'(\d{4}[/-]\d{2}[/-]\d{2}|\d{2}[/-]\d{2}[/-]\d{4})', full_text)
+    if date_matches:
+        fecha = date_matches[0] # Cogemos la primera fecha encontrada
 
     return {
         "cups": cups,
