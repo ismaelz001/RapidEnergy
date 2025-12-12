@@ -108,15 +108,69 @@ def parse_invoice_text(full_text: str) -> dict:
 
     # --- Nuevos campos (Sprint 3B) ---
     # 5. Titular (tolerando saltos de linea y separadores)
-    titular_patterns = [
-        r"(?:titular|nombre del titular)\s*[:\-]?\s*([^\n\r]{3,80})",
-        r"(?:cliente|nombre)\s*[:\-]?\s*([^\n\r]{3,80})",
-    ]
-    for pattern in titular_patterns:
-        match = re.search(pattern, full_text, re.IGNORECASE)
-        if match:
-            result["titular"] = match.group(1).strip()
-            break
+    def _is_valid_name(candidate: str) -> bool:
+        if not candidate:
+            return False
+        cleaned = candidate.strip()
+        if not cleaned:
+            return False
+        # descartar si contiene numeros o keywords de otros campos
+        if re.search(r"\d", cleaned):
+            return False
+        keywords = ["dni", "cif", "nif", "direccion", "dirección", "telefono", "teléfono", "email"]
+        if any(k.lower() in cleaned.lower() for k in keywords):
+            return False
+        # requerir al menos dos palabras
+        if len(cleaned.split()) < 2:
+            return False
+        return True
+
+    def _clean_name(candidate: str) -> str:
+        if not candidate:
+            return None
+        # eliminar etiquetas potenciales y caracteres de puntuacion extremos
+        candidate = re.sub(r"(?:^[:\-|\s]+|[:\-|\s]+$)", "", candidate)
+        candidate = candidate.strip(":- \t\r\n")
+        return candidate.strip()
+
+    titular = None
+
+    # Primero, intentar capturar linea del titular y la siguiente
+    titular_block_match = re.search(
+        r"(titular|nombre del titular)\s*[:\-]?\s*(.*)", full_text, re.IGNORECASE
+    )
+    if titular_block_match:
+        # Resto de linea tras la etiqueta
+        linea = titular_block_match.group(2).strip()
+        if not linea:
+            # si la misma linea no tiene contenido, tomar siguiente linea completa
+            lines = full_text.splitlines()
+            start_idx = None
+            for idx, line in enumerate(lines):
+                if re.search(r"(titular|nombre del titular)", line, re.IGNORECASE):
+                    start_idx = idx
+                    break
+            if start_idx is not None and start_idx + 1 < len(lines):
+                linea = lines[start_idx + 1].strip()
+        linea = _clean_name(linea)
+        if _is_valid_name(linea):
+            titular = linea
+
+    # Fallback: patrones genericos sin depender de saltos exactos
+    if not titular:
+        titular_patterns = [
+            r"(?:titular|nombre del titular)\s*[:\-]?\s*([^\n\r]{3,80})",
+            r"(?:cliente|nombre)\s*[:\-]?\s*([^\n\r]{3,80})",
+        ]
+        for pattern in titular_patterns:
+            match = re.search(pattern, full_text, re.IGNORECASE)
+            if match:
+                candidate = _clean_name(match.group(1))
+                if _is_valid_name(candidate):
+                    titular = candidate
+                    break
+
+    result["titular"] = titular
 
     # 6. DNI/CIF (permitiendo guiones o espacios)
     match_dni = re.search(r"(?:dni|cif|nif)\s*[:\-]?\s*([A-Z0-9][A-Z0-9\s\-]{6,15})", full_text, re.IGNORECASE)
