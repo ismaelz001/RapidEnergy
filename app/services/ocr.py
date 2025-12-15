@@ -144,7 +144,32 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
         # Sin numeros, sin keywords y al menos dos palabras
         if re.search(r"\d", cleaned):
             return False
-        keywords = ["dni", "cif", "nif", "direccion", "dirección", "telefono", "teléfono", "email", "cups", "importe"]
+        keywords = [
+            "dni",
+            "cif",
+            "nif",
+            "direccion",
+            "dirección",
+            "telefono",
+            "teléfono",
+            "email",
+            "cups",
+            "importe",
+            "factura",
+            "comercializadora",
+            "regulada",
+            "grupo",
+            "s.a",
+            "sl",
+            "naturgy",
+            "endesa",
+            "iberdrola",
+            "repsol",
+            "energia",
+            "energy",
+            "gas",
+            "power",
+        ]
         if any(k.lower() in cleaned.lower() for k in keywords):
             return False
         if len(cleaned.split()) < 2:
