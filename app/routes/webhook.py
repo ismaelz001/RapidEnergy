@@ -79,6 +79,22 @@ async def upload_factura(file: UploadFile, db: Session = Depends(get_db)):
     # Solo usamos CUPS para identificar/crear cliente. Campos personales se dejan nulos.
     cliente_db = None
 
+    # Evitar facturas duplicadas por CUPS + filename
+    if cups_extraido:
+        existing_factura = (
+            db.query(Factura)
+            .filter(Factura.cups == cups_extraido)
+            .filter(Factura.filename == file.filename)
+            .first()
+        )
+        if existing_factura:
+            return {
+                "id": existing_factura.id,
+                "filename": existing_factura.filename,
+                "ocr_preview": ocr_data,
+                "message": "Factura ya existente para este CUPS y nombre de archivo",
+            }
+
     if cups_extraido:
         # Buscar cliente existente por CUPS
         cliente_db = db.query(Cliente).filter(Cliente.cups == cups_extraido).first()
