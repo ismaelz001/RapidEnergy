@@ -26,6 +26,42 @@ class FacturaUpdate(BaseModel):
     estado_factura: Optional[str] = None
 
 
+REQUIRED_FACTURA_FIELDS = [
+    "potencia_p1_kw",
+    "potencia_p2_kw",
+    "consumo_p1_kwh",
+    "consumo_p2_kwh",
+    "consumo_p3_kwh",
+    "consumo_p4_kwh",
+    "consumo_p5_kwh",
+    "consumo_p6_kwh",
+    "bono_social",
+    "servicios_vinculados",
+    "alquiler_contador",
+    "impuesto_electrico",
+    "iva",
+    "total_factura",
+]
+
+
+def validate_factura_completitud(factura: Factura):
+    """
+    Valida que una factura tenga todos los campos energéticos críticos.
+    Devuelve (is_valid: bool, errors: dict[field, str]).
+    """
+    errors = {}
+    for field in REQUIRED_FACTURA_FIELDS:
+        val = getattr(factura, field, None)
+        # Para booleanos, solo consideramos ausente si es None (False es válido)
+        if isinstance(val, bool):
+            if val is None:
+                errors[field] = "Campo obligatorio ausente"
+        else:
+            if val is None:
+                errors[field] = "Campo obligatorio ausente"
+    return len(errors) == 0, errors
+
+
 @router.post("/upload")
 async def upload_factura(file: UploadFile, db: Session = Depends(get_db)):
     # 1. Leer el archivo
@@ -127,6 +163,21 @@ def update_factura(factura_id: int, factura_update: FacturaUpdate, db: Session =
     for key, value in update_data.items():
         setattr(factura, key, value)
 
+    # Validacion de completitud
+    es_valida, errors = validate_factura_completitud(factura)
+    factura.estado_factura = "lista_para_comparar" if es_valida else "pendiente_datos"
+
     db.commit()
     db.refresh(factura)
+
+    if not es_valida:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "message": "Faltan campos obligatorios para comparar",
+                "errors": errors,
+                "estado_factura": factura.estado_factura,
+            },
+        )
+
     return factura
