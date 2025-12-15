@@ -2,6 +2,7 @@ import os
 import json
 import re
 import io
+import unicodedata
 from google.oauth2 import service_account
 from google.cloud import vision
 import pypdf
@@ -42,7 +43,6 @@ def _empty_result(raw_text: str = None) -> dict:
 def get_vision_client():
     logs = ["DEBUG AUTH LOG:"]
 
-    # 1. Prioridad: archivo en /etc/secrets (Render)
     secret_dir = "/etc/secrets"
     if os.path.exists(secret_dir):
         logs.append(f"Secrets dir found: {secret_dir}")
@@ -64,7 +64,6 @@ def get_vision_client():
     else:
         logs.append("Secrets dir /etc/secrets not found (local?)")
 
-    # 2. Fallback: variable de entorno
     creds_json = os.getenv("GOOGLE_CREDENTIALS")
     if creds_json:
         logs.append("Found GOOGLE_CREDENTIALS env var.")
@@ -85,9 +84,9 @@ def get_vision_client():
 
 
 def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
-    """Parsea texto de factura proveniente de OCR/PDF para obtener campos clave."""
+    full_text = unicodedata.normalize("NFKC", full_text)
     result = _empty_result(full_text)
-    parsed_fields = _empty_result().get("parsed_fields", {})
+    parsed_fields = {}
 
     def _to_float(val_str: str):
         try:
@@ -96,12 +95,6 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
             return None
 
     def parse_structured_fields(raw_text: str) -> dict:
-        """
-        Intenta extraer campos energéticos de forma conservadora.
-        Reglas:
-        - Solo etiquetas/patrones claros.
-        - No se infiere si hay duda: se devuelve None.
-        """
         data = {
             "fecha_inicio_consumo": None,
             "fecha_fin_consumo": None,
@@ -118,10 +111,8 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
             "bono_social": None,
             "parsed_fields": {},
         }
-
         detected_pf = {}
 
-        # CUPS
         cups_match = re.search(r"(ES[A-Z0-9]{16,24})", raw_text, re.IGNORECASE)
         if cups_match:
             data["cups"] = cups_match.group(1)
@@ -129,7 +120,6 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
         else:
             detected_pf["cups"] = False
 
-        # Fechas de consumo: "4 de julio de 2024 a 5 de agosto de 2024"
         meses = "enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre"
         rango = re.search(
             rf"(\d{{1,2}}\s+de\s+(?:{meses})\s+de\s+\d{{4}})\s+a\s+(\d{{1,2}}\s+de\s+(?:{meses})\s+de\s+\d{{4}})",
@@ -145,7 +135,6 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
             detected_pf["fecha_inicio_consumo"] = False
             detected_pf["fecha_fin_consumo"] = False
 
-        # Importe factura: etiqueta explicita
         importe_match = re.search(r"IMPORTE\s+FACTURA[:\s]*[\r\n\s]*([\d.,]+)", raw_text, re.IGNORECASE)
         if importe_match:
             data["importe_factura"] = _to_float(importe_match.group(1))
@@ -153,22 +142,20 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
         else:
             detected_pf["importe_factura"] = False
 
-        # Potencia contratada
-        pot_p1 = re.search(r"potencia\s+(?:contratada\s+en\s+)?p1|punta[^0-9]{0,10}([\d.,]+)\s*k?w", raw_text, re.IGNORECASE)
+        pot_p1 = re.search(r"potencia\s+(?:contratada\s+en\s+)?(?:p1|punta)[^0-9]{0,10}([\d.,]+)\s*k?w", raw_text, re.IGNORECASE)
         if pot_p1:
             data["potencia_p1_kw"] = _to_float(pot_p1.group(1))
             detected_pf["potencia_p1_kw"] = data["potencia_p1_kw"] is not None
         else:
             detected_pf["potencia_p1_kw"] = False
 
-        pot_p2 = re.search(r"potencia\s+(?:contratada\s+en\s+)?p2|valle[^0-9]{0,10}([\d.,]+)\s*k?w", raw_text, re.IGNORECASE)
+        pot_p2 = re.search(r"potencia\s+(?:contratada\s+en\s+)?(?:p2|valle)[^0-9]{0,10}([\d.,]+)\s*k?w", raw_text, re.IGNORECASE)
         if pot_p2:
             data["potencia_p2_kw"] = _to_float(pot_p2.group(1))
             detected_pf["potencia_p2_kw"] = data["potencia_p2_kw"] is not None
         else:
             detected_pf["potencia_p2_kw"] = False
 
-        # Consumos por periodo: "Consumo en P1: 17 kWh"
         for p in range(1, 7):
             m = re.search(rf"Consumo\s+en\s+P{p}\s*[:\-]?\s*([\d.,]+)\s*kWh", raw_text, re.IGNORECASE)
             key = f"consumo_p{p}_kwh"
@@ -178,7 +165,6 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
             else:
                 detected_pf[key] = False
 
-        # Bono social: presencia de la etiqueta
         bono = re.search(r"\bbono\s+social\b", raw_text, re.IGNORECASE)
         data["bono_social"] = True if bono else None
         detected_pf["bono_social"] = bono is not None
@@ -186,11 +172,9 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
         data["parsed_fields"] = detected_pf
         return data
 
-    # Estructurado conservador
     structured = parse_structured_fields(full_text)
     parsed_fields.update(structured.get("parsed_fields", {}))
 
-    # 1. CUPS
     cups_match = re.search(r"(ES[A-Z0-9]{16,24})", full_text, re.IGNORECASE)
     if cups_match:
         result["cups"] = cups_match.group(1)
@@ -199,7 +183,6 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
 
     detected = {}
 
-    # 2. Consumo
     consumo_match = re.search(r"(\d+[.,]?\d*)\s*kWh", full_text, re.IGNORECASE)
     if consumo_match:
         val_str = consumo_match.group(1).replace(",", ".")
@@ -211,8 +194,7 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
     else:
         detected["consumo_kwh"] = False
 
-    # 3. Importe
-    total_match = re.search(r"TOTAL.*?\s+(\d+[.,]?\d*)\s*(?:\u20ac|EUR)", full_text, re.IGNORECASE)
+    total_match = re.search(r"TOTAL.*?\s+(\d+[.,]?\d*)\s*(?:€|EUR)", full_text, re.IGNORECASE)
     if total_match:
         val_str = total_match.group(1).replace(",", ".")
         try:
@@ -221,7 +203,7 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
         except Exception:
             pass
     if result["importe"] is None:
-        matches = re.findall(r"(\d+[.,]?\d*)\s*(?:\u20ac|EUR)", full_text, re.IGNORECASE)
+        matches = re.findall(r"(\d+[.,]?\d*)\s*(?:€|EUR)", full_text, re.IGNORECASE)
         if matches:
             try:
                 vals = [float(m.replace(",", ".")) for m in matches]
@@ -235,28 +217,23 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
     if "importe" not in detected:
         detected["importe"] = False
 
-    # 4. Fecha
     date_matches = re.findall(r"(\d{4}[/-]\d{2}[/-]\d{2}|\d{2}[/-]\d{2}[/-]\d{4})", full_text)
     if date_matches:
         result["fecha"] = date_matches[0]
         detected["fecha"] = True
     else:
         detected["fecha"] = False
-    # Fechas de consumo
     if structured.get("fecha_inicio_consumo"):
         result["fecha_inicio_consumo"] = structured.get("fecha_inicio_consumo")
     if structured.get("fecha_fin_consumo"):
         result["fecha_fin_consumo"] = structured.get("fecha_fin_consumo")
 
-    # --- Nuevos campos (Sprint 3B) ---
-    # 5. Titular (tolerando saltos de linea y separadores)
     def _is_valid_name(candidate: str) -> bool:
         if not candidate:
             return False
         cleaned = candidate.strip(" :,-\t\r\n")
         if not cleaned:
             return False
-        # Sin numeros, sin keywords y al menos dos palabras
         if re.search(r"\d", cleaned):
             return False
         keywords = [
@@ -305,7 +282,6 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
             return False
         if len(line.strip()) < 6:
             return False
-        # Requiere letras y algun numero (tipico de direcciones)
         has_letter = re.search(r"[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]", line)
         has_number = re.search(r"\d", line)
         return bool(has_letter and has_number)
@@ -314,7 +290,6 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
     name_line_index = None
 
     if is_image:
-        # Tratamiento especial para imagenes sin estructura
         raw_lines = [ln.strip() for ln in full_text.splitlines() if ln.strip()]
         label_keywords = {"titular", "dni", "cif", "nif", "telefono", "teléfono", "email", "direccion", "dirección", "cups"}
         filtered_lines = []
@@ -324,7 +299,6 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
                 continue
             filtered_lines.append(ln)
 
-        # Buscar nombre contextual: lineas alrededor de un DNI
         dni_pattern = re.compile(r"\b\d{8}[A-Z]\b", re.IGNORECASE)
         dni_indices_raw = []
         for idx, ln in enumerate(raw_lines):
@@ -343,9 +317,6 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
             if found:
                 break
 
-        # Sin nombre fiable -> None
-
-    # Si no es imagen o necesitamos etiquetas, solo aceptamos etiqueta explicita
     if not titular:
         titular_block_match = re.search(
             r"(titular|nombre del titular)\s*[:\-]?\s*([A-Za-zÁÉÍÓÚÜÑáéíóúüñ ,.'´`-]{3,80})",
@@ -359,12 +330,10 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
 
     result["titular"] = titular
 
-    # 6. DNI/CIF (patron exacto 8 numeros + letra)
     match_dni = re.search(r"(?:dni|cif|nif)?\s*[:\-]?\s*([0-9]{8}[A-Z])", full_text, re.IGNORECASE)
     if match_dni:
         result["dni"] = re.sub(r"\s+", "", match_dni.group(1)).strip()
 
-    # 7. Direccion de suministro (solo si etiqueta explicita)
     dir_patterns = [
         r"direccion(?:\s+de\s+suministro)?\s*[:\-]?\s*([A-Za-z0-9ÁÉÍÓÚÜÑáéíóúüñ ,.'´`-]{5,120})",
         r"domicilio\s*[:\-]?\s*([A-Za-z0-9ÁÉÍÓÚÜÑáéíóúüñ ,.'´`-]{5,120})",
@@ -374,7 +343,6 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
         if match_dir:
             result["direccion"] = match_dir.group(1).strip()
             break
-    # Fallback direccion: si imagen y tenemos linea de nombre, tomar siguientes 1-2 lineas como direccion si parecen direccion
     if is_image and result["direccion"] is None and name_line_index is not None:
         raw_lines = [ln.strip() for ln in full_text.splitlines() if ln.strip()]
         for forward in range(1, 3):
@@ -384,7 +352,6 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
                     result["direccion"] = candidate_dir.strip()
                     break
 
-    # 8. Telefono (9 digitos, con o sin separadores)
     match_tel = re.search(
         r"(?:tel(?:efono)?|phone)?[^\d]{0,12}(\b[6789]\d{2}[.\s\-]?\d{3}[.\s\-]?\d{3}\b)",
         full_text,
@@ -392,7 +359,6 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
     )
     if match_tel:
         telefono = re.sub(r"[.\s\-]", "", match_tel.group(1))
-        # Excluir numeros de atencion (800/900/901/902/905)
         if not telefono.startswith(("800", "900", "901", "902", "905")):
             result["telefono"] = telefono
             detected["telefono"] = True
@@ -401,7 +367,6 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
     else:
         detected["telefono"] = False
 
-    # --- Campos energeticos adicionales (solo si aparecen de forma explicita) ---
     def _extract_number(patterns):
         for pat in patterns:
             m = re.search(pat, full_text, re.IGNORECASE)
@@ -413,7 +378,6 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
                     continue
         return None
 
-    # Potencia contratada
     result["potencia_p1_kw"] = _extract_number(
         [r"potencia\s*p1[^0-9]{0,10}([\d.,]+)\s*k?w", r"potencia\s+punta[^0-9]{0,10}([\d.,]+)\s*k?w"]
     )
@@ -423,7 +387,6 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
     detected["potencia_p1_kw"] = result["potencia_p1_kw"] is not None
     detected["potencia_p2_kw"] = result["potencia_p2_kw"] is not None
 
-    # Consumos por periodo
     for periodo in ["p1", "p2", "p3", "p4", "p5", "p6"]:
         val = _extract_number(
             [rf"consumo\s*{periodo}[^0-9]{{0,10}}([\d.,]+)\s*kwh", rf"{periodo}\s*consumo[^0-9]{{0,10}}([\d.,]+)\s*kwh"]
@@ -431,33 +394,27 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
         result[f"consumo_{periodo}_kwh"] = val
         detected[f"consumo_{periodo}_kwh"] = val is not None
 
-    # Bono social (solo si se menciona explicitamente)
     bono_match = re.search(r"\bbono\s+social\b", full_text, re.IGNORECASE)
     result["bono_social"] = True if bono_match else None
     detected["bono_social"] = bono_match is not None
 
-    # Servicios vinculados (solo si etiqueta explicita)
     sv_match = re.search(r"\bservicios\s+vinculados\b", full_text, re.IGNORECASE)
     result["servicios_vinculados"] = True if sv_match else None
     detected["servicios_vinculados"] = sv_match is not None
 
-    # Alquiler contador
     result["alquiler_contador"] = _extract_number(
         [r"alquiler\s+contador[^0-9]{0,10}([\d.,]+)", r"contador\s+alquiler[^0-9]{0,10}([\d.,]+)"]
     )
     detected["alquiler_contador"] = result["alquiler_contador"] is not None
 
-    # Impuesto electrico
     result["impuesto_electrico"] = _extract_number(
         [r"impuesto\s+electrico[^0-9]{0,10}([\d.,]+)", r"impuesto\s+el[eé]ctrico[^0-9]{0,10}([\d.,]+)"]
     )
     detected["impuesto_electrico"] = result["impuesto_electrico"] is not None
 
-    # IVA
     result["iva"] = _extract_number([r"\biva\b[^0-9]{0,10}([\d.,]+)"])
     detected["iva"] = result["iva"] is not None
 
-    # Total factura (solo si etiqueta explicita)
     result["total_factura"] = _extract_number(
         [
             r"\btotal\s+factura[^0-9]{0,10}([\d.,]+)",
@@ -467,7 +424,6 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
     )
     detected["total_factura"] = result["total_factura"] is not None
 
-    # Relleno conservador con campos estructurados
     for field in [
         "potencia_p1_kw",
         "potencia_p2_kw",
@@ -493,10 +449,8 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
 
 
 def extract_data_from_pdf(file_bytes: bytes) -> dict:
-    # 1. Detectar si es un PDF real usando magic bytes
     is_pdf = file_bytes.startswith(b"%PDF")
 
-    # --- Estrategia A: PDF digital (pypdf) ---
     if is_pdf:
         try:
             reader = pypdf.PdfReader(io.BytesIO(file_bytes))
@@ -514,10 +468,8 @@ def extract_data_from_pdf(file_bytes: bytes) -> dict:
                 return _empty_result(msg)
         except Exception as e:
             print(f"Error leyendo PDF con pypdf: {e}")
-            # Si falla pypdf, podriamos intentar Vision, pero Vision Sync no soporta PDF bytes.
             pass
 
-    # --- Estrategia B: Imagen (Google Cloud Vision) ---
     client, auth_log = get_vision_client()
     if not client:
         return _empty_result(f"Error configuracion credenciales:\n{auth_log}")
