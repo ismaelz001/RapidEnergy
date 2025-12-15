@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, Text, ForeignKey, DateTime
+from sqlalchemy import Column, Integer, String, Float, Text, ForeignKey, DateTime, Boolean
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.db.conn import Base
@@ -33,6 +33,31 @@ class Factura(Base):
     importe = Column(Float, nullable=True)
     fecha = Column(String, nullable=True)
     raw_data = Column(Text, nullable=True)
+
+    # Potencia
+    potencia_p1_kw = Column(Float, nullable=True)
+    potencia_p2_kw = Column(Float, nullable=True)
+
+    # Consumos por periodo
+    consumo_p1_kwh = Column(Float, nullable=True)
+    consumo_p2_kwh = Column(Float, nullable=True)
+    consumo_p3_kwh = Column(Float, nullable=True)
+    consumo_p4_kwh = Column(Float, nullable=True)
+    consumo_p5_kwh = Column(Float, nullable=True)
+    consumo_p6_kwh = Column(Float, nullable=True)
+
+    # Condiciones
+    bono_social = Column(Boolean, default=False)
+    servicios_vinculados = Column(Boolean, default=False)
+    alquiler_contador = Column(Float, nullable=True)
+
+    # Impuestos y totales
+    impuesto_electrico = Column(Float, nullable=True)
+    iva = Column(Float, nullable=True)
+    total_factura = Column(Float, nullable=True)
+
+    # Estado
+    estado_factura = Column(String, default="pendiente_datos")
     
     cliente_id = Column(Integer, ForeignKey("clientes.id"), nullable=True)
     
