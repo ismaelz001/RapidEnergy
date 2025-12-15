@@ -17,6 +17,21 @@ def _empty_result(raw_text: str = None) -> dict:
         "dni": None,
         "direccion": None,
         "telefono": None,
+        "potencia_p1_kw": None,
+        "potencia_p2_kw": None,
+        "consumo_p1_kwh": None,
+        "consumo_p2_kwh": None,
+        "consumo_p3_kwh": None,
+        "consumo_p4_kwh": None,
+        "consumo_p5_kwh": None,
+        "consumo_p6_kwh": None,
+        "bono_social": None,
+        "servicios_vinculados": None,
+        "alquiler_contador": None,
+        "impuesto_electrico": None,
+        "iva": None,
+        "total_factura": None,
+        "detected_por_ocr": {},
         "raw_text": raw_text,
     }
 
@@ -75,14 +90,19 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
     if cups_match:
         result["cups"] = cups_match.group(1)
 
+    detected = {}
+
     # 2. Consumo
     consumo_match = re.search(r"(\d+[.,]?\d*)\s*kWh", full_text, re.IGNORECASE)
     if consumo_match:
         val_str = consumo_match.group(1).replace(",", ".")
         try:
             result["consumo_kwh"] = float(val_str)
+            detected["consumo_kwh"] = True
         except Exception:
             pass
+    else:
+        detected["consumo_kwh"] = False
 
     # 3. Importe
     total_match = re.search(r"TOTAL.*?\s+(\d+[.,]?\d*)\s*(?:\u20ac|EUR)", full_text, re.IGNORECASE)
@@ -90,6 +110,7 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
         val_str = total_match.group(1).replace(",", ".")
         try:
             result["importe"] = float(val_str)
+            detected["importe"] = True
         except Exception:
             pass
     if result["importe"] is None:
@@ -98,13 +119,19 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
             try:
                 vals = [float(m.replace(",", ".")) for m in matches]
                 result["importe"] = max(vals)
+                detected["importe"] = True
             except Exception:
                 pass
+    if "importe" not in detected:
+        detected["importe"] = False
 
     # 4. Fecha
     date_matches = re.findall(r"(\d{4}[/-]\d{2}[/-]\d{2}|\d{2}[/-]\d{2}[/-]\d{4})", full_text)
     if date_matches:
         result["fecha"] = date_matches[0]
+        detected["fecha"] = True
+    else:
+        detected["fecha"] = False
 
     # --- Nuevos campos (Sprint 3B) ---
     # 5. Titular (tolerando saltos de linea y separadores)
@@ -226,6 +253,71 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
     )
     if match_tel:
         result["telefono"] = re.sub(r"[.\s\-]", "", match_tel.group(1))
+        detected["telefono"] = True
+    else:
+        detected["telefono"] = False
+
+    # --- Campos energeticos adicionales (solo si aparecen de forma explicita) ---
+    def _extract_number(patterns):
+        for pat in patterns:
+            m = re.search(pat, full_text, re.IGNORECASE)
+            if m:
+                val = m.group(1).replace(",", ".")
+                try:
+                    return float(val)
+                except Exception:
+                    continue
+        return None
+
+    # Potencia contratada
+    result["potencia_p1_kw"] = _extract_number(
+        [r"potencia\s*p1[^0-9]{0,10}([\d.,]+)\s*k?w", r"potencia\s+punta[^0-9]{0,10}([\d.,]+)\s*k?w"]
+    )
+    result["potencia_p2_kw"] = _extract_number(
+        [r"potencia\s*p2[^0-9]{0,10}([\d.,]+)\s*k?w", r"potencia\s+valle[^0-9]{0,10}([\d.,]+)\s*k?w"]
+    )
+    detected["potencia_p1_kw"] = result["potencia_p1_kw"] is not None
+    detected["potencia_p2_kw"] = result["potencia_p2_kw"] is not None
+
+    # Consumos por periodo
+    for periodo in ["p1", "p2", "p3", "p4", "p5", "p6"]:
+        val = _extract_number(
+            [rf"consumo\s*{periodo}[^0-9]{{0,10}}([\d.,]+)\s*kwh", rf"{periodo}\s*consumo[^0-9]{{0,10}}([\d.,]+)\s*kwh"]
+        )
+        result[f"consumo_{periodo}_kwh"] = val
+        detected[f"consumo_{periodo}_kwh"] = val is not None
+
+    # Bono social
+    bono_match = re.search(r"bono\s+social", full_text, re.IGNORECASE)
+    result["bono_social"] = True if bono_match else None
+    detected["bono_social"] = bono_match is not None
+
+    # Servicios vinculados
+    sv_match = re.search(r"servicios\s+vinculados", full_text, re.IGNORECASE)
+    result["servicios_vinculados"] = True if sv_match else None
+    detected["servicios_vinculados"] = sv_match is not None
+
+    # Alquiler contador
+    result["alquiler_contador"] = _extract_number(
+        [r"alquiler\s+contador[^0-9]{0,10}([\d.,]+)", r"contador\s+alquiler[^0-9]{0,10}([\d.,]+)"]
+    )
+    detected["alquiler_contador"] = result["alquiler_contador"] is not None
+
+    # Impuesto electrico
+    result["impuesto_electrico"] = _extract_number(
+        [r"impuesto\s+electrico[^0-9]{0,10}([\d.,]+)", r"impuesto\s+el[eé]ctrico[^0-9]{0,10}([\d.,]+)"]
+    )
+    detected["impuesto_electrico"] = result["impuesto_electrico"] is not None
+
+    # IVA
+    result["iva"] = _extract_number([r"\biva\b[^0-9]{0,10}([\d.,]+)"])
+    detected["iva"] = result["iva"] is not None
+
+    # Total factura (solo si etiqueta explicita)
+    result["total_factura"] = _extract_number([r"total\s+factura[^0-9]{0,10}([\d.,]+)", r"importe\s+total[^0-9]{0,10}([\d.,]+)"])
+    detected["total_factura"] = result["total_factura"] is not None
+
+    result["detected_por_ocr"] = detected
 
     return result
 
