@@ -138,16 +138,15 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
     def _is_valid_name(candidate: str) -> bool:
         if not candidate:
             return False
-        cleaned = candidate.strip()
+        cleaned = candidate.strip(" :,-\t\r\n")
         if not cleaned:
             return False
-        # descartar si contiene numeros o keywords de otros campos
+        # Sin numeros, sin keywords y al menos dos palabras
         if re.search(r"\d", cleaned):
             return False
-        keywords = ["dni", "cif", "nif", "direccion", "dirección", "telefono", "teléfono", "email", "cups"]
+        keywords = ["dni", "cif", "nif", "direccion", "dirección", "telefono", "teléfono", "email", "cups", "importe"]
         if any(k.lower() in cleaned.lower() for k in keywords):
             return False
-        # requerir al menos dos palabras
         if len(cleaned.split()) < 2:
             return False
         return True
@@ -155,10 +154,8 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
     def _clean_name(candidate: str) -> str:
         if not candidate:
             return None
-        # eliminar etiquetas potenciales y caracteres de puntuacion extremos
-        candidate = re.sub(r"(?:^[:\-|\s]+|[:\-|\s]+$)", "", candidate)
-        candidate = candidate.strip(":- \t\r\n")
-        return candidate.strip()
+        candidate = re.sub(r"\s{2,}", " ", candidate)
+        return candidate.strip(" :,-\t\r\n")
 
     titular = None
 
@@ -183,61 +180,31 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
                         titular = candidate
                         break
 
-        # Fallback: primer candidato valido
-        if not titular:
-            for ln in filtered_lines:
-                # solo letras y espacios
-                if not re.match(r"^[A-Za-zÁÉÍÓÚÜÑáéíóúüñ'´` ]+$", ln):
-                    continue
-                candidate = _clean_name(ln)
-                if _is_valid_name(candidate):
-                    titular = candidate
-                    break
+        # Sin nombre fiable -> None
 
-    # Si no es imagen o no encontramos, usar patrones genericos
+    # Si no es imagen o necesitamos etiquetas, solo aceptamos etiqueta explicita
     if not titular:
         titular_block_match = re.search(
-            r"(titular|nombre del titular)\s*[:\-]?\s*(.*)", full_text, re.IGNORECASE
+            r"(titular|nombre del titular)\s*[:\-]?\s*([A-Za-zÁÉÍÓÚÜÑáéíóúüñ ,.'´`-]{3,80})",
+            full_text,
+            re.IGNORECASE,
         )
         if titular_block_match:
-            linea = titular_block_match.group(2).strip()
-            if not linea:
-                lines = full_text.splitlines()
-                start_idx = None
-                for idx, line in enumerate(lines):
-                    if re.search(r"(titular|nombre del titular)", line, re.IGNORECASE):
-                        start_idx = idx
-                        break
-                if start_idx is not None and start_idx + 1 < len(lines):
-                    linea = lines[start_idx + 1].strip()
-            linea = _clean_name(linea)
+            linea = _clean_name(titular_block_match.group(2))
             if _is_valid_name(linea):
                 titular = linea
 
-    if not titular:
-        titular_patterns = [
-            r"(?:titular|nombre del titular)\s*[:\-]?\s*([^\n\r]{3,80})",
-            r"(?:cliente|nombre)\s*[:\-]?\s*([^\n\r]{3,80})",
-        ]
-        for pattern in titular_patterns:
-            match = re.search(pattern, full_text, re.IGNORECASE)
-            if match:
-                candidate = _clean_name(match.group(1))
-                if _is_valid_name(candidate):
-                    titular = candidate
-                    break
-
     result["titular"] = titular
 
-    # 6. DNI/CIF (permitiendo guiones o espacios)
-    match_dni = re.search(r"(?:dni|cif|nif)\s*[:\-]?\s*([A-Z0-9][A-Z0-9\s\-]{6,15})", full_text, re.IGNORECASE)
+    # 6. DNI/CIF (patron exacto 8 numeros + letra)
+    match_dni = re.search(r"(?:dni|cif|nif)?\s*[:\-]?\s*([0-9]{8}[A-Z])", full_text, re.IGNORECASE)
     if match_dni:
         result["dni"] = re.sub(r"\s+", "", match_dni.group(1)).strip()
 
-    # 7. Direccion de suministro
+    # 7. Direccion de suministro (solo si etiqueta explicita)
     dir_patterns = [
-        r"direccion(?:\s+de\s+suministro)?\s*[:\-]?\s*([^\n\r]{5,120})",
-        r"domicilio\s*[:\-]?\s*([^\n\r]{5,120})",
+        r"direccion(?:\s+de\s+suministro)?\s*[:\-]?\s*([A-Za-z0-9ÁÉÍÓÚÜÑáéíóúüñ ,.'´`-]{5,120})",
+        r"domicilio\s*[:\-]?\s*([A-Za-z0-9ÁÉÍÓÚÜÑáéíóúüñ ,.'´`-]{5,120})",
     ]
     for pattern in dir_patterns:
         match_dir = re.search(pattern, full_text, re.IGNORECASE)
@@ -287,13 +254,13 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
         result[f"consumo_{periodo}_kwh"] = val
         detected[f"consumo_{periodo}_kwh"] = val is not None
 
-    # Bono social
-    bono_match = re.search(r"bono\s+social", full_text, re.IGNORECASE)
+    # Bono social (solo si se menciona explicitamente)
+    bono_match = re.search(r"\bbono\s+social\b", full_text, re.IGNORECASE)
     result["bono_social"] = True if bono_match else None
     detected["bono_social"] = bono_match is not None
 
-    # Servicios vinculados
-    sv_match = re.search(r"servicios\s+vinculados", full_text, re.IGNORECASE)
+    # Servicios vinculados (solo si etiqueta explicita)
+    sv_match = re.search(r"\bservicios\s+vinculados\b", full_text, re.IGNORECASE)
     result["servicios_vinculados"] = True if sv_match else None
     detected["servicios_vinculados"] = sv_match is not None
 
@@ -314,7 +281,13 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
     detected["iva"] = result["iva"] is not None
 
     # Total factura (solo si etiqueta explicita)
-    result["total_factura"] = _extract_number([r"total\s+factura[^0-9]{0,10}([\d.,]+)", r"importe\s+total[^0-9]{0,10}([\d.,]+)"])
+    result["total_factura"] = _extract_number(
+        [
+            r"\btotal\s+factura[^0-9]{0,10}([\d.,]+)",
+            r"\bimporte\s+total[^0-9]{0,10}([\d.,]+)",
+            r"\btotal\s+importe[^0-9]{0,10}([\d.,]+)",
+        ]
+    )
     detected["total_factura"] = result["total_factura"] is not None
 
     result["detected_por_ocr"] = detected
