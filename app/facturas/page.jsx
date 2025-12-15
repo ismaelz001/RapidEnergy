@@ -9,8 +9,8 @@ export default async function FacturasPage() {
     <div className="flex flex-col gap-4">
       <h1 className="text-2xl font-semibold">Facturas procesadas</h1>
       <p className="text-xs text-slate-300">
-        Esta vista consumirá un endpoint de FastAPI que devuelva las facturas almacenadas
-        en Neon. De momento asumimos un formato simple: id, cups, consumo_kwh, importe, fecha.
+        Esta vista consume el endpoint de FastAPI con facturas almacenadas en Neon. Formato: id, cups, consumo_kwh,
+        importe, fecha.
       </p>
 
       <div className="card">
@@ -22,6 +22,7 @@ export default async function FacturasPage() {
               <th className="py-2 text-left">Consumo (kWh)</th>
               <th className="py-2 text-left">Importe</th>
               <th className="py-2 text-left">Fecha</th>
+              <th className="py-2 text-left"></th>
             </tr>
           </thead>
           <tbody>
@@ -33,12 +34,17 @@ export default async function FacturasPage() {
                   <td className="py-2">{f.consumo_kwh || "-"}</td>
                   <td className="py-2">{f.importe || "-"}</td>
                   <td className="py-2">{f.fecha || "-"}</td>
+                  <td className="py-2">
+                    <a href={`/facturas/${f.id}`} className="text-emerald-400 hover:text-emerald-300">
+                      Ver/editar
+                    </a>
+                  </td>
                 </tr>
               ))
             ) : (
               <tr>
-                <td colSpan={5} className="py-4 text-center text-slate-500">
-                  No hay facturas todavía.
+                <td colSpan={6} className="py-4 text-center text-slate-500">
+                  No hay facturas todavia.
                 </td>
               </tr>
             )}

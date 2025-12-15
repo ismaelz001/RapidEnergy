@@ -1,9 +1,29 @@
-from fastapi import APIRouter, UploadFile, Depends
+from fastapi import APIRouter, UploadFile, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.db.conn import get_db
 from app.db.models import Factura
+from pydantic import BaseModel
+from typing import Optional
 
 router = APIRouter(prefix="/webhook", tags=["webhook"])
+
+
+class FacturaUpdate(BaseModel):
+    potencia_p1_kw: Optional[float] = None
+    potencia_p2_kw: Optional[float] = None
+    consumo_p1_kwh: Optional[float] = None
+    consumo_p2_kwh: Optional[float] = None
+    consumo_p3_kwh: Optional[float] = None
+    consumo_p4_kwh: Optional[float] = None
+    consumo_p5_kwh: Optional[float] = None
+    consumo_p6_kwh: Optional[float] = None
+    bono_social: Optional[bool] = None
+    servicios_vinculados: Optional[bool] = None
+    alquiler_contador: Optional[float] = None
+    impuesto_electrico: Optional[float] = None
+    iva: Optional[float] = None
+    total_factura: Optional[float] = None
+    estado_factura: Optional[str] = None
 
 
 @router.post("/upload")
@@ -87,3 +107,26 @@ async def upload_factura(file: UploadFile, db: Session = Depends(get_db)):
 def list_facturas(db: Session = Depends(get_db)):
     facturas = db.query(Factura).all()
     return facturas
+
+
+@router.get("/facturas/{factura_id}")
+def get_factura(factura_id: int, db: Session = Depends(get_db)):
+    factura = db.query(Factura).filter(Factura.id == factura_id).first()
+    if not factura:
+        raise HTTPException(status_code=404, detail="Factura no encontrada")
+    return factura
+
+
+@router.put("/facturas/{factura_id}")
+def update_factura(factura_id: int, factura_update: FacturaUpdate, db: Session = Depends(get_db)):
+    factura = db.query(Factura).filter(Factura.id == factura_id).first()
+    if not factura:
+        raise HTTPException(status_code=404, detail="Factura no encontrada")
+
+    update_data = factura_update.dict(exclude_unset=True)
+    for key, value in update_data.items():
+        setattr(factura, key, value)
+
+    db.commit()
+    db.refresh(factura)
+    return factura
