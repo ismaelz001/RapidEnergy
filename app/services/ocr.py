@@ -13,6 +13,8 @@ def _empty_result(raw_text: str = None) -> dict:
         "consumo_kwh": None,
         "importe": None,
         "fecha": None,
+        "fecha_inicio_consumo": None,
+        "fecha_fin_consumo": None,
         "titular": None,
         "dni": None,
         "direccion": None,
@@ -31,6 +33,7 @@ def _empty_result(raw_text: str = None) -> dict:
         "impuesto_electrico": None,
         "iva": None,
         "total_factura": None,
+        "parsed_fields": {},
         "detected_por_ocr": {},
         "raw_text": raw_text,
     }
@@ -84,11 +87,115 @@ def get_vision_client():
 def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
     """Parsea texto de factura proveniente de OCR/PDF para obtener campos clave."""
     result = _empty_result(full_text)
+    parsed_fields = _empty_result().get("parsed_fields", {})
+
+    def _to_float(val_str: str):
+        try:
+            return float(val_str.replace(",", "."))
+        except Exception:
+            return None
+
+    def parse_structured_fields(raw_text: str) -> dict:
+        """
+        Intenta extraer campos energéticos de forma conservadora.
+        Reglas:
+        - Solo etiquetas/patrones claros.
+        - No se infiere si hay duda: se devuelve None.
+        """
+        data = {
+            "fecha_inicio_consumo": None,
+            "fecha_fin_consumo": None,
+            "importe_factura": None,
+            "cups": None,
+            "potencia_p1_kw": None,
+            "potencia_p2_kw": None,
+            "consumo_p1_kwh": None,
+            "consumo_p2_kwh": None,
+            "consumo_p3_kwh": None,
+            "consumo_p4_kwh": None,
+            "consumo_p5_kwh": None,
+            "consumo_p6_kwh": None,
+            "bono_social": None,
+            "parsed_fields": {},
+        }
+
+        detected_pf = {}
+
+        # CUPS
+        cups_match = re.search(r"(ES[A-Z0-9]{16,24})", raw_text, re.IGNORECASE)
+        if cups_match:
+            data["cups"] = cups_match.group(1)
+            detected_pf["cups"] = True
+        else:
+            detected_pf["cups"] = False
+
+        # Fechas de consumo: "4 de julio de 2024 a 5 de agosto de 2024"
+        meses = "enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre"
+        rango = re.search(
+            rf"(\d{{1,2}}\s+de\s+(?:{meses})\s+de\s+\d{{4}})\s+a\s+(\d{{1,2}}\s+de\s+(?:{meses})\s+de\s+\d{{4}})",
+            raw_text,
+            re.IGNORECASE,
+        )
+        if rango:
+            data["fecha_inicio_consumo"] = rango.group(1)
+            data["fecha_fin_consumo"] = rango.group(2)
+            detected_pf["fecha_inicio_consumo"] = True
+            detected_pf["fecha_fin_consumo"] = True
+        else:
+            detected_pf["fecha_inicio_consumo"] = False
+            detected_pf["fecha_fin_consumo"] = False
+
+        # Importe factura: etiqueta explicita
+        importe_match = re.search(r"IMPORTE\s+FACTURA[:\s]*[\r\n\s]*([\d.,]+)", raw_text, re.IGNORECASE)
+        if importe_match:
+            data["importe_factura"] = _to_float(importe_match.group(1))
+            detected_pf["importe_factura"] = data["importe_factura"] is not None
+        else:
+            detected_pf["importe_factura"] = False
+
+        # Potencia contratada
+        pot_p1 = re.search(r"potencia\s+(?:contratada\s+en\s+)?p1|punta[^0-9]{0,10}([\d.,]+)\s*k?w", raw_text, re.IGNORECASE)
+        if pot_p1:
+            data["potencia_p1_kw"] = _to_float(pot_p1.group(1))
+            detected_pf["potencia_p1_kw"] = data["potencia_p1_kw"] is not None
+        else:
+            detected_pf["potencia_p1_kw"] = False
+
+        pot_p2 = re.search(r"potencia\s+(?:contratada\s+en\s+)?p2|valle[^0-9]{0,10}([\d.,]+)\s*k?w", raw_text, re.IGNORECASE)
+        if pot_p2:
+            data["potencia_p2_kw"] = _to_float(pot_p2.group(1))
+            detected_pf["potencia_p2_kw"] = data["potencia_p2_kw"] is not None
+        else:
+            detected_pf["potencia_p2_kw"] = False
+
+        # Consumos por periodo: "Consumo en P1: 17 kWh"
+        for p in range(1, 7):
+            m = re.search(rf"Consumo\s+en\s+P{p}\s*[:\-]?\s*([\d.,]+)\s*kWh", raw_text, re.IGNORECASE)
+            key = f"consumo_p{p}_kwh"
+            if m:
+                data[key] = _to_float(m.group(1))
+                detected_pf[key] = data[key] is not None
+            else:
+                detected_pf[key] = False
+
+        # Bono social: presencia de la etiqueta
+        bono = re.search(r"\bbono\s+social\b", raw_text, re.IGNORECASE)
+        data["bono_social"] = True if bono else None
+        detected_pf["bono_social"] = bono is not None
+
+        data["parsed_fields"] = detected_pf
+        return data
+
+    # Estructurado conservador
+    structured = parse_structured_fields(full_text)
+    parsed_fields.update(structured.get("parsed_fields", {}))
 
     # 1. CUPS
     cups_match = re.search(r"(ES[A-Z0-9]{16,24})", full_text, re.IGNORECASE)
     if cups_match:
         result["cups"] = cups_match.group(1)
+    elif structured.get("cups"):
+        result["cups"] = structured.get("cups")
 
     detected = {}
 
@@ -122,6 +229,9 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
                 detected["importe"] = True
             except Exception:
                 pass
+    if result["importe"] is None and structured.get("importe_factura") is not None:
+        result["importe"] = structured.get("importe_factura")
+        detected["importe"] = True
     if "importe" not in detected:
         detected["importe"] = False
 
@@ -132,6 +242,11 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
         detected["fecha"] = True
     else:
         detected["fecha"] = False
+    # Fechas de consumo
+    if structured.get("fecha_inicio_consumo"):
+        result["fecha_inicio_consumo"] = structured.get("fecha_inicio_consumo")
+    if structured.get("fecha_fin_consumo"):
+        result["fecha_fin_consumo"] = structured.get("fecha_fin_consumo")
 
     # --- Nuevos campos (Sprint 3B) ---
     # 5. Titular (tolerando saltos de linea y separadores)
@@ -352,6 +467,26 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
     )
     detected["total_factura"] = result["total_factura"] is not None
 
+    # Relleno conservador con campos estructurados
+    for field in [
+        "potencia_p1_kw",
+        "potencia_p2_kw",
+        "consumo_p1_kwh",
+        "consumo_p2_kwh",
+        "consumo_p3_kwh",
+        "consumo_p4_kwh",
+        "consumo_p5_kwh",
+        "consumo_p6_kwh",
+    ]:
+        if result.get(field) is None and structured.get(field) is not None:
+            result[field] = structured.get(field)
+            detected[field] = True
+
+    if result.get("bono_social") is None and structured.get("bono_social") is not None:
+        result["bono_social"] = structured.get("bono_social")
+        detected["bono_social"] = True
+
+    result["parsed_fields"] = parsed_fields
     result["detected_por_ocr"] = detected
 
     return result
