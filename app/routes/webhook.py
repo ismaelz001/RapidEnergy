@@ -181,3 +181,24 @@ def update_factura(factura_id: int, factura_update: FacturaUpdate, db: Session =
         )
 
     return factura
+
+
+@router.post("/comparar/facturas/{factura_id}")
+def comparar_factura(factura_id: int, db: Session = Depends(get_db)):
+    factura = db.query(Factura).filter(Factura.id == factura_id).first()
+    if not factura:
+        raise HTTPException(status_code=404, detail="Factura no encontrada")
+
+    es_valida, errors = validate_factura_completitud(factura)
+    if not es_valida or factura.estado_factura != "lista_para_comparar":
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "message": "La factura no está lista para comparar",
+                "estado_factura": factura.estado_factura,
+                "errors": errors,
+            },
+        )
+
+    # Placeholder hasta implementar comparador real
+    return {"message": "Comparación no implementada todavía", "estado_factura": factura.estado_factura}

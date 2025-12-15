@@ -204,6 +204,30 @@ export default function FacturaDetailClient({ factura }) {
             {status === "saving" ? "Guardando..." : "Guardar datos de factura"}
           </button>
         </div>
+
+        <div className="flex flex-col gap-2 rounded-2xl border border-slate-800 bg-slate-900/60 p-4">
+          <div className="flex items-center justify-between">
+            <div className="flex flex-col">
+              <span className="text-sm font-semibold">Comparar tarifas</span>
+              <span className="text-xs text-slate-400">
+                Completa los datos de la factura antes de comparar tarifas.
+              </span>
+            </div>
+            <button
+              type="button"
+              className="btn-primary bg-slate-800 hover:bg-slate-700"
+              disabled={!isComplete}
+              title={!isComplete ? "Completa los datos de la factura antes de comparar tarifas" : "Listo para comparar"}
+            >
+              Comparar
+            </button>
+          </div>
+          {!isComplete && (
+            <p className="text-xs text-red-300">
+              Completa los datos de la factura antes de comparar tarifas
+            </p>
+          )}
+        </div>
       </form>
     </div>
   );
