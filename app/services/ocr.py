@@ -182,7 +182,21 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
         candidate = re.sub(r"\s{2,}", " ", candidate)
         return candidate.strip(" :,-\t\r\n")
 
+    def _is_address_candidate(line: str) -> bool:
+        if not line:
+            return False
+        text = line.lower()
+        if any(k in text for k in ["cups", "dni", "nif", "cif", "factura", "importe", "potencia"]):
+            return False
+        if len(line.strip()) < 6:
+            return False
+        # Requiere letras y algun numero (tipico de direcciones)
+        has_letter = re.search(r"[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]", line)
+        has_number = re.search(r"\d", line)
+        return bool(has_letter and has_number)
+
     titular = None
+    name_line_index = None
 
     if is_image:
         # Tratamiento especial para imagenes sin estructura
@@ -195,15 +209,24 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
                 continue
             filtered_lines.append(ln)
 
-        # Buscar nombre contextual: linea anterior a un DNI
+        # Buscar nombre contextual: lineas alrededor de un DNI
         dni_pattern = re.compile(r"\b\d{8}[A-Z]\b", re.IGNORECASE)
-        for idx, ln in enumerate(filtered_lines):
+        dni_indices_raw = []
+        for idx, ln in enumerate(raw_lines):
             if dni_pattern.search(ln.replace(" ", "")):
-                if idx > 0:
-                    candidate = _clean_name(filtered_lines[idx - 1])
+                dni_indices_raw.append(idx)
+        for idx in dni_indices_raw:
+            found = False
+            for back in range(1, 4):
+                if idx - back >= 0:
+                    candidate = _clean_name(raw_lines[idx - back])
                     if _is_valid_name(candidate):
                         titular = candidate
+                        name_line_index = idx - back
+                        found = True
                         break
+            if found:
+                break
 
         # Sin nombre fiable -> None
 
@@ -236,6 +259,15 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
         if match_dir:
             result["direccion"] = match_dir.group(1).strip()
             break
+    # Fallback direccion: si imagen y tenemos linea de nombre, tomar siguientes 1-2 lineas como direccion si parecen direccion
+    if is_image and result["direccion"] is None and name_line_index is not None:
+        raw_lines = [ln.strip() for ln in full_text.splitlines() if ln.strip()]
+        for forward in range(1, 3):
+            if name_line_index + forward < len(raw_lines):
+                candidate_dir = raw_lines[name_line_index + forward]
+                if _is_address_candidate(candidate_dir):
+                    result["direccion"] = candidate_dir.strip()
+                    break
 
     # 8. Telefono (9 digitos, con o sin separadores)
     match_tel = re.search(
@@ -244,8 +276,13 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
         re.IGNORECASE,
     )
     if match_tel:
-        result["telefono"] = re.sub(r"[.\s\-]", "", match_tel.group(1))
-        detected["telefono"] = True
+        telefono = re.sub(r"[.\s\-]", "", match_tel.group(1))
+        # Excluir numeros de atencion (800/900/901/902/905)
+        if not telefono.startswith(("800", "900", "901", "902", "905")):
+            result["telefono"] = telefono
+            detected["telefono"] = True
+        else:
+            detected["telefono"] = False
     else:
         detected["telefono"] = False
 
