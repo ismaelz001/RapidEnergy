@@ -76,11 +76,7 @@ async def upload_factura(file: UploadFile, db: Session = Depends(get_db)):
     from app.db.models import Cliente
 
     cups_extraido = ocr_data.get("cups")
-    nombre_ocr = ocr_data.get("nombre") or ocr_data.get("titular")
-    email_ocr = ocr_data.get("email")
-    dni_ocr = ocr_data.get("dni")
-    direccion_ocr = ocr_data.get("direccion")
-    telefono_ocr = ocr_data.get("telefono")
+    # Solo usamos CUPS para identificar/crear cliente. Campos personales se dejan nulos.
     cliente_db = None
 
     if cups_extraido:
@@ -90,11 +86,6 @@ async def upload_factura(file: UploadFile, db: Session = Depends(get_db)):
             # Crear nuevo cliente si no existe, rellenando datos OCR
             cliente_db = Cliente(
                 cups=cups_extraido,
-                nombre=nombre_ocr,
-                email=email_ocr,
-                dni=dni_ocr,
-                direccion=direccion_ocr,
-                telefono=telefono_ocr,
                 origen="factura_upload",
                 estado="lead",
             )
@@ -104,11 +95,6 @@ async def upload_factura(file: UploadFile, db: Session = Depends(get_db)):
     else:
         # Caso sin CUPS: Crear cliente 'lead' sin CUPS
         cliente_db = Cliente(
-            nombre=nombre_ocr,
-            email=email_ocr,
-            dni=dni_ocr,
-            direccion=direccion_ocr,
-            telefono=telefono_ocr,
             origen="factura_upload_no_cups",
             estado="lead",
         )
