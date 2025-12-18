@@ -250,36 +250,20 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
             return False
         if re.search(r"\d", cleaned):
             return False
+        # Extended keywords filter as requested
         keywords = [
-            "dni",
-            "cif",
-            "nif",
-            "direccion",
-            "dirección",
-            "telefono",
-            "teléfono",
-            "email",
-            "cups",
-            "importe",
-            "factura",
-            "comercializadora",
-            "regulada",
-            "grupo",
-            "s.a",
-            "sl",
-            "naturgy",
-            "endesa",
-            "iberdrola",
-            "repsol",
-            "energia",
-            "energy",
-            "gas",
-            "power",
+            "dni", "cif", "nif", "direccion", "dirección", "telefono", "teléfono", "email", "cups", 
+            "importe", "factura", "comercializadora", "regulada", "grupo", "s.a", "sl", 
+            "naturgy", "endesa", "iberdrola", "repsol", "energia", "energy", "gas", "power",
+            # New technical keywords
+            "consumo", "periodo", "punta", "valle", "kwh", "kw", "acumulado", "estimado", "media", "potencia"
         ]
         if any(k.lower() in cleaned.lower() for k in keywords):
             return False
         if len(cleaned.split()) < 2:
             return False
+        if len(cleaned.split()) > 6: # Heuristic: Name too long likely noise
+             return False
         return True
 
     def _clean_name(candidate: str) -> str:
@@ -292,7 +276,8 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
         if not line:
             return False
         text = line.lower()
-        if any(k in text for k in ["cups", "dni", "nif", "cif", "factura", "importe", "potencia"]):
+        # Extended address exclusion terms
+        if any(k in text for k in ["cups", "dni", "nif", "cif", "factura", "importe", "potencia", "suministro", "punto de suministro", "contrato"]):
             return False
         if len(line.strip()) < 6:
             return False
@@ -458,8 +443,29 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
         result["bono_social"] = structured.get("bono_social")
         detected["bono_social"] = True
 
+    if result["direccion"]:
+        # Intento simple de extraer provincia de la direccion
+        provincias = [
+            "Álava", "Albacete", "Alicante", "Almería", "Asturias", "Ávila", "Badajoz", "Barcelona", "Burgos", "Cáceres",
+            "Cádiz", "Cantabria", "Castellón", "Ciudad Real", "Córdoba", "Cuenca", "Girona", "Granada", "Guadalajara",
+            "Guipúzcoa", "Huelva", "Huesca", "Illes Balears", "Jaén", "La Rioja", "Las Palmas", "León", "Lleida", "Lugo",
+            "Madrid", "Málaga", "Murcia", "Navarra", "Ourense", "Palencia", "Pontevedra", "Salamanca", "Santa Cruz de Tenerife",
+            "Segovia", "Sevilla", "Soria", "Tarragona", "Teruel", "Toledo", "Valencia", "Valladolid", "Vizcaya", "Zamora", "Zaragoza",
+            "A Coruña", "Ceuta", "Melilla"
+        ]
+        addr_lower = result["direccion"].lower()
+        for prov in provincias:
+            if prov.lower() in addr_lower:
+                result["provincia"] = prov
+                break
+        if "provincia" not in result:
+             result["provincia"] = None
+    else:
+        result["provincia"] = None
+
     result["parsed_fields"] = parsed_fields
     result["detected_por_ocr"] = detected
+
 
     return result
 

@@ -71,18 +71,14 @@ async def upload_factura(file: UploadFile, db: Session = Depends(get_db)):
     import hashlib
     file_hash = hashlib.sha256(file_bytes).hexdigest()
     
-    existing_by_hash = db.query(Factura).filter(Factura.file_hash == file_hash).first()
     if existing_by_hash:
         return {
-            "duplicate": True,
-            "reason": "hash",
-            "existing_factura": {
-                "id": existing_by_hash.id,
-                "cups": existing_by_hash.cups,
-                "numero_factura": existing_by_hash.numero_factura,
-                "filename": existing_by_hash.filename,
-                "created_at": str(existing_by_hash.fecha),  # using date field as proxy for now if created_at not in model
-                "url": f"/facturas/{existing_by_hash.id}"
+            "status": "duplicate",
+            "message": "Esta factura ya fue subida (detectado por hash).",
+            "redirect_url": f"/facturas/{existing_by_hash.id}",
+            "existing_factura": { # Keeping this for debug/advanced use but main UX uses top level keys
+                 "id": existing_by_hash.id,
+                 "cups": existing_by_hash.cups
             }
         }
 
@@ -103,16 +99,9 @@ async def upload_factura(file: UploadFile, db: Session = Depends(get_db)):
         )
         if existing_by_num:
             return {
-                "duplicate": True,
-                "reason": "numero_factura",
-                "existing_factura": {
-                    "id": existing_by_num.id,
-                    "cups": existing_by_num.cups,
-                    "numero_factura": existing_by_num.numero_factura,
-                    "filename": existing_by_num.filename,
-                    "created_at": str(existing_by_num.fecha),
-                    "url": f"/facturas/{existing_by_num.id}"
-                }
+                "status": "duplicate",
+                "message": f"Esta factura ya existe para el CUPS {cups_extraido} con número {num_factura_ocr}.",
+                "redirect_url": f"/facturas/{existing_by_num.id}"
             }
 
     # 3. Logica Upsert Cliente
@@ -124,6 +113,7 @@ async def upload_factura(file: UploadFile, db: Session = Depends(get_db)):
     dni_ocr = ocr_data.get("dni")
     direccion_ocr = ocr_data.get("direccion")
     telefono_ocr = ocr_data.get("telefono")
+    provincia_ocr = ocr_data.get("provincia") # New field
     cliente_db = None
 
     # Fallback dedupe: CUPS + filename (legacy)
@@ -136,16 +126,9 @@ async def upload_factura(file: UploadFile, db: Session = Depends(get_db)):
         )
         if existing_factura:
              return {
-                "duplicate": True,
-                "reason": "cups_filename",
-                "existing_factura": {
-                    "id": existing_factura.id,
-                    "cups": existing_factura.cups,
-                    "numero_factura": existing_factura.numero_factura,
-                    "filename": existing_factura.filename,
-                    "created_at": str(existing_factura.fecha),
-                    "url": f"/facturas/{existing_factura.id}"
-                }
+                "status": "duplicate",
+                "message": "Factura ya existente para este CUPS y nombre de archivo.",
+                "redirect_url": f"/facturas/{existing_factura.id}"
             }
 
     if cups_extraido:
@@ -159,6 +142,7 @@ async def upload_factura(file: UploadFile, db: Session = Depends(get_db)):
                 email=email_ocr,
                 dni=dni_ocr,
                 direccion=direccion_ocr,
+                provincia=provincia_ocr,
                 telefono=telefono_ocr,
                 origen="factura_upload",
                 estado="lead",
@@ -187,6 +171,9 @@ async def upload_factura(file: UploadFile, db: Session = Depends(get_db)):
             updated = True
         if not cliente_db.direccion and direccion_ocr:
             cliente_db.direccion = direccion_ocr
+            updated = True
+        if not cliente_db.provincia and provincia_ocr:
+            cliente_db.provincia = provincia_ocr
             updated = True
         if not cliente_db.telefono and telefono_ocr:
             cliente_db.telefono = telefono_ocr
