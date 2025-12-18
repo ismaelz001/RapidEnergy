@@ -32,7 +32,14 @@ class Factura(Base):
     consumo_kwh = Column(Float, nullable=True)
     importe = Column(Float, nullable=True)
     fecha = Column(String, nullable=True)
+    fecha_inicio = Column(String, nullable=True)
+    fecha_fin = Column(String, nullable=True)
     raw_data = Column(Text, nullable=True)
+    
+    # Deduplicacion
+    file_hash = Column(String, unique=True, index=True, nullable=True)
+    numero_factura = Column(String, nullable=True)
+
 
     # Potencia
     potencia_p1_kw = Column(Float, nullable=True)

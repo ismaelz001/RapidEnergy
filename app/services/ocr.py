@@ -228,6 +228,20 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
     if structured.get("fecha_fin_consumo"):
         result["fecha_fin_consumo"] = structured.get("fecha_fin_consumo")
 
+    # Extraer Numero de Factura
+    num_fact_match = re.search(
+        r"(?:n[º°].?|num\.?|numero|número)\s*(?:de)?\s*factura\s*[:\-]?\s*([A-Z0-9\-\/]{3,30})", 
+        full_text, 
+        re.IGNORECASE
+    )
+    if num_fact_match:
+        result["numero_factura"] = num_fact_match.group(1).strip()
+    else:
+        # Fallback simple: busca "Factura: XXXXX"
+        simple_match = re.search(r"factura\s*[:]\s*([A-Z0-9\-\/]{3,30})", full_text, re.IGNORECASE)
+        result["numero_factura"] = simple_match.group(1).strip() if simple_match else None
+
+
     def _is_valid_name(candidate: str) -> bool:
         if not candidate:
             return False
@@ -289,33 +303,31 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
     titular = None
     name_line_index = None
 
-    if is_image:
-        raw_lines = [ln.strip() for ln in full_text.splitlines() if ln.strip()]
-        label_keywords = {"titular", "dni", "cif", "nif", "telefono", "teléfono", "email", "direccion", "dirección", "cups"}
-        filtered_lines = []
-        for ln in raw_lines:
-            ln_stripped = ln.strip(" :.-").lower()
-            if ln_stripped in label_keywords:
-                continue
-            filtered_lines.append(ln)
-
-        dni_pattern = re.compile(r"\b\d{8}[A-Z]\b", re.IGNORECASE)
-        dni_indices_raw = []
-        for idx, ln in enumerate(raw_lines):
-            if dni_pattern.search(ln.replace(" ", "")):
-                dni_indices_raw.append(idx)
-        for idx in dni_indices_raw:
-            found = False
-            for back in range(1, 4):
-                if idx - back >= 0:
-                    candidate = _clean_name(raw_lines[idx - back])
-                    if _is_valid_name(candidate):
-                        titular = candidate
-                        name_line_index = idx - back
-                        found = True
-                        break
-            if found:
-                break
+    # Logic to find Titular near DNI (Heuristic)
+    # Applied to both Image and PDF text to improve coverage
+    raw_lines = [ln.strip() for ln in full_text.splitlines() if ln.strip()]
+    label_keywords = {"titular", "dni", "cif", "nif", "telefono", "teléfono", "email", "direccion", "dirección", "cups"}
+    filtered_lines = []
+    
+    # Pre-filter lines just in case (though we use raw_lines for scanning)
+    dni_pattern = re.compile(r"\b\d{8}[A-Z]\b", re.IGNORECASE)
+    dni_indices_raw = []
+    for idx, ln in enumerate(raw_lines):
+        if dni_pattern.search(ln.replace(" ", "")):
+            dni_indices_raw.append(idx)
+            
+    for idx in dni_indices_raw:
+        found = False
+        for back in range(1, 4):
+            if idx - back >= 0:
+                candidate = _clean_name(raw_lines[idx - back])
+                if _is_valid_name(candidate):
+                    titular = candidate
+                    name_line_index = idx - back
+                    found = True
+                    break
+        if found:
+            break
 
     if not titular:
         titular_block_match = re.search(
@@ -334,8 +346,9 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
     if match_dni:
         result["dni"] = re.sub(r"\s+", "", match_dni.group(1)).strip()
 
+    # Updated regex to handle "Dirección" with accent
     dir_patterns = [
-        r"direccion(?:\s+de\s+suministro)?\s*[:\-]?\s*([A-Za-z0-9ÁÉÍÓÚÜÑáéíóúüñ ,.'´`-]{5,120})",
+        r"direcci[oó]n(?:\s+de\s+suministro)?\s*[:\-]?\s*([A-Za-z0-9ÁÉÍÓÚÜÑáéíóúüñ ,.'´`-]{5,120})",
         r"domicilio\s*[:\-]?\s*([A-Za-z0-9ÁÉÍÓÚÜÑáéíóúüñ ,.'´`-]{5,120})",
     ]
     for pattern in dir_patterns:
@@ -343,7 +356,10 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
         if match_dir:
             result["direccion"] = match_dir.group(1).strip()
             break
-    if is_image and result["direccion"] is None and name_line_index is not None:
+            
+    # Enable heuristic search for Address/Name for both Image and PDF (text)
+    # The 'is_image' check was preventing this logic for digital PDFs where pypdf returns lines.
+    if result["direccion"] is None and name_line_index is not None:
         raw_lines = [ln.strip() for ln in full_text.splitlines() if ln.strip()]
         for forward in range(1, 3):
             if name_line_index + forward < len(raw_lines):
