@@ -75,9 +75,15 @@ async def upload_factura(file: UploadFile, db: Session = Depends(get_db)):
     if existing_by_hash:
         return {
             "duplicate": True,
-            "existing_factura_id": existing_by_hash.id,
-            "message": "Esta factura ya estaba subida (detectado por hash).",
-            "existing_factura_url": f"/facturas/{existing_by_hash.id}"
+            "reason": "hash",
+            "existing_factura": {
+                "id": existing_by_hash.id,
+                "cups": existing_by_hash.cups,
+                "numero_factura": existing_by_hash.numero_factura,
+                "filename": existing_by_hash.filename,
+                "created_at": str(existing_by_hash.fecha),  # using date field as proxy for now if created_at not in model
+                "url": f"/facturas/{existing_by_hash.id}"
+            }
         }
 
     # 2. OCR y extraccion de datos
@@ -98,9 +104,15 @@ async def upload_factura(file: UploadFile, db: Session = Depends(get_db)):
         if existing_by_num:
             return {
                 "duplicate": True,
-                "existing_factura_id": existing_by_num.id,
-                "message": f"Esta factura ya existe para el CUPS {cups_extraido} con número {num_factura_ocr}.",
-                "existing_factura_url": f"/facturas/{existing_by_num.id}"
+                "reason": "numero_factura",
+                "existing_factura": {
+                    "id": existing_by_num.id,
+                    "cups": existing_by_num.cups,
+                    "numero_factura": existing_by_num.numero_factura,
+                    "filename": existing_by_num.filename,
+                    "created_at": str(existing_by_num.fecha),
+                    "url": f"/facturas/{existing_by_num.id}"
+                }
             }
 
     # 3. Logica Upsert Cliente
@@ -125,9 +137,15 @@ async def upload_factura(file: UploadFile, db: Session = Depends(get_db)):
         if existing_factura:
              return {
                 "duplicate": True,
-                "existing_factura_id": existing_factura.id,
-                "message": "Factura ya existente para este CUPS y nombre de archivo (fallback).",
-                "existing_factura_url": f"/facturas/{existing_factura.id}"
+                "reason": "cups_filename",
+                "existing_factura": {
+                    "id": existing_factura.id,
+                    "cups": existing_factura.cups,
+                    "numero_factura": existing_factura.numero_factura,
+                    "filename": existing_factura.filename,
+                    "created_at": str(existing_factura.fecha),
+                    "url": f"/facturas/{existing_factura.id}"
+                }
             }
 
     if cups_extraido:
