@@ -71,6 +71,7 @@ async def upload_factura(file: UploadFile, db: Session = Depends(get_db)):
     import hashlib
     file_hash = hashlib.sha256(file_bytes).hexdigest()
     
+    existing_by_hash = db.query(Factura).filter(Factura.file_hash == file_hash).first()
     if existing_by_hash:
         return {
             "status": "duplicate",
