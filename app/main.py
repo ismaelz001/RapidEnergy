@@ -16,10 +16,17 @@ app = FastAPI(
 # Inicializar Base de Datos (crear tablas)
 Base.metadata.create_all(bind=engine)
 
-# CORS (permitimos requests desde Vercel)
+# CORS Configuration
+origins = [
+    "http://localhost:3000",
+    "https://energy.rodorte.com",
+    "https://www.energy.rodorte.com",
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=origins,
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
