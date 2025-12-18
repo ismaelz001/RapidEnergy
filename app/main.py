@@ -17,15 +17,17 @@ app = FastAPI(
 Base.metadata.create_all(bind=engine)
 
 # CORS Configuration
-origins = [
-    "http://localhost:3000",
-    "https://energy.rodorte.com",
-    "https://www.energy.rodorte.com",
-]
+# CORS Configuration
+# Usamos regex para permitir Vercel previews y cualquier subdominio
+# allow_origin_regex permite:
+# - http://localhost:3000 (local)
+# - https://*.vercel.app (previews)
+# - https://*.rodorte.com (producción)
+# - De hecho, permitimos CUALQUIER https:// para máxima compatibilidad si es una API pública.
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origin_regex=r"https://.*|http://localhost:\d+",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
