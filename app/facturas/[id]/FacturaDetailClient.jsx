@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { updateFactura } from "@/lib/apiClient";
+import { updateFactura, compareFactura } from "@/lib/apiClient";
 
 const numberFields = [
   "potencia_p1_kw",
@@ -52,6 +52,10 @@ export default function FacturaDetailClient({ factura }) {
   });
   const [status, setStatus] = useState("idle");
   const [message, setMessage] = useState("");
+  const [compareStatus, setCompareStatus] = useState("idle"); // idle | loading | success | error
+  const [compareError, setCompareError] = useState("");
+  const [offers, setOffers] = useState(null);
+  const [selectedOffer, setSelectedOffer] = useState(null);
 
   const isComplete = useMemo(() => {
     return requiredFields.every((field) => form[field] !== "" && form[field] !== null && form[field] !== undefined);
@@ -86,6 +90,24 @@ export default function FacturaDetailClient({ factura }) {
       setStatus("error");
       setMessage("No se pudo guardar la factura");
     }
+  };
+
+  const handleCompare = async () => {
+    setCompareStatus("loading");
+    setCompareError("");
+    setOffers(null);
+    try {
+      const result = await compareFactura(factura.id);
+      setOffers(result);
+      setCompareStatus("success");
+    } catch (err) {
+      setCompareStatus("error");
+      setCompareError(err.message || "Error al generar ofertas");
+    }
+  };
+
+  const handleSelectOffer = (offerIndex) => {
+    setSelectedOffer(offerIndex);
   };
 
   return (
@@ -205,27 +227,130 @@ export default function FacturaDetailClient({ factura }) {
           </button>
         </div>
 
-        <div className="flex flex-col gap-2 rounded-2xl border border-slate-800 bg-slate-900/60 p-4">
+        {/* Sección de Comparar Tarifas */}
+        <div className="flex flex-col gap-4 rounded-2xl border border-slate-800 bg-slate-900/60 p-4">
           <div className="flex items-center justify-between">
             <div className="flex flex-col">
               <span className="text-sm font-semibold">Comparar tarifas</span>
               <span className="text-xs text-slate-400">
-                Completa los datos de la factura antes de comparar tarifas.
+                {!isComplete
+                  ? "Completa los datos de la factura antes de comparar tarifas."
+                  : "Genera 3 ofertas personalizadas para esta factura."}
               </span>
             </div>
             <button
               type="button"
-              className="btn-primary bg-slate-800 hover:bg-slate-700"
-              disabled={!isComplete}
-              title={!isComplete ? "Completa los datos de la factura antes de comparar tarifas" : "Listo para comparar"}
+              className="btn-primary bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-700 disabled:cursor-not-allowed"
+              disabled={!isComplete || compareStatus === "loading"}
+              onClick={handleCompare}
+              title={!isComplete ? "Completa los datos de la factura antes de comparar tarifas" : "Generar ofertas"}
             >
-              Comparar
+              {compareStatus === "loading" ? "Generando..." : "Comparar"}
             </button>
           </div>
+
           {!isComplete && (
             <p className="text-xs text-red-300">
               Completa los datos de la factura antes de comparar tarifas
             </p>
+          )}
+
+          {compareError && (
+            <div className="text-xs text-red-400 bg-red-950/30 border border-red-800 rounded-lg p-3">
+              {compareError}
+            </div>
+          )}
+
+          {/* Ofertas generadas */}
+          {offers && offers.offers && (
+            <div className="flex flex-col gap-4 mt-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-semibold text-emerald-400">
+                  Ofertas disponibles
+                </h3>
+                <span className="text-xs text-slate-400">
+                  Factura actual: {offers.current_total?.toFixed(2) || "0.00"} €
+                </span>
+              </div>
+
+              <div className="grid gap-3 md:grid-cols-3">
+                {offers.offers.map((offer, idx) => (
+                  <div
+                    key={idx}
+                    className={`relative flex flex-col gap-2 rounded-xl border p-4 transition-all ${
+                      selectedOffer === idx
+                        ? "border-emerald-500 bg-emerald-950/30"
+                        : "border-slate-700 bg-slate-900/50 hover:border-slate-600"
+                    }`}
+                  >
+                    {/* Tag */}
+                    {offer.tag === "best_saving" && (
+                      <span className="absolute -top-2 -right-2 rounded-full bg-emerald-500 px-2 py-1 text-[10px] font-bold uppercase tracking-wide">
+                        Mejor ahorro
+                      </span>
+                    )}
+                    {offer.tag === "balanced" && (
+                      <span className="absolute -top-2 -right-2 rounded-full bg-blue-500 px-2 py-1 text-[10px] font-bold uppercase tracking-wide">
+                        Equilibrado
+                      </span>
+                    )}
+                    {offer.tag === "best_commission" && (
+                      <span className="absolute -top-2 -right-2 rounded-full bg-purple-500 px-2 py-1 text-[10px] font-bold uppercase tracking-wide">
+                        Top comisión
+                      </span>
+                    )}
+
+                    <div className="flex flex-col gap-1">
+                      <h4 className="text-sm font-semibold text-slate-100">{offer.provider}</h4>
+                      <p className="text-xs text-slate-400">{offer.plan_name}</p>
+                    </div>
+
+                    <div className="flex flex-col gap-1 border-t border-slate-700 pt-2 mt-2">
+                      <div className="flex items-baseline justify-between">
+                        <span className="text-xs text-slate-400">Nuevo total:</span>
+                        <span className="text-base font-bold text-slate-100">
+                          {offer.estimated_total?.toFixed(2)} €
+                        </span>
+                      </div>
+                      <div className="flex items-baseline justify-between">
+                        <span className="text-xs text-emerald-400">Ahorro:</span>
+                        <span className="text-sm font-semibold text-emerald-400">
+                          -{offer.saving_amount?.toFixed(2)} € ({offer.saving_percent}%)
+                        </span>
+                      </div>
+                      <div className="flex items-baseline justify-between">
+                        <span className="text-xs text-purple-400">Comisión:</span>
+                        <span className="text-sm font-semibold text-purple-400">
+                          +{offer.commission?.toFixed(2)} €
+                        </span>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      className={`mt-2 rounded-lg px-3 py-2 text-xs font-medium transition-all ${
+                        selectedOffer === idx
+                          ? "bg-emerald-600 text-white"
+                          : "bg-slate-800 text-slate-300 hover:bg-slate-700"
+                      }`}
+                      onClick={() => handleSelectOffer(idx)}
+                    >
+                      {selectedOffer === idx ? "✓ Seleccionada" : "Seleccionar"}
+                    </button>
+                  </div>
+                ))}
+              </div>
+
+              {selectedOffer !== null && (
+                <div className="flex items-center gap-2 text-xs text-emerald-400 bg-emerald-950/30 border border-emerald-800 rounded-lg p-3">
+                  <span>✓</span>
+                  <span>
+                    Has seleccionado <strong>{offers.offers[selectedOffer].provider}</strong>. 
+                    (La selección aún no se persiste en BD, solo estado local)
+                  </span>
+                </div>
+              )}
+            </div>
           )}
         </div>
       </form>

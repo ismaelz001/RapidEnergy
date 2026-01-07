@@ -1,43 +1,105 @@
+"use client";
+
+import { useState } from 'react';
 import Link from "next/link";
+import Button from '../components/Button';
+import Badge from '../components/Badge';
 
 export default function DashboardPage() {
+  const [showKPIs, setShowKPIs] = useState(false);
+
+  // Mock data
+  const casosEnCurso = [
+    {
+      id: 123,
+      cliente: 'López',
+      estado: 'pendiente',
+      action: 'Continuar',
+      href: '/wizard/123/step-2-validar'
+    },
+    {
+      id: 124,
+      cliente: 'Martínez',
+      estado: 'seleccionada',
+      action: 'Generar presupuesto',
+      href: '/wizard/124/step-3-comparar'
+    }
+  ];
+
+  const kpis = [
+    { label: 'Facturas', value: '12' },
+    { label: 'Ahorro', value: '2.340€' },
+    { label: 'Comisión', value: '156€' }
+  ];
+
   return (
-    <div className="flex flex-col gap-6 py-4">
-      <h1 className="text-2xl font-semibold">Panel general</h1>
-      <div className="grid gap-4 md:grid-cols-3">
-        <div className="card">
-          <h2 className="text-sm font-semibold">Facturas procesadas</h2>
-          <p className="mt-2 text-3xl font-bold">--</p>
-          <p className="mt-1 text-xs text-slate-400">
-            Este KPI se conectará a la API del backend (FastAPI + Neon).
-          </p>
-        </div>
-        <div className="card">
-          <h2 className="text-sm font-semibold">Clientes activos</h2>
-          <p className="mt-2 text-3xl font-bold">--</p>
-          <p className="mt-1 text-xs text-slate-400">
-            Placeholder para métricas de clientes / intermediarios.
-          </p>
-        </div>
-        <div className="card">
-          <h2 className="text-sm font-semibold">Ahorro estimado</h2>
-          <p className="mt-2 text-3xl font-bold">-- €</p>
-          <p className="mt-1 text-xs text-slate-400">
-            Más adelante podremos estimar el ahorro total de todas las ofertas.
-          </p>
-        </div>
+    <div className="flex flex-col gap-6 py-8">
+      {/* CTA Principal */}
+      <div className="flex justify-center">
+        <Link href="/wizard/new/step-1-factura">
+          <Button variant="primary" className="text-lg px-12 py-4">
+            NUEVA FACTURA
+          </Button>
+        </Link>
       </div>
 
-      <div className="card">
-        <h2 className="mb-2 text-sm font-semibold">Acciones rápidas</h2>
-        <div className="flex flex-wrap gap-3 text-xs">
-          <Link href="/facturas/upload" className="btn-primary">
-            Subir nueva factura
-          </Link>
-          <Link href="/facturas" className="btn-primary bg-slate-800 hover:bg-slate-700">
-            Ver listado de facturas
-          </Link>
-        </div>
+      {/* Casos en curso */}
+      <div>
+        <h2 className="text-xl font-bold text-gris-texto mb-4">
+          Casos en curso
+        </h2>
+        {casosEnCurso.length > 0 ? (
+          <div className="space-y-3">
+            {casosEnCurso.map((caso) => (
+              <div key={caso.id} className="card flex items-center justify-between">
+                <div className="flex-1">
+                  <div className="flex items-center gap-3">
+                    <span className="font-semibold text-gris-texto">
+                      Factura #{caso.id} - Cliente: {caso.cliente}
+                    </span>
+                    <Badge variant={caso.estado}>
+                      {caso.estado === 'pendiente' ? 'Validar datos' : 'Oferta seleccionada'}
+                    </Badge>
+                  </div>
+                </div>
+                <Link href={caso.href}>
+                  <Button variant="secondary" className="text-sm">
+                    {caso.action} →
+                  </Button>
+                </Link>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="card text-center text-gris-secundario">
+            <p>No tienes casos en curso. Sube una factura para empezar.</p>
+          </div>
+        )}
+      </div>
+
+      {/* Resumen (colapsable) */}
+      <div>
+        <button
+          onClick={() => setShowKPIs(!showKPIs)}
+          className="text-sm text-azul-control hover:underline mb-3"
+        >
+          {showKPIs ? 'Ocultar resumen' : 'Mostrar resumen'}
+        </button>
+
+        {showKPIs && (
+          <div className="grid grid-cols-3 gap-4">
+            {kpis.map((kpi) => (
+              <div key={kpi.label} className="card text-center">
+                <div className="text-3xl font-bold text-gris-texto mb-1">
+                  {kpi.value}
+                </div>
+                <div className="text-sm text-gris-secundario">
+                  {kpi.label}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

@@ -5,3 +5,10 @@ files/
 google_creds.json
 debug_ocr_creds.py
 *.log
+node_modules/
+.next/
+dist/
+build/
+.DS_Store
+.vscode/
+facturas/

@@ -282,16 +282,32 @@ def comparar_factura(factura_id: int, db: Session = Depends(get_db)):
     if not factura:
         raise HTTPException(status_code=404, detail="Factura no encontrada")
 
+    # Validar que la factura esté completa (opcional: permitir comparar sin validación estricta)
     es_valida, errors = validate_factura_completitud(factura)
-    if not es_valida or factura.estado_factura != "lista_para_comparar":
+    if not es_valida:
         raise HTTPException(
             status_code=400,
             detail={
-                "message": "La factura no está lista para comparar",
+                "message": "La factura no tiene datos suficientes para comparar. Completa los campos requeridos.",
                 "estado_factura": factura.estado_factura,
                 "errors": errors,
             },
         )
+    
+    # Validar que existe total_factura
+    if factura.total_factura is None or factura.total_factura <= 0:
+        raise HTTPException(
+            status_code=400,
+            detail="La factura no tiene un total válido para generar ofertas"
+        )
 
-    # Placeholder hasta implementar comparador real
-    return {"message": "Comparación no implementada todavía", "estado_factura": factura.estado_factura}
+    # Importar y ejecutar comparador
+    from app.services.comparador import compare_factura
+    
+    try:
+        result = compare_factura(factura)
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error generando ofertas: {str(e)}")
