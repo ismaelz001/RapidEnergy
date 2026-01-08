@@ -3,10 +3,15 @@ Tariff comparison service for 2.0TD (MVP).
 """
 
 from datetime import date, datetime
+import json
+import logging
 import re
 from typing import Dict, Any, Optional
 
-from sqlalchemy import text
+from sqlalchemy import inspect, text
+
+logger = logging.getLogger(__name__)
+_TABLE_COLUMNS_CACHE: Dict[str, Dict[str, Any]] = {}
 
 
 def _to_float(value) -> Optional[float]:
@@ -116,6 +121,183 @@ def _resolve_energy_prices(mapping):
         return "3p", (p1_price, p2_price, p3_price)
 
     return None, None
+
+
+def _get_table_columns(db, table_name: str) -> Dict[str, Dict[str, Any]]:
+    if table_name in _TABLE_COLUMNS_CACHE:
+        return _TABLE_COLUMNS_CACHE[table_name]
+
+    columns: Dict[str, Dict[str, Any]] = {}
+
+    try:
+        result = db.execute(
+            text(
+                "SELECT column_name, data_type, is_nullable, column_default "
+                "FROM information_schema.columns "
+                "WHERE table_schema = :schema AND table_name = :table"
+            ),
+            {"schema": "public", "table": table_name},
+        )
+        try:
+            rows = result.mappings().all()
+        except AttributeError:
+            rows = [row._mapping for row in result.fetchall()]
+
+        for row in rows:
+            columns[row["column_name"]] = {
+                "data_type": (row.get("data_type") or "").lower(),
+                "is_nullable": row.get("is_nullable") == "YES",
+                "default": row.get("column_default"),
+            }
+    except Exception:
+        columns = {}
+
+    if not columns:
+        try:
+            inspector = inspect(db.get_bind())
+            if table_name in inspector.get_table_names():
+                for col in inspector.get_columns(table_name):
+                    columns[col["name"]] = {
+                        "data_type": (str(col.get("type") or "")).lower(),
+                        "is_nullable": bool(col.get("nullable", True)),
+                        "default": col.get("default"),
+                    }
+        except Exception as exc:
+            logger.warning("Could not inspect table %s: %s", table_name, exc)
+            columns = {}
+
+    _TABLE_COLUMNS_CACHE[table_name] = columns
+    return columns
+
+
+def _missing_required_columns(
+    columns_info: Dict[str, Dict[str, Any]], provided_keys
+) -> list:
+    missing = []
+    for name, info in columns_info.items():
+        if name in provided_keys:
+            continue
+        if info.get("is_nullable") is False and not info.get("default"):
+            missing.append(name)
+    return missing
+
+
+def _build_insert_sql(
+    table_name: str,
+    payload: Dict[str, Any],
+    columns_info: Dict[str, Dict[str, Any]],
+    dialect_name: str,
+) -> str:
+    columns = list(payload.keys())
+    placeholders = []
+    for col in columns:
+        placeholder = f":{col}"
+        if col == "detalle_json" and dialect_name == "postgresql":
+            data_type = (columns_info.get(col) or {}).get("data_type")
+            if data_type in ("json", "jsonb"):
+                placeholder = f":{col}::{data_type}"
+        placeholders.append(placeholder)
+
+    columns_sql = ", ".join(columns)
+    values_sql = ", ".join(placeholders)
+    return f"INSERT INTO {table_name} ({columns_sql}) VALUES ({values_sql})"
+
+
+def _insert_comparativa(db, factura_id: int) -> Optional[int]:
+    columns_info = _get_table_columns(db, "comparativas")
+    if not columns_info:
+        return None
+
+    payload: Dict[str, Any] = {}
+    if "factura_id" in columns_info:
+        payload["factura_id"] = factura_id
+
+    missing = _missing_required_columns(columns_info, payload.keys())
+    if missing:
+        logger.warning(
+            "Comparativas insert skipped, missing required columns: %s",
+            ", ".join(missing),
+        )
+        return None
+
+    dialect_name = db.get_bind().dialect.name
+    if payload:
+        sql = _build_insert_sql("comparativas", payload, columns_info, dialect_name)
+        if "id" in columns_info and dialect_name == "postgresql":
+            sql += " RETURNING id"
+        result = db.execute(text(sql), payload)
+    else:
+        sql = "INSERT INTO comparativas DEFAULT VALUES"
+        if "id" in columns_info and dialect_name == "postgresql":
+            sql += " RETURNING id"
+        result = db.execute(text(sql))
+
+    comparativa_id = None
+    if "id" in columns_info and dialect_name == "postgresql":
+        row = result.fetchone()
+        if row is not None:
+            try:
+                comparativa_id = row._mapping.get("id")
+            except Exception:
+                comparativa_id = row[0]
+
+    return comparativa_id
+
+
+def _insert_ofertas(db, factura_id: int, comparativa_id: Optional[int], offers) -> bool:
+    columns_info = _get_table_columns(db, "ofertas_calculadas")
+    if not columns_info:
+        return False
+
+    required_columns = _missing_required_columns(columns_info, [])
+    dialect_name = db.get_bind().dialect.name
+    inserted = False
+    warned = False
+
+    for offer in offers:
+        payload: Dict[str, Any] = {}
+
+        if "comparativa_id" in columns_info and comparativa_id is not None:
+            payload["comparativa_id"] = comparativa_id
+        if "factura_id" in columns_info:
+            payload["factura_id"] = factura_id
+        if "tarifa_id" in columns_info and offer.get("tarifa_id") is not None:
+            payload["tarifa_id"] = offer.get("tarifa_id")
+        if "total_estimado" in columns_info:
+            payload["total_estimado"] = offer.get("estimated_total")
+        if "ahorro" in columns_info:
+            payload["ahorro"] = offer.get("saving_amount")
+        if "detalle_json" in columns_info:
+            payload["detalle_json"] = json.dumps(offer.get("breakdown", {}))
+
+        missing = [col for col in required_columns if col not in payload]
+        if missing:
+            if not warned:
+                logger.warning(
+                    "Ofertas insert skipped, missing required columns: %s",
+                    ", ".join(missing),
+                )
+                warned = True
+            continue
+
+        sql = _build_insert_sql(
+            "ofertas_calculadas", payload, columns_info, dialect_name
+        )
+        db.execute(text(sql), payload)
+        inserted = True
+
+    return inserted
+
+
+def _persist_results(db, factura_id: int, offers) -> None:
+    try:
+        comparativa_id = _insert_comparativa(db, factura_id)
+        inserted = _insert_ofertas(db, factura_id, comparativa_id, offers)
+        if comparativa_id is not None or inserted:
+            db.commit()
+    except Exception as exc:
+        db.rollback()
+        logger.warning("Comparator persistence failed: %s", exc)
 
 
 def compare_factura(factura, db) -> Dict[str, Any]:
@@ -247,7 +429,7 @@ def compare_factura(factura, db) -> Dict[str, Any]:
 
     offers = completas + parciales
 
-    # TODO: Persist comparativas/ofertas_calculadas once models are wired.
+    _persist_results(db, factura.id, offers)
 
     return {
         "factura_id": factura.id,
