@@ -13,13 +13,25 @@
   --primary-blue: #1E3A8A;
 }
 
-/* Fix autofill colors */
+/* Global Dark Forms */
+input, textarea, select {
+  background-color: #020617;
+  color: #F8FAFC;
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+input::placeholder, textarea::placeholder, select::placeholder {
+  color: #64748B;
+}
+
+/* Fix autofill colors for Chrome/Webkit */
 input:-webkit-autofill,
-input:-webkit-autofill:hover, 
-input:-webkit-autofill:focus {
+textarea:-webkit-autofill,
+select:-webkit-autofill {
   -webkit-text-fill-color: #F8FAFC !important;
   -webkit-box-shadow: 0 0 0px 1000px #020617 inset !important;
-  transition: background-color 5000s ease-in-out 0s;
+  caret-color: #F8FAFC;
+  transition: background-color 9999s ease-in-out 0s;
 }
 
 body {
