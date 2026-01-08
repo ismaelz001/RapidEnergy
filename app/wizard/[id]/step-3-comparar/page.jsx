@@ -73,8 +73,12 @@ export default function Step3ComparerPage({ params }) {
   const maxSaving = offers.length > 0 ? Math.max(...offers.map(o => o.saving_amount)) : 0;
   const bestOffer = offers.find(o => o.saving_amount === maxSaving);
   const totalAnnualSaving = bestOffer ? (bestOffer.saving_amount * 12).toFixed(0) : 0;
+  const isPartialOffer = (offer) => (
+    offer?.tag === 'partial' || offer?.breakdown?.modo_potencia === 'sin_potencia'
+  );
 
   const handleSelectOffer = (offer) => {
+    if (isPartialOffer(offer)) return;
     selectOffer(offer.id);
   };
 
@@ -166,6 +170,7 @@ export default function Step3ComparerPage({ params }) {
                       offer={offer}
                       isSelected={String(selectedOfferId) === String(offer.id)}
                       isRecommended={offer.tag === 'best_saving'}
+                      isPartial={isPartialOffer(offer)}
                       onSelect={() => handleSelectOffer(offer)}
                     />
                   ))}

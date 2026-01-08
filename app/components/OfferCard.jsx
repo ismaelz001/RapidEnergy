@@ -4,8 +4,17 @@ export default function OfferCard({
   offer, 
   isSelected = false, 
   onSelect,
-  isRecommended = false 
+  isRecommended = false,
+  isPartial = false
 }) {
+  const handleSelect = (event) => {
+    if (isPartial) {
+      event.preventDefault();
+      return;
+    }
+    onSelect();
+  };
+
   return (
     <div
       className={`
@@ -15,8 +24,9 @@ export default function OfferCard({
             ? 'border-4 border-azul-control bg-azul-control/5 shadow-lg'
             : 'border border-white/5 bg-[#0F172A] hover:border-azul-control hover:shadow-xl'
         }
+        ${isPartial ? 'opacity-80 cursor-not-allowed' : ''}
       `}
-      onClick={onSelect}
+      onClick={handleSelect}
     >
       {/* Badge recomendado */}
       {isRecommended && (
@@ -29,10 +39,15 @@ export default function OfferCard({
       <div className="mb-4">
         <h4 className="text-lg font-bold text-gris-texto">{offer.provider}</h4>
         <p className="text-sm text-gris-secundario">{offer.plan_name}</p>
-        {(offer?.breakdown?.modo_potencia === 'sin_potencia' || offer?.tag === 'partial') && (
-          <p className="text-xs text-ambar-alerta mt-2">
-            Estimacion parcial (sin potencia)
-          </p>
+        {isPartial && (
+          <>
+            <p className="text-xs text-ambar-alerta mt-2 font-semibold">
+              Estimacion parcial (sin potencia)
+            </p>
+            <p className="text-[11px] text-gris-secundario mt-1">
+              Falta precio de potencia en la tarifa. No se puede comparar total correctamente.
+            </p>
+          </>
         )}
       </div>
 
@@ -70,13 +85,15 @@ export default function OfferCard({
               ? 'bg-azul-control text-white'
               : 'bg-transparent border border-white/10 text-[#F1F5F9] hover:bg-white/5'
           }
+          ${isPartial ? 'opacity-50 cursor-not-allowed hover:bg-transparent' : ''}
         `}
         onClick={(e) => {
           e.stopPropagation();
-          onSelect();
+          handleSelect(e);
         }}
+        disabled={isPartial}
       >
-        {isSelected ? '✓ SELECCIONADA' : 'SELECCIONAR'}
+        {isPartial ? 'NO DISPONIBLE' : isSelected ? '✓ SELECCIONADA' : 'SELECCIONAR'}
       </button>
     </div>
   );
