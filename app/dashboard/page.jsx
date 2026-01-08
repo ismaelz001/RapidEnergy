@@ -1,40 +1,38 @@
 "use client";
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from "next/link";
 import Button from '../components/Button';
 import Badge from '../components/Badge';
+import { listFacturas } from '@/lib/apiClient';
 
 export default function DashboardPage() {
   const [showKPIs, setShowKPIs] = useState(false);
+  const [casos, setCasos] = useState([]);
+  const [loading, setLoading] = useState(true);
 
-  // Mock data con estados reales del CRM
-  const casosEnCurso = [
-    {
-      id: 123,
-      cliente: 'Juan López',
-      estado: 'pendiente_datos',
-      href: '/wizard/123/step-2-validar'
-    },
-    {
-      id: 124,
-      cliente: 'María Martínez',
-      estado: 'lista_para_comparar',
-      href: '/wizard/124/step-3-comparar'
-    },
-    {
-      id: 125,
-      cliente: 'Carlos Ruiz',
-      estado: 'oferta_seleccionada',
-      href: '/wizard/125/step-3-comparar'
-    },
-    {
-      id: 126,
-      cliente: 'Ana Belén',
-      estado: 'presupuesto_generado',
-      href: '/wizard/126/step-3-comparar' // En un caso real iría a ver el PDF
+  useEffect(() => {
+    async function fetchData() {
+      try {
+        const data = await listFacturas();
+        // Mapear facturas de la base de datos al formato de "Casos" del UI
+        const mappedCasos = data.map(f => ({
+          id: f.id,
+          cliente: f.cliente?.nombre || `CUPS: ${f.cups?.slice(-6) || '---'}`,
+          estado: f.estado_factura || 'pendiente_datos',
+          href: f.estado_factura === 'pendiente_datos' 
+            ? `/wizard/${f.id}/step-2-validar` 
+            : `/wizard/${f.id}/step-3-comparar`
+        }));
+        setCasos(mappedCasos);
+      } catch (error) {
+        console.error("Error fetching dashboard data:", error);
+      } finally {
+        setLoading(false);
+      }
     }
-  ];
+    fetchData();
+  }, []);
 
   // Helper para renderizar botón y badge según estado
   const renderEstadoInfo = (caso) => {
@@ -72,10 +70,11 @@ export default function DashboardPage() {
     }
   };
 
+  // KPIs calculados (en una fase posterior esto vendría del backend)
   const kpis = [
-    { label: 'Facturas', value: '12' },
-    { label: 'Ahorro', value: '2.340€' },
-    { label: 'Comisión', value: '156€' }
+    { label: 'Facturas', value: casos.length },
+    { label: 'Ahorro Est.', value: '---' }, // Requiere lógica de ofertas seleccionadas
+    { label: 'Comisión Est.', value: '---' }
   ];
 
   return (
@@ -98,9 +97,14 @@ export default function DashboardPage() {
         <h2 className="text-lg font-bold text-gris-texto px-1">
           Casos en curso (Gestión del CRM)
         </h2>
-        {casosEnCurso.length > 0 ? (
+        
+        {loading ? (
+          <div className="flex justify-center py-12">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-azul-control"></div>
+          </div>
+        ) : casos.length > 0 ? (
           <div className="grid grid-cols-1 gap-3">
-            {casosEnCurso.map((caso) => {
+            {casos.map((caso) => {
               const { badge, actionLabel, variant } = renderEstadoInfo(caso);
               return (
                 <div key={caso.id} className="card flex flex-col md:flex-row items-center justify-between gap-4 py-5 hover:border-azul-control transition-colors group">
@@ -128,8 +132,12 @@ export default function DashboardPage() {
             })}
           </div>
         ) : (
-          <div className="card text-center py-12 text-gris-secundario border-dashed">
-            <p>No hay casos activos. Pulsa en "Nueva Factura" para empezar.</p>
+          <div className="card text-center py-16 bg-white border-dashed border-2 border-gris-secundario/20 rounded-2xl">
+            <div className="text-4xl mb-4 text-gris-secundario/30">📂</div>
+            <p className="font-bold text-gris-texto">No hay casos activos</p>
+            <p className="text-sm text-gris-secundario px-4">
+              Pulsa en "Nueva Factura" para empezar a procesar y ahorrar.
+            </p>
           </div>
         )}
       </div>

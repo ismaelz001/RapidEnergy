@@ -16,8 +16,8 @@ export default async function ClientesPage() {
             Listado de clientes enriquecidos desde facturas y creados manualmente.
           </p>
         </div>
-        <Link href="/facturas/upload" className="btn-primary">
-          + Subir nueva factura
+        <Link href="/wizard/new/step-1-factura" className="btn-primary">
+          + Nueva factura
         </Link>
       </div>
 
