@@ -121,7 +121,7 @@ export default function Step3ComparerPage({ params }) {
                   <Button 
                     variant="secondary" 
                     onClick={handleConfirmRecalculation}
-                    className="bg-white border-ambar-alerta text-ambar-alerta hover:bg-ambar-alerta/5 whitespace-nowrap"
+                    className="bg-transparent border-ambar-alerta text-ambar-alerta hover:bg-ambar-alerta/10 whitespace-nowrap"
                   >
                     Revisar ofertas
                   </Button>
@@ -186,7 +186,7 @@ export default function Step3ComparerPage({ params }) {
                       </button>
                       
                       {showCommission && (
-                        <div className="bg-white px-3 py-1 rounded border border-gris-secundario shadow-sm">
+                        <div className="bg-[#0B1220] px-3 py-1 rounded border border-white/10 shadow-sm">
                           <span className="text-xs text-gris-secundario mr-2">Tu comisión estimada:</span>
                           <span className="font-bold text-azul-control">{selectedOffer.commission.toFixed(2)}€</span>
                         </div>
@@ -202,8 +202,8 @@ export default function Step3ComparerPage({ params }) {
 
       {/* Modal de Éxito */}
       {showSuccessModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl p-8 max-w-md w-full shadow-2xl transform scale-100 transition-all">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+          <div className="bg-[#0F172A] border border-white/10 rounded-2xl p-8 max-w-md w-full shadow-2xl transform scale-100 transition-all">
             <div className="text-center">
               <div className="w-16 h-16 bg-verde-ahorro/10 rounded-full flex items-center justify-center mx-auto mb-4">
                 <span className="text-3xl">🎉</span>
@@ -215,7 +215,7 @@ export default function Step3ComparerPage({ params }) {
                 El PDF se ha descargado correctamente y se ha enviado una copia a tu email.
               </p>
               
-              <div className="bg-gris-fondo p-4 rounded-xl mb-6 text-left">
+              <div className="bg-white/5 p-4 rounded-xl mb-6 text-left">
                 <p className="text-sm font-semibold text-gris-texto mb-1">Resumen:</p>
                 <div className="flex justify-between text-sm">
                   <span>Ahorro anual:</span>

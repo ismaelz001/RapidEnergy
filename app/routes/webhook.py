@@ -62,10 +62,22 @@ def validate_factura_completitud(factura: Factura):
     return len(errors) == 0, errors
 
 
+def normalize_cups(cups: str) -> str:
+    """Sanitiza el CUPS: trim, uppercase, sin espacios."""
+    if not cups:
+        return None
+    return cups.strip().upper().replace(" ", "")
+
+
 @router.post("/upload")
 async def upload_factura(file: UploadFile, db: Session = Depends(get_db)):
+    # --- LOGS DE DIAGNÓSTICO (OBJETIVO 1) ---
+    print(f"\n🚀 [UPLOAD] Recibiendo archivo: {file.filename}")
+    print(f"📁 Tipo: {file.content_type}")
+    
     # 1. Leer el archivo
     file_bytes = await file.read()
+    print(f"📊 Tamaño: {len(file_bytes)} bytes")
     
     # --- DEDUPLICACION POR HASH ---
     import hashlib
@@ -73,24 +85,56 @@ async def upload_factura(file: UploadFile, db: Session = Depends(get_db)):
     
     existing_by_hash = db.query(Factura).filter(Factura.file_hash == file_hash).first()
     if existing_by_hash:
-        return {
-            "status": "duplicate",
-            "message": "Esta factura ya fue subida (detectado por hash).",
-            "redirect_url": f"/facturas/{existing_by_hash.id}",
-            "existing_factura": { # Keeping this for debug/advanced use but main UX uses top level keys
-                 "id": existing_by_hash.id,
-                 "cups": existing_by_hash.cups
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "status": "duplicate",
+                "message": "Esta factura ya fue subida anteriormente (detectado por archivo idéntico).",
+                "id": existing_by_hash.id
             }
-        }
+        )
 
     # 2. OCR y extraccion de datos
     from app.services.ocr import extract_data_from_pdf
     ocr_data = extract_data_from_pdf(file_bytes)
     
-    # --- DEDUPLICACION POR NUMERO FACTURA ---
-    cups_extraido = ocr_data.get("cups")
-    num_factura_ocr = ocr_data.get("numero_factura")
+    # --- LOGS DE DEBUG QA (TEST_MODE) ---
+    import os
+    if os.getenv("TEST_MODE") == "true":
+        print(f"\n--- [DEBUG OCR] ---")
+        print(f"Archivo: {file.filename}")
+        print(f"Hash: {file_hash}")
+        print(f"CUPS Detectado: {ocr_data.get('cups')}")
+        print(f"Total Detectado: {ocr_data.get('total_factura') or ocr_data.get('importe')}")
+        print(f"Cliente Detectado: {ocr_data.get('titular') or ocr_data.get('cliente')}")
+        print(f"-------------------\n")
     
+    # --- NORMALIZACIÓN Y DEDUPLICACIÓN TRI-FACTOR ---
+    cups_extraido = normalize_cups(ocr_data.get("cups"))
+    fecha_ocr = ocr_data.get("fecha")
+    total_ocr = ocr_data.get("total_factura") or ocr_data.get("importe")
+    
+    if cups_extraido and fecha_ocr and total_ocr:
+        # Buscamos duplicado exacto por datos
+        duplicate = (
+            db.query(Factura)
+            .filter(Factura.cups == cups_extraido)
+            .filter(Factura.fecha == fecha_ocr)
+            .filter(Factura.total_factura == total_ocr)
+            .first()
+        )
+        if duplicate:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "status": "conflict",
+                    "message": f"Factura duplicada detectada para el CUPS {cups_extraido} en la fecha {fecha_ocr}.",
+                    "id": duplicate.id
+                }
+            )
+
+    # --- DEDUPLICACION POR NUMERO FACTURA (Extra check) ---
+    num_factura_ocr = ocr_data.get("numero_factura")
     if cups_extraido and num_factura_ocr:
         existing_by_num = (
             db.query(Factura)
@@ -99,11 +143,14 @@ async def upload_factura(file: UploadFile, db: Session = Depends(get_db)):
             .first()
         )
         if existing_by_num:
-            return {
-                "status": "duplicate",
-                "message": f"Esta factura ya existe para el CUPS {cups_extraido} con número {num_factura_ocr}.",
-                "redirect_url": f"/facturas/{existing_by_num.id}"
-            }
+             raise HTTPException(
+                status_code=409,
+                detail={
+                    "status": "conflict",
+                    "message": f"Ya existe una factura con número {num_factura_ocr} para este CUPS.",
+                    "id": existing_by_num.id
+                }
+            )
 
     # 3. Logica Upsert Cliente
     from app.db.models import Cliente
@@ -133,7 +180,7 @@ async def upload_factura(file: UploadFile, db: Session = Depends(get_db)):
             }
 
     if cups_extraido:
-        # Buscar cliente existente por CUPS
+        # Buscar cliente existente por CUPS (YA NORMALIZADO)
         cliente_db = db.query(Cliente).filter(Cliente.cups == cups_extraido).first()
         if not cliente_db:
             # Crear nuevo cliente si no existe, rellenando datos OCR

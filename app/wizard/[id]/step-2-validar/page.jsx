@@ -6,46 +6,161 @@ import WizardLayout from '@/app/components/wizard/WizardLayout';
 import Input from '@/app/components/Input';
 import ProgressBar from '@/app/components/ProgressBar';
 import { useWizard } from '@/app/context/WizardContext';
+import Button from '@/app/components/Button';
+import Link from 'next/link';
 
 export default function Step2ValidarPage({ params }) {
   const router = useRouter();
   const { formData, updateFormData } = useWizard();
   
-  // Usamos el estado del contexto directamente o lo sincronizamos
-  // Para inputs controlados, leer directo de formData es mejor
-  const form = formData;
-  const setForm = updateFormData;
-
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [showDebug, setShowDebug] = useState(false);
   const [autoSaveStatus, setAutoSaveStatus] = useState('saved'); 
+  const [rawOcrData, setRawOcrData] = useState(null); // Para el panel de debug
 
-  // Auto-save simulado (el contexto ya persiste en memoria)
+  const isTestMode = process.env.NEXT_PUBLIC_TEST_MODE === 'true';
+
+  // QA: Blindaje de Navegación
   useEffect(() => {
-    setAutoSaveStatus('saved');
-  }, [form]);
+    if (params.id === 'new') {
+      console.error("🚩 [ERROR FLUJO] Se ha intentado acceder al Paso 2 sin un ID de factura real.");
+      router.replace('/dashboard');
+    }
+  }, [params.id]);
 
-  // Wrapper para mantener la firma de handleChange existente
+  // QA: Carga de Datos Real y Auditoría
+  useEffect(() => {
+    async function loadData() {
+      if (!params.id || params.id === 'new') return;
+
+      try {
+        setLoading(true);
+        const { getFactura } = await import('@/lib/apiClient');
+        const data = await getFactura(params.id);
+        
+        if (!data) {
+          setError("No se ha encontrado la factura");
+          return;
+        }
+
+        setRawOcrData(data); // Guardar para debug
+
+        console.log(`%c QA Audit - Factura #${params.id} `, 'background: #2563eb; color: #fff; font-weight: bold;');
+        
+        const mappedData = {
+          cups: data.cups || '',
+          total_factura: data.total_factura || data.importe || 0,
+          cliente: data.cliente?.nombre || data.titular || '',
+          consumo_total: data.consumo_kwh || 0,
+          potencia_p1: data.potencia_p1_kw || 0,
+          potencia_p2: data.potencia_p2_kw || 0,
+          consumo_p1: data.consumo_p1_kwh || 0,
+          consumo_p2: data.consumo_p2_kwh || 0,
+          consumo_p3: data.consumo_p3_kwh || 0,
+          consumo_p4: data.consumo_p4_kwh || 0,
+          consumo_p5: data.consumo_p5_kwh || 0,
+          consumo_p6: data.consumo_p6_kwh || 0,
+          iva: data.iva || 0,
+          impuesto_electrico: data.impuesto_electrico || 0
+        };
+
+        // Auditoría de datos en consola
+        Object.keys(mappedData).forEach(key => {
+          const value = mappedData[key];
+          const fromOCR = data[key] || (key === 'cliente' && data.titular);
+          if (fromOCR) {
+            console.log(`✅ ${key}: "${value}" (desde OCR)`);
+          } else {
+            console.log(`⚠️ ${key}: "${value}" (valor por defecto/vacío)`);
+          }
+        });
+
+        updateFormData(mappedData);
+      } catch (err) {
+        console.error("Error loading factura:", err);
+        setError("Error al cargar los datos del servidor");
+      } finally {
+        setLoading(false);
+      }
+    }
+    loadData();
+  }, [params.id]);
+
+  const form = formData;
+
+  // Auto-save
+  useEffect(() => {
+    if (loading || !params.id || params.id === 'new') return;
+    
+    const timer = setTimeout(async () => {
+      try {
+        setAutoSaveStatus('saving');
+        const { updateFactura } = await import('@/lib/apiClient');
+        await updateFactura(params.id, formData);
+        setAutoSaveStatus('saved');
+      } catch (e) {
+        console.error("Auto-save failed:", e);
+      }
+    }, 1000);
+
+    return () => clearTimeout(timer);
+  }, [formData, params.id, loading]);
+
   const handleChange = (e) => {
     const { name, value } = e.target;
-    // updateFormData espera un objeto parcial, no una función callback completa si usamos el setter de useState
-    // Pero nuestra impl de updateFormData hace merge: setFormData(prev => ({ ...prev, ...newData }))
     updateFormData({ [name]: value });
   };
 
-  // Helper para validación estricta (no vacíos, no solo espacios)
-  const isValid = (val) => val && String(val).trim().length > 0;
+  // P6: Validación estricta y de negocio
+  const isValid = (val) => val !== null && val !== undefined && String(val).trim().length > 0;
+  
+  // Bloqueo de CUPS (Regex básico España: ES + 20/22 chars)
+  const isCupsValid = (cups) => {
+    if (!cups) return false;
+    const cleanCups = cups.replace(/\s/g, '').toUpperCase();
+    return /^ES\d{16,20}[A-Z]{0,2}$/.test(cleanCups);
+  };
 
-  // Validar campos críticos
   const criticalFields = ['cups', 'total_factura', 'cliente', 'consumo_total'];
   const allFields = Object.keys(form);
   const completedFields = allFields.filter(key => isValid(form[key])).length;
-  // Campos faltantes (solo para debug/progress bar, excluyendo opcionales si se desea)
   const missingFields = criticalFields.filter(key => !isValid(form[key]));
-  const criticalComplete = criticalFields.every(key => isValid(form[key]));
+  
+  // BLOQUEO DE NEGOCIO: No permitir continuar si CUPS es falso o vacío
+  const criticalComplete = criticalFields.every(key => isValid(form[key])) && isCupsValid(form.cups);
 
   const handleNext = () => {
+    if (!criticalComplete) return;
     router.push(`/wizard/${params.id}/step-3-comparar`);
   };
+
+  if (loading) {
+    return (
+      <WizardLayout currentStep={2} nextDisabled={true}>
+        <div className="flex flex-col items-center justify-center py-20 gap-4">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-azul-control"></div>
+          <p className="text-gris-secundario font-medium">Cargando datos reales...</p>
+        </div>
+      </WizardLayout>
+    );
+  }
+
+  if (error) {
+    return (
+      <WizardLayout currentStep={2} nextDisabled={true}>
+        <div className="card text-center py-12 border-rojo-error bg-rojo-error/5">
+          <span className="text-4xl mb-4 block">⚠️</span>
+          <h2 className="text-xl font-bold text-gris-texto mb-2">{error}</h2>
+          <p className="text-gris-secundario mb-6">Esta factura no existe o el flujo se ha roto.</p>
+          <Link href="/dashboard">
+            <Button variant="secondary">Volver al Panel</Button>
+          </Link>
+        </div>
+      </WizardLayout>
+    );
+  }
 
   return (
     <WizardLayout
@@ -55,6 +170,23 @@ export default function Step2ValidarPage({ params }) {
       onNext={handleNext}
     >
       <div className="flex flex-col gap-6">
+        {/* Debug Panel (Solo en TEST_MODE) */}
+        {isTestMode && (
+          <div className="bg-azul-control/10 border border-azul-control/20 rounded-lg p-3">
+            <button 
+              onClick={() => setShowDebug(!showDebug)}
+              className="text-xs font-bold text-[#F1F5F9] uppercase tracking-widest flex items-center justify-between w-full"
+            >
+              🛠️ Panel de Debug OCR {showDebug ? '▲' : '▼'}
+            </button>
+            {showDebug && (
+              <pre className="text-[10px] mt-2 overflow-auto max-h-40 text-azul-control bg-[#020617]/50 p-2 rounded border border-white/5">
+                {JSON.stringify(rawOcrData, null, 2)}
+              </pre>
+            )}
+          </div>
+        )}
+
         {/* Header */}
         <div>
           <p className="text-xs uppercase tracking-wide text-gris-secundario mb-1">
@@ -94,7 +226,9 @@ export default function Step2ValidarPage({ params }) {
                 name="cups"
                 value={form.cups}
                 onChange={handleChange}
-                validated={isValid(form.cups)}
+                validated={isCupsValid(form.cups)}
+                error={form.cups && !isCupsValid(form.cups)}
+                errorMessage="CUPS inválido (Debe ser ES + 20 caracteres)"
                 placeholder="ES0123456789012345AB"
               />
             </div>
@@ -262,7 +396,7 @@ export default function Step2ValidarPage({ params }) {
 
         {/* Helper si faltan campos críticos */}
         {!criticalComplete && (
-          <div className="bg-ambar-alerta/10 border border-ambar-alerta rounded-lg p-4">
+          <div className="bg-ambar-alerta/5 border border-ambar-alerta/20 rounded-lg p-4">
             <p className="text-sm text-ambar-alerta">
               Completa todos los campos críticos para continuar
             </p>

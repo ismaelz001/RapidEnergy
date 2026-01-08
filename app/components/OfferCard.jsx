@@ -13,7 +13,7 @@ export default function OfferCard({
         ${
           isSelected
             ? 'border-4 border-azul-control bg-azul-control/5 shadow-lg'
-            : 'border border-gris-secundario bg-white hover:border-azul-control hover:shadow-md'
+            : 'border border-white/5 bg-[#0F172A] hover:border-azul-control hover:shadow-xl'
         }
       `}
       onClick={onSelect}
@@ -63,7 +63,7 @@ export default function OfferCard({
           ${
             isSelected
               ? 'bg-azul-control text-white'
-              : 'bg-white border border-gris-secundario text-gris-texto hover:bg-gris-fondo'
+              : 'bg-transparent border border-white/10 text-[#F1F5F9] hover:bg-white/5'
           }
         `}
         onClick={(e) => {

@@ -32,11 +32,11 @@ body {
 }
 
 .btn-secondary {
-  @apply inline-flex items-center justify-center rounded-lg px-6 py-3 font-semibold border border-gris-secundario text-gris-texto hover:bg-gris-fondo transition;
+  @apply inline-flex items-center justify-center rounded-lg px-6 py-3 font-semibold border border-gris-secundario text-gris-texto hover:bg-slate-800 transition;
 }
 
 .card {
-  @apply rounded-xl border border-gris-secundario bg-white p-6 shadow;
+  @apply rounded-xl border border-white/5 bg-[#0F172A] p-6 shadow-xl;
 }
 
 .input {

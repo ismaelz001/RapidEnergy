@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import WizardLayout from '@/app/components/wizard/WizardLayout';
+import { uploadFactura } from '@/lib/apiClient';
 
 export default function Step1FacturaPage({ params }) {
   const router = useRouter();
@@ -29,25 +30,36 @@ export default function Step1FacturaPage({ params }) {
     setUploading(true);
     setError(null);
 
-    // TODO: Implement actual upload and OCR
-    // Simulación temporal
-    setTimeout(() => {
-      setOcrData({
-        cups: 'ES0123456789012345AB',
-        total: '124.50',
-        cliente: 'Juan López Martínez'
-      });
+    try {
+      const res = await uploadFactura(selectedFile);
+      setOcrData(res.ocr_preview);
       setUploading(false);
-      // BUGFIX: Automatic redirection after success to maintain flow
-      setTimeout(() => {
-        router.push(`/wizard/${params.id}/step-2-validar`);
-      }, 1500);
-    }, 2000);
+      
+      // EXITO: Navegar al ID real devuelto por el servidor
+      if (res.id) {
+        setTimeout(() => {
+          router.replace(`/wizard/${res.id}/step-2-validar`);
+        }, 1200);
+      }
+    } catch (err) {
+      console.error("Upload error:", err);
+      // P6: Manejar conflicto (409) de duplicidad
+      if (err.status === 409 || err.message.includes("409") || err.message.toLowerCase().includes("duplicada")) {
+         setError("Esta factura ya ha sido subida anteriormente (Mismo CUPS, Fecha e Importe).");
+      } else {
+         setError("No se pudo procesar la factura. Inténtalo de nuevo.");
+      }
+      setUploading(false);
+    }
   };
 
   const handleNext = () => {
-    // TODO: Navigate to step 2
-    router.push(`/wizard/${params.id}/step-2-validar`);
+    // Fallback por si la auto-redirección falla
+    if (ocrData && params.id) {
+      router.push(`/wizard/${params.id}/step-2-validar`);
+    } else {
+      router.push('/dashboard');
+    }
   };
 
   return (
@@ -120,13 +132,13 @@ export default function Step1FacturaPage({ params }) {
                 </h3>
                 <div className="space-y-2 text-sm text-gris-texto">
                   <div>
-                    <span className="text-gris-secundario">• CUPS:</span> {ocrData.cups}
+                    <span className="text-gris-secundario">• CUPS:</span> {ocrData.cups || 'No detectado'}
                   </div>
                   <div>
-                    <span className="text-gris-secundario">• Total:</span> {ocrData.total}€
+                    <span className="text-gris-secundario">• Total:</span> {ocrData.total_factura || ocrData.importe || '0'}€
                   </div>
                   <div>
-                    <span className="text-gris-secundario">• Cliente:</span> {ocrData.cliente}
+                    <span className="text-gris-secundario">• Cliente:</span> {ocrData.titular || ocrData.cliente || 'No detectado'}
                   </div>
                 </div>
               </div>

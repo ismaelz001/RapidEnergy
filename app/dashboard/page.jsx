@@ -8,6 +8,22 @@ import { listFacturas } from '@/lib/apiClient';
 
 export default function DashboardPage() {
   const [showKPIs, setShowKPIs] = useState(false);
+  // QA: Checklist de Bienvenida en Consola
+  useEffect(() => {
+    if (process.env.NEXT_PUBLIC_TEST_MODE === 'true') {
+      console.log(`
+%c 🛡️ RapidEnergy QA Checklist 🛡️ 
+---------------------------------
+1. [ ] Sube factura A -> Verifica ID real en URL.
+2. [ ] Sube factura B -> Verifica datos distintos.
+3. [ ] Re-sube factura A -> Verifica error 409 (Duplicado).
+4. [ ] Step 2: Abre "🛠️ Panel Debug OCR" para auditar.
+5. [ ] Step 2: Intenta saltar CUPS vacío (Debe estar bloqueado).
+---------------------------------
+      `, 'color: #10b981; font-weight: bold; font-size: 14px;');
+    }
+  }, []);
+
   const [casos, setCasos] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -80,7 +96,7 @@ export default function DashboardPage() {
   return (
     <div className="flex flex-col gap-8 py-8">
       {/* CTA Principal: Único punto de entrada */}
-      <div className="text-center bg-white border border-azul-control/10 rounded-2xl p-12 shadow-sm">
+      <div className="text-center bg-azul-control/5 border border-white/5 rounded-2xl p-12 shadow-2xl">
         <h1 className="text-3xl font-black text-gris-texto mb-2">Comienza un nuevo ahorro</h1>
         <p className="text-gris-secundario mb-8 max-w-md mx-auto">
           Sube una factura y deja que el sistema analice las mejores ofertas del mercado automáticamente.
@@ -132,7 +148,7 @@ export default function DashboardPage() {
             })}
           </div>
         ) : (
-          <div className="card text-center py-16 bg-white border-dashed border-2 border-gris-secundario/20 rounded-2xl">
+          <div className="card text-center py-16 bg-transparent border-dashed border-2 border-white/5 rounded-2xl">
             <div className="text-4xl mb-4 text-gris-secundario/30">📂</div>
             <p className="font-bold text-gris-texto">No hay casos activos</p>
             <p className="text-sm text-gris-secundario px-4">
@@ -154,7 +170,7 @@ export default function DashboardPage() {
         {showKPIs && (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 animate-in fade-in slide-in-from-top-4 duration-300">
             {kpis.map((kpi) => (
-              <div key={kpi.label} className="card text-center p-8 bg-white border-gris-secundario/20">
+              <div key={kpi.label} className="card text-center p-8 bg-hover-bg border-white/5">
                 <div className="text-3xl font-black text-gris-texto mb-1">
                   {kpi.value}
                 </div>
