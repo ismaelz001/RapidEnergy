@@ -116,11 +116,17 @@ export default function Step2ValidarPage({ params }) {
   // P6: Validación estricta y de negocio
   const isValid = (val) => val !== null && val !== undefined && String(val).trim().length > 0;
   
-  // Bloqueo de CUPS (Regex básico España: ES + 20/22 chars)
-  const isCupsValid = (cups) => {
+  // --- HELPERS VALIDACIÓN CUPS (MVP FLEXIBLE) ---
+  const normalizeCUPS = (raw) => {
+    if (!raw) return '';
+    return raw.trim().toUpperCase().replace(/[\s\-.]/g, '');
+  };
+
+  const isCUPSPlausible = (cups) => {
     if (!cups) return false;
-    const cleanCups = cups.replace(/\s/g, '').toUpperCase();
-    return /^ES\d{16,20}[A-Z]{0,2}$/.test(cleanCups);
+    const clean = normalizeCUPS(cups);
+    // Patrón flexible: ES opcional + 18-22 alfanuméricos
+    return /^(ES)?[0-9A-Z]{18,22}$/.test(clean);
   };
 
   const criticalFields = ['cups', 'total_factura', 'cliente', 'consumo_total'];
@@ -128,8 +134,8 @@ export default function Step2ValidarPage({ params }) {
   const completedFields = allFields.filter(key => isValid(form[key])).length;
   const missingFields = criticalFields.filter(key => !isValid(form[key]));
   
-  // BLOQUEO DE NEGOCIO: No permitir continuar si CUPS es falso o vacío
-  const criticalComplete = criticalFields.every(key => isValid(form[key])) && isCupsValid(form.cups);
+  // BLOQUEO DE NEGOCIO: Bloquear 'Continuar' solo si CUPS está vacío (MVP Flexible)
+  const criticalComplete = criticalFields.every(key => isValid(form[key]));
 
   const handleNext = () => {
     if (!criticalComplete) return;
@@ -226,11 +232,22 @@ export default function Step2ValidarPage({ params }) {
                 name="cups"
                 value={form.cups}
                 onChange={handleChange}
-                validated={isCupsValid(form.cups)}
-                error={form.cups && !isCupsValid(form.cups)}
-                errorMessage="CUPS inválido (Debe ser ES + 20 caracteres)"
+                onBlur={(e) => {
+                  const clean = normalizeCUPS(e.target.value);
+                  if (clean !== e.target.value) {
+                    updateFormData({ cups: clean });
+                  }
+                }}
+                validated={isCUPSPlausible(form.cups)}
+                error={form.cups && !isCUPSPlausible(form.cups)}
+                errorMessage="Formato no estándar, revisa (aunque puedes continuar)"
                 placeholder="ES0123456789012345AB"
               />
+              {form.cups && !isCUPSPlausible(form.cups) && (
+                <p className="text-[10px] text-ambar-alerta mt-1 italic">
+                  ⚠️ El CUPS no parece estándar (España utiliza ES + 20/22 caracteres). Asegúrate de que sea correcto.
+                </p>
+              )}
             </div>
 
             <div className="pt-4 border-t border-white/[0.05]">

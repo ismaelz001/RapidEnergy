@@ -63,10 +63,13 @@ def validate_factura_completitud(factura: Factura):
 
 
 def normalize_cups(cups: str) -> str:
-    """Sanitiza el CUPS: trim, uppercase, sin espacios."""
+    """Sanitiza el CUPS: trim, uppercase, elimina espacios, guiones y puntos."""
     if not cups:
         return None
-    return cups.strip().upper().replace(" ", "")
+    import re
+    cleaned = cups.strip().upper()
+    cleaned = re.sub(r'[\s\-.]', '', cleaned)
+    return cleaned
 
 
 @router.post("/upload")
