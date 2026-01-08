@@ -24,9 +24,12 @@ class FacturaUpdate(BaseModel):
     iva: Optional[float] = None
     total_factura: Optional[float] = None
     estado_factura: Optional[str] = None
+    cups: Optional[str] = None
+    numero_factura: Optional[str] = None
 
 
 REQUIRED_FACTURA_FIELDS = [
+    "cups",
     "potencia_p1_kw",
     "potencia_p2_kw",
     "consumo_p1_kwh",
@@ -304,6 +307,8 @@ def update_factura(factura_id: int, factura_update: FacturaUpdate, db: Session =
 
     update_data = factura_update.dict(exclude_unset=True)
     for key, value in update_data.items():
+        if key == 'cups' and value:
+            value = normalize_cups(value)
         setattr(factura, key, value)
 
     # Validacion de completitud
