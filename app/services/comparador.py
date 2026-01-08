@@ -228,17 +228,24 @@ def compare_factura(factura, db) -> Dict[str, Any]:
 
         offers.append(offer)
 
-    offers.sort(key=lambda item: item["estimated_total"])
+    completas = [item for item in offers if item["breakdown"]["modo_potencia"] == "tarifa"]
+    parciales = [item for item in offers if item["breakdown"]["modo_potencia"] != "tarifa"]
 
-    if offers:
-        max_saving = max(item["saving_amount"] for item in offers)
-        for item in offers:
+    completas.sort(key=lambda item: item["estimated_total"])
+    parciales.sort(key=lambda item: item["estimated_total"])
+
+    for item in parciales:
+        item["tag"] = "partial"
+
+    if completas:
+        max_saving = max(item["saving_amount"] for item in completas)
+        for item in completas:
             if item["saving_amount"] == max_saving:
                 item["tag"] = "best_saving"
-            elif item["breakdown"]["modo_potencia"] == "sin_potencia":
-                item["tag"] = "partial"
             else:
                 item["tag"] = "balanced"
+
+    offers = completas + parciales
 
     # TODO: Persist comparativas/ofertas_calculadas once models are wired.
 
