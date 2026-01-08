@@ -21,10 +21,10 @@ export default async function ClientesPage() {
         </Link>
       </div>
 
-      <div className="card">
+      <div className="bg-[#0F172A] rounded-[16px] p-6">
         <table className="w-full text-xs">
           <thead>
-            <tr className="border-b border-slate-800 text-slate-400">
+            <tr className="border-b border-white/8 text-[#F1F5F9]">
               <th className="py-2 text-left">ID</th>
               <th className="py-2 text-left">Nombre</th>
               <th className="py-2 text-left">CUPS</th>
@@ -37,18 +37,18 @@ export default async function ClientesPage() {
           <tbody>
             {clientes && clientes.length > 0 ? (
               clientes.map((c) => (
-                <tr key={c.id} className="border-b border-slate-900">
-                  <td className="py-2">{c.id}</td>
-                  <td className="py-2">{c.nombre || "Sin nombre"}</td>
-                  <td className="py-2">{c.cups || "-"}</td>
-                  <td className="py-2">{c.telefono || "-"}</td>
-                  <td className="py-2">
-                    <span className="rounded-full bg-slate-800 px-2 py-1 text-[11px] uppercase tracking-wide">
+                <tr key={c.id} className="border-b border-white/5 hover:bg-[#1E293B] transition-colors group">
+                  <td className="py-3 text-[#94A3B8]">{c.id}</td>
+                  <td className="py-3 font-medium text-[#F1F5F9]">{c.nombre || "Sin nombre"}</td>
+                  <td className="py-3 text-[#94A3B8]">{c.cups || "-"}</td>
+                  <td className="py-3 text-[#94A3B8]">{c.telefono || "-"}</td>
+                  <td className="py-3">
+                    <span className="rounded-full bg-[#1E3A8A] text-white px-2 py-1 text-[11px] font-medium uppercase tracking-wide">
                       {c.estado || "lead"}
                     </span>
                   </td>
-                  <td className="py-2">{c.facturas?.length || 0}</td>
-                  <td className="py-2 text-right">
+                  <td className="py-3 text-[#94A3B8]">{c.facturas?.length || 0}</td>
+                  <td className="py-3 text-right">
                     <Link href={`/clientes/${c.id}`} className="text-emerald-400 hover:text-emerald-300">
                       Ver detalle
                     </Link>
@@ -57,7 +57,7 @@ export default async function ClientesPage() {
               ))
             ) : (
               <tr>
-                <td colSpan={7} className="py-4 text-center text-slate-500">
+                <td colSpan={7} className="py-4 text-center text-[#94A3B8]">
                   No hay clientes todavia.
                 </td>
               </tr>

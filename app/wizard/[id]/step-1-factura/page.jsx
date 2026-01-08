@@ -38,6 +38,10 @@ export default function Step1FacturaPage({ params }) {
         cliente: 'Juan López Martínez'
       });
       setUploading(false);
+      // BUGFIX: Automatic redirection after success to maintain flow
+      setTimeout(() => {
+        router.push(`/wizard/${params.id}/step-2-validar`);
+      }, 1500);
     }, 2000);
   };
 

@@ -2,8 +2,29 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  --app-bg: #0B1220;
+  --card-bg: #0F172A;
+  --hover-bg: #1E293B;
+  --text-main: #F1F5F9;
+  --text-secondary: #94A3B8;
+  --border-soft: rgba(255, 255, 255, 0.08);
+  --border-inner: rgba(255, 255, 255, 0.05);
+  --primary-blue: #1E3A8A;
+}
+
+/* Fix autofill colors */
+input:-webkit-autofill,
+input:-webkit-autofill:hover, 
+input:-webkit-autofill:focus {
+  -webkit-text-fill-color: #F8FAFC !important;
+  -webkit-box-shadow: 0 0 0px 1000px #020617 inset !important;
+  transition: background-color 5000s ease-in-out 0s;
+}
+
 body {
-  @apply bg-gris-fondo text-gris-texto;
+  background-color: var(--app-bg);
+  color: var(--text-main);
 }
 
 .btn-primary {

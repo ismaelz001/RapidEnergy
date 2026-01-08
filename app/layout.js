@@ -24,9 +24,6 @@ export default function RootLayout({ children }) {
                 <a href="/dashboard" className="hover:text-emerald-400">
                   Panel
                 </a>
-                <a href="/facturas/upload" className="hover:text-emerald-400">
-                  Subir factura
-                </a>
                 <a href="/facturas" className="hover:text-emerald-400">
                   Facturas
                 </a>

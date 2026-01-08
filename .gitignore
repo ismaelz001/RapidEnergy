@@ -11,4 +11,8 @@ dist/
 build/
 .DS_Store
 .vscode/
-facturas/
+
+# Ignore root data folder but not app routes
+/facturas/
+!/app/facturas/
+!/app/**/facturas/

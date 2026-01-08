@@ -27,7 +27,7 @@ export default function Input({
           value={value}
           onChange={onChange}
           placeholder={placeholder}
-          className={`w-full rounded-lg px-3 py-2 outline-none focus:border-azul-control focus:ring-2 focus:ring-azul-control/20 transition ${stateClasses} ${className}`}
+          className={`w-full rounded-lg px-3 py-2 outline-none bg-[#020617] text-[#F8FAFC] placeholder-[#64748B] border focus:border-[#1E3A8A] focus:ring-2 focus:ring-[#1E3A8A]/20 transition ${stateClasses} ${className}`}
           {...props}
         />
         {validated && (

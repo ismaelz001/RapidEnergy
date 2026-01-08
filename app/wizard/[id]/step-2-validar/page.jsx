@@ -79,14 +79,14 @@ export default function Step2ValidarPage({ params }) {
           </span>
         </div>
 
-        {/* Campos críticos */}
-        <div className="card">
-          <h3 className="text-lg font-semibold text-gris-texto mb-4">
-            Campos críticos
+        {/* Campos críticos (Datos principales) */}
+        <div className="bg-[#0F172A] border border-white/8 rounded-[12px] p-5">
+          <h3 className="text-lg font-semibold text-[#F1F5F9] mb-4">
+            Datos principales
           </h3>
           <div className="space-y-4">
             <div>
-              <label htmlFor="cups" className="label">
+              <label htmlFor="cups" className="label text-[#F1F5F9]">
                 CUPS *
               </label>
               <Input
@@ -99,8 +99,8 @@ export default function Step2ValidarPage({ params }) {
               />
             </div>
 
-            <div>
-              <label htmlFor="total_factura" className="label">
+            <div className="pt-4 border-t border-white/[0.05]">
+              <label htmlFor="total_factura" className="label text-[#F1F5F9]">
                 Total factura (€) *
               </label>
               <Input
@@ -115,8 +115,8 @@ export default function Step2ValidarPage({ params }) {
               />
             </div>
 
-            <div>
-              <label htmlFor="cliente" className="label">
+            <div className="pt-4 border-t border-white/5">
+              <label htmlFor="cliente" className="label text-[#F1F5F9]">
                 Cliente *
               </label>
               <Input
@@ -129,8 +129,8 @@ export default function Step2ValidarPage({ params }) {
               />
             </div>
 
-            <div>
-              <label htmlFor="consumo_total" className="label">
+            <div className="pt-4 border-t border-white/5">
+              <label htmlFor="consumo_total" className="label text-[#F1F5F9]">
                 Consumo total (kWh) *
               </label>
               <Input
@@ -157,109 +157,103 @@ export default function Step2ValidarPage({ params }) {
 
         {/* Datos avanzados (colapsable) */}
         {showAdvanced && (
-          <div className="card">
-            <h3 className="text-lg font-semibold text-gris-texto mb-4">
-              Datos avanzados (Opcionales)
-            </h3>
-            <div className="space-y-6">
-              {/* Potencia */}
-              <div>
-                <h4 className="text-sm font-medium text-gris-texto mb-3">Potencia</h4>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label htmlFor="potencia_p1" className="label">
-                      Potencia P1 (kW)
-                    </label>
-                    <Input
-                      id="potencia_p1"
-                      name="potencia_p1"
-                      type="number"
-                      step="0.01"
-                      value={form.potencia_p1}
-                      onChange={handleChange}
-                      validated={isValid(form.potencia_p1)}
-                      placeholder="4.6"
-                    />
-                  </div>
-                  <div>
-                    <label htmlFor="potencia_p2" className="label">
-                      Potencia P2 (kW)
-                    </label>
-                    <Input
-                      id="potencia_p2"
-                      name="potencia_p2"
-                      type="number"
-                      step="0.01"
-                      value={form.potencia_p2}
-                      onChange={handleChange}
-                      validated={isValid(form.potencia_p2)}
-                      placeholder="4.6"
-                    />
-                  </div>
+          <div className="flex flex-col gap-6">
+            {/* Potencia */}
+            <div className="bg-[#0F172A] border border-white/8 rounded-[12px] p-5">
+              <h4 className="text-lg font-semibold text-[#F1F5F9] mb-4">Potencia</h4>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label htmlFor="potencia_p1" className="label text-[#F1F5F9]">
+                    Potencia P1 (kW)
+                  </label>
+                  <Input
+                    id="potencia_p1"
+                    name="potencia_p1"
+                    type="number"
+                    step="0.01"
+                    value={form.potencia_p1}
+                    onChange={handleChange}
+                    validated={isValid(form.potencia_p1)}
+                    placeholder="4.6"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="potencia_p2" className="label text-[#F1F5F9]">
+                    Potencia P2 (kW)
+                  </label>
+                  <Input
+                    id="potencia_p2"
+                    name="potencia_p2"
+                    type="number"
+                    step="0.01"
+                    value={form.potencia_p2}
+                    onChange={handleChange}
+                    validated={isValid(form.potencia_p2)}
+                    placeholder="4.6"
+                  />
                 </div>
               </div>
+            </div>
 
-              {/* Consumo por periodos */}
-              <div>
-                <h4 className="text-sm font-medium text-gris-texto mb-3">Consumo P1-P6 (kWh)</h4>
-                <div className="grid grid-cols-3 gap-4">
-                  {['p1', 'p2', 'p3', 'p4', 'p5', 'p6'].map((p) => (
-                    <div key={p}>
-                      <label htmlFor={`consumo_${p}`} className="label">
-                        {p.toUpperCase()}
-                      </label>
-                      <Input
-                        id={`consumo_${p}`}
-                        name={`consumo_${p}`}
-                        type="number"
-                        step="0.01"
-                        value={form[`consumo_${p}`]}
-                        onChange={handleChange}
-                        validated={isValid(form[`consumo_${p}`])}
-                        // Quitamos error={} porque son opcionales en este contexto de UI
-                        placeholder="0"
-                      />
-                    </div>
-                  ))}
-                </div>
+            {/* Consumo por periodos */}
+            <div className="bg-[#0F172A] border border-white/8 rounded-[12px] p-5">
+              <h4 className="text-lg font-semibold text-[#F1F5F9] mb-4">Consumo P1-P6</h4>
+              <div className="grid grid-cols-3 gap-4">
+                {['p1', 'p2', 'p3', 'p4', 'p5', 'p6'].map((p) => (
+                  <div key={p}>
+                    <label htmlFor={`consumo_${p}`} className="label text-[#F1F5F9]">
+                      {p.toUpperCase()} (kWh)
+                    </label>
+                    <Input
+                      id={`consumo_${p}`}
+                      name={`consumo_${p}`}
+                      type="number"
+                      step="0.01"
+                      value={form[`consumo_${p}`]}
+                      onChange={handleChange}
+                      validated={isValid(form[`consumo_${p}`])}
+                      placeholder="0"
+                    />
+                  </div>
+                ))}
               </div>
+            </div>
 
-              {/* Impuestos */}
-              <div>
-                <h4 className="text-sm font-medium text-gris-texto mb-3">Impuestos</h4>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label htmlFor="iva" className="label">
-                      IVA (€) *
-                    </label>
-                    <Input
-                      id="iva"
-                      name="iva"
-                      type="number"
-                      step="0.01"
-                      value={form.iva}
-                      onChange={handleChange}
-                      validated={isValid(form.iva)}
-                      error={!isValid(form.iva)}
-                      errorMessage={!isValid(form.iva) ? 'Campo obligatorio' : ''}
-                      placeholder="26.14"
-                    />
-                  </div>
-                  <div>
-                    <label htmlFor="impuesto_electrico" className="label">
-                      Impuesto eléctrico (€)
-                    </label>
-                    <Input
-                      id="impuesto_electrico"
-                      name="impuesto_electrico"
-                      type="number"
-                      step="0.01"
-                      value={form.impuesto_electrico}
-                      onChange={handleChange}
-                      validated={isValid(form.impuesto_electrico)}
-                      placeholder="5.12"
-                    />
-                  </div>
+            {/* Impuestos */}
+            <div className="bg-[#0F172A] border border-white/8 rounded-[12px] p-5">
+              <h4 className="text-lg font-semibold text-[#F1F5F9] mb-4">Impuestos</h4>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label htmlFor="iva" className="label text-[#F1F5F9]">
+                    IVA (€) *
+                  </label>
+                  <Input
+                    id="iva"
+                    name="iva"
+                    type="number"
+                    step="0.01"
+                    value={form.iva}
+                    onChange={handleChange}
+                    validated={isValid(form.iva)}
+                    error={!isValid(form.iva)}
+                    errorMessage={!isValid(form.iva) ? 'Campo obligatorio' : ''}
+                    placeholder="26.14"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="impuesto_electrico" className="label text-[#F1F5F9]">
+                    Impuesto eléctrico (€)
+                  </label>
+                  <Input
+                    id="impuesto_electrico"
+                    name="impuesto_electrico"
+                    type="number"
+                    step="0.01"
+                    value={form.impuesto_electrico}
+                    onChange={handleChange}
+                    validated={isValid(form.impuesto_electrico)}
+                    placeholder="5.12"
+                  />
                 </div>
               </div>
             </div>
