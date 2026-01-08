@@ -19,6 +19,7 @@ export default function Step3ComparerPage({ params }) {
   const [offers, setOffers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [currentTotal, setCurrentTotal] = useState(0);
   const [showCommission, setShowCommission] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
 
@@ -36,7 +37,20 @@ export default function Step3ComparerPage({ params }) {
         setLoading(true);
         const result = await compareFactura(params.id);
         // El backend devuelve { factura_id, current_total, offers: [...] }
-        setOffers(result.offers || []);
+        const normalizedOffers = (result.offers || []).map((offer) => {
+          const id = offer.tarifa_id ?? offer.id ?? offer.provider;
+          return {
+            ...offer,
+            id,
+            commission: typeof offer.commission === 'number' ? offer.commission : 0,
+          };
+        });
+        setOffers(normalizedOffers);
+        setCurrentTotal(
+          typeof result.current_total === 'number'
+            ? result.current_total
+            : parseFloat(formData.total_factura || 0)
+        );
       } catch (err) {
         console.error("Error fetching offers:", err);
         setError("No se pudieron generar ofertas para esta factura. Asegúrate de que los datos en el Paso 2 sean correctos.");
@@ -48,8 +62,12 @@ export default function Step3ComparerPage({ params }) {
     fetchOffers();
   }, [params.id]);
 
-  const currentTotal = parseFloat(formData.total_factura || 0);
-  const selectedOffer = selectedOfferId ? offers.find(o => (o.id === selectedOfferId || o.provider === selectedOfferId)) : null;
+  const currentTotalDisplay = Number.isFinite(currentTotal) && currentTotal > 0
+    ? currentTotal
+    : parseFloat(formData.total_factura || 0);
+  const selectedOffer = selectedOfferId
+    ? offers.find(o => String(o.id) === String(selectedOfferId))
+    : null;
   
   // Encontrar el mejor ahorro para el hero
   const maxSaving = offers.length > 0 ? Math.max(...offers.map(o => o.saving_amount)) : 0;
@@ -57,8 +75,7 @@ export default function Step3ComparerPage({ params }) {
   const totalAnnualSaving = bestOffer ? (bestOffer.saving_amount * 12).toFixed(0) : 0;
 
   const handleSelectOffer = (offer) => {
-    // Usamos el provider o ID como identificador de selección
-    selectOffer(offer.id || offer.provider);
+    selectOffer(offer.id);
   };
 
   const handleGeneratePresupuesto = () => {
@@ -134,9 +151,9 @@ export default function Step3ComparerPage({ params }) {
                   ESTÁS AHORRANDO {totalAnnualSaving}€ AL AÑO
                 </h2>
                 <div className="text-gris-texto">
-                  <span className="font-medium">Factura actual:</span> {currentTotal.toFixed(2)}€/mes
+                  <span className="font-medium">Factura actual:</span> {currentTotalDisplay.toFixed(2)}€/mes
                   <span className="mx-2">→</span>
-                  <span className="font-medium">Nueva factura:</span> {bestOffer ? (currentTotal - bestOffer.saving_amount).toFixed(2) : '---'}€/mes
+                  <span className="font-medium">Nueva factura:</span> {bestOffer && Number.isFinite(bestOffer.estimated_total) ? bestOffer.estimated_total.toFixed(2) : '---'}€/mes
                 </div>
               </div>
 
@@ -145,9 +162,9 @@ export default function Step3ComparerPage({ params }) {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   {offers.map((offer, idx) => (
                     <OfferCard
-                      key={offer.id || idx}
+                      key={offer.id ?? idx}
                       offer={offer}
-                      isSelected={selectedOfferId === (offer.id || offer.provider)}
+                      isSelected={String(selectedOfferId) === String(offer.id)}
                       isRecommended={offer.tag === 'best_saving'}
                       onSelect={() => handleSelectOffer(offer)}
                     />

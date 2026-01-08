@@ -29,6 +29,11 @@ export default function OfferCard({
       <div className="mb-4">
         <h4 className="text-lg font-bold text-gris-texto">{offer.provider}</h4>
         <p className="text-sm text-gris-secundario">{offer.plan_name}</p>
+        {(offer?.breakdown?.modo_potencia === 'sin_potencia' || offer?.tag === 'partial') && (
+          <p className="text-xs text-ambar-alerta mt-2">
+            Estimacion parcial (sin potencia)
+          </p>
+        )}
       </div>
 
       {/* Precio nuevo */}

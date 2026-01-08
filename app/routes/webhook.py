@@ -29,27 +29,18 @@ class FacturaUpdate(BaseModel):
 
 
 REQUIRED_FACTURA_FIELDS = [
-    "cups",
-    "potencia_p1_kw",
-    "potencia_p2_kw",
     "consumo_p1_kwh",
     "consumo_p2_kwh",
     "consumo_p3_kwh",
-    "consumo_p4_kwh",
-    "consumo_p5_kwh",
-    "consumo_p6_kwh",
-    "bono_social",
-    "servicios_vinculados",
-    "alquiler_contador",
-    "impuesto_electrico",
-    "iva",
+    "potencia_p1_kw",
+    "potencia_p2_kw",
     "total_factura",
 ]
 
 
 def validate_factura_completitud(factura: Factura):
     """
-    Valida que una factura tenga todos los campos energéticos críticos.
+    Valida que una factura tenga los campos minimos para comparar (2.0TD).
     Devuelve (is_valid: bool, errors: dict[field, str]).
     """
     errors = {}
@@ -337,7 +328,7 @@ def comparar_factura(factura_id: int, db: Session = Depends(get_db)):
     if not factura:
         raise HTTPException(status_code=404, detail="Factura no encontrada")
 
-    # Validar que la factura esté completa (opcional: permitir comparar sin validación estricta)
+    # Validar que la factura este completa (2.0TD)
     es_valida, errors = validate_factura_completitud(factura)
     if not es_valida:
         raise HTTPException(
@@ -360,7 +351,7 @@ def comparar_factura(factura_id: int, db: Session = Depends(get_db)):
     from app.services.comparador import compare_factura
     
     try:
-        result = compare_factura(factura)
+        result = compare_factura(factura, db)
         return result
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
