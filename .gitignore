@@ -19,3 +19,6 @@ build/
 
 local.db
 __pycache__/
+
+scripts/patch_db_atr.py
+tests/qa_prod_exec.py
