@@ -16,3 +16,6 @@ build/
 /facturas/
 !/app/facturas/
 !/app/**/facturas/
+
+local.db
+__pycache__/
