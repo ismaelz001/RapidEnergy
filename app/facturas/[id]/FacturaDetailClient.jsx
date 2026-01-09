@@ -81,7 +81,6 @@ export default function FacturaDetailClient({ factura }) {
       numberFields.forEach((field) => {
         if (payload[field] === "") payload[field] = null;
       });
-      payload.estado_factura = isComplete ? "lista_para_comparar" : "pendiente_datos";
 
       await updateFactura(factura.id, payload);
       setStatus("saved");

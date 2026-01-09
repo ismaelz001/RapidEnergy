@@ -9,6 +9,7 @@ router = APIRouter(prefix="/webhook", tags=["webhook"])
 
 
 class FacturaUpdate(BaseModel):
+    atr: Optional[str] = None
     potencia_p1_kw: Optional[float] = None
     potencia_p2_kw: Optional[float] = None
     consumo_p1_kwh: Optional[float] = None
@@ -29,6 +30,7 @@ class FacturaUpdate(BaseModel):
 
 
 REQUIRED_FACTURA_FIELDS = [
+    "atr",
     "consumo_p1_kwh",
     "consumo_p2_kwh",
     "consumo_p3_kwh",
@@ -49,6 +51,9 @@ def validate_factura_completitud(factura: Factura):
         # Para booleanos, solo consideramos ausente si es None (False es válido)
         if isinstance(val, bool):
             if val is None:
+                errors[field] = "Campo obligatorio ausente"
+        elif isinstance(val, str):
+            if not val.strip():
                 errors[field] = "Campo obligatorio ausente"
         else:
             if val is None:
@@ -232,6 +237,7 @@ async def upload_factura(file: UploadFile, db: Session = Depends(get_db)):
             db.refresh(cliente_db)
 
     # 4. Crear factura vinculada
+    from app.services.ocr import build_raw_data_payload
     nueva_factura = Factura(
         filename=file.filename,
         cups=ocr_data.get("cups"),
@@ -240,7 +246,12 @@ async def upload_factura(file: UploadFile, db: Session = Depends(get_db)):
         fecha=ocr_data.get("fecha"),
         fecha_inicio=ocr_data.get("fecha_inicio_consumo"),
         fecha_fin=ocr_data.get("fecha_fin_consumo"),
-        raw_data=ocr_data.get("raw_text"),
+        raw_data=build_raw_data_payload(
+            ocr_data.get("raw_text"),
+            extraction_summary=ocr_data.get("extraction_summary"),
+        ),
+        # FIX: Fallback ATR extraction
+        atr=ocr_data.get("atr") or extract_atr(ocr_data.get("raw_text")),
         cliente_id=cliente_db.id if cliente_db else None,
         
         # Deduplicacion
@@ -262,6 +273,13 @@ async def upload_factura(file: UploadFile, db: Session = Depends(get_db)):
         impuesto_electrico=ocr_data.get("impuesto_electrico"),
         iva=ocr_data.get("iva"),
         total_factura=ocr_data.get("total_factura"),
+    )
+
+    es_valida, errors = validate_factura_completitud(nueva_factura)
+    nueva_factura.estado_factura = "lista_para_comparar" if es_valida else "pendiente_datos"
+    from app.services.ocr import merge_raw_data_audit
+    nueva_factura.raw_data = merge_raw_data_audit(
+        nueva_factura.raw_data, missing_fields=list(errors.keys())
     )
 
     db.add(nueva_factura)
@@ -300,26 +318,30 @@ def update_factura(factura_id: int, factura_update: FacturaUpdate, db: Session =
     for key, value in update_data.items():
         if key == 'cups' and value:
             value = normalize_cups(value)
+        if key == "atr" and value:
+            from app.services.ocr import extract_atr
+            normalized_atr = extract_atr(str(value))
+            value = normalized_atr or str(value).strip().upper()
         setattr(factura, key, value)
 
     # Validacion de completitud
     es_valida, errors = validate_factura_completitud(factura)
     factura.estado_factura = "lista_para_comparar" if es_valida else "pendiente_datos"
+    from app.services.ocr import merge_raw_data_audit
+    factura.raw_data = merge_raw_data_audit(
+        factura.raw_data, missing_fields=list(errors.keys())
+    )
 
     db.commit()
     db.refresh(factura)
 
-    if not es_valida:
-        raise HTTPException(
-            status_code=400,
-            detail={
-                "message": "Faltan campos obligatorios para comparar",
-                "errors": errors,
-                "estado_factura": factura.estado_factura,
-            },
-        )
-
-    return factura
+    return {
+        "factura": factura,
+        "is_valid": es_valida,
+        "errors": errors,
+        "missing_fields": list(errors.keys()),
+        "estado_factura": factura.estado_factura,
+    }
 
 
 @router.post("/comparar/facturas/{factura_id}")

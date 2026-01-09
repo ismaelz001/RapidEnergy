@@ -8,6 +8,135 @@ from google.cloud import vision
 import pypdf
 
 
+def normalize_text(raw: str) -> str:
+    if raw is None:
+        return ""
+    text = unicodedata.normalize("NFKC", raw)
+    text = text.replace("\u00a0", " ")
+    text = re.sub(r"[ \t]+", " ", text)
+    return text.strip()
+
+
+def parse_es_number(value: str):
+    if value is None:
+        return None
+    text = normalize_text(str(value))
+    if not text:
+        return None
+    cleaned = re.sub(r"[^\d,.\-]", "", text)
+    if cleaned in ("", "-", ".", ","):
+        return None
+
+    last_dot = cleaned.rfind(".")
+    last_comma = cleaned.rfind(",")
+    if last_dot != -1 and last_comma != -1:
+        if last_comma > last_dot:
+            cleaned = cleaned.replace(".", "")
+            cleaned = cleaned.replace(",", ".")
+        else:
+            cleaned = cleaned.replace(",", "")
+    elif last_comma != -1:
+        cleaned = cleaned.replace(",", ".")
+    else:
+        cleaned = cleaned.replace(",", "")
+
+    try:
+        return float(cleaned)
+    except Exception:
+        return None
+
+
+def extract_atr(text: str):
+    if not text:
+        return None
+    normalized = normalize_text(text).upper()
+    if re.search(r"\b2\s*[.,]?\s*[0O]\s*TD\b", normalized):
+        return "2.0TD"
+    return None
+
+
+def _extract_potencias_with_sources(text: str):
+    if not text:
+        return {"p1": None, "p2": None, "p1_source": None, "p2_source": None, "warnings": []}
+    normalized = normalize_text(text)
+
+    p1_patterns = [
+        ("punta", r"potencia\s+(?:contratada\s+)?(?:en\s+)?punta[^0-9]{0,20}([\d.,]+)"),
+        ("p1", r"potencia\s+(?:contratada\s+)?(?:en\s+)?p1[^0-9]{0,20}([\d.,]+)"),
+        # Nuevos patrones permisivos (fix Naturgy): "ncia contratada...", "contratada en punta..."
+        ("punta", r"(?:potencia|ncia)\s+(?:contratada\s+)?(?:en\s+)?punta[^0-9]{0,60}([\d.,]+)\s*(?:kw|k\s*w|k)?"),
+        ("punta", r"contratada\s+(?:en\s+)?punta[^0-9]{0,60}([\d.,]+)\s*(?:kw|k\s*w|k)?"),
+        # Fallbacks genéricos
+        ("punta", r"\bpunta\b[^0-9]{0,60}([\d.,]+)\s*(?:kw|k\s*w|k)"),
+        ("p1", r"\bp1\b[^0-9]{0,60}([\d.,]+)\s*(?:kw|k\s*w|k)"),
+    ]
+    p2_patterns = [
+        ("valle", r"potencia\s+(?:contratada\s+)?(?:en\s+)?valle[^0-9]{0,20}([\d.,]+)"),
+        ("p2", r"potencia\s+(?:contratada\s+)?(?:en\s+)?p2[^0-9]{0,20}([\d.,]+)"),
+        # Nuevos patrones permisivos (fix Naturgy)
+        ("valle", r"(?:potencia|ncia)\s+(?:contratada\s+)?(?:en\s+)?valle[^0-9]{0,60}([\d.,]+)\s*(?:kw|k\s*w|k)?"),
+        ("valle", r"contratada\s+(?:en\s+)?valle[^0-9]{0,60}([\d.,]+)\s*(?:kw|k\s*w|k)?"),
+        # Fallbacks genéricos
+        ("valle", r"\bvalle\b[^0-9]{0,60}([\d.,]+)\s*(?:kw|k\s*w|k)"),
+        ("p2", r"\bp2\b[^0-9]{0,60}([\d.,]+)\s*(?:kw|k\s*w|k)"),
+    ]
+
+    def _match(patterns):
+        for source, pat in patterns:
+            match = re.search(pat, normalized, re.IGNORECASE)
+            if match:
+                return parse_es_number(match.group(1)), source
+        return None, None
+
+    p1_value, p1_source = _match(p1_patterns)
+    p2_value, p2_source = _match(p2_patterns)
+    warnings = []
+
+    generic_match = re.search(
+        r"potencia\s+contratada[^0-9]{0,20}([\d.,]+)\s*k?w", normalized, re.IGNORECASE
+    )
+    if generic_match and p1_value is None and p2_value is None:
+        warnings.append("Potencia detectada sin contexto punta/valle")
+
+    return {
+        "p1": p1_value,
+        "p2": p2_value,
+        "p1_source": p1_source,
+        "p2_source": p2_source,
+        "warnings": warnings,
+    }
+
+
+def extract_potencias(text: str):
+    data = _extract_potencias_with_sources(text)
+    return {"p1": data["p1"], "p2": data["p2"]}
+
+
+def build_raw_data_payload(raw_text: str, extraction_summary: dict = None, missing_fields=None) -> str:
+    payload = {"raw_text": raw_text}
+    if extraction_summary is not None:
+        payload["extraction_summary"] = extraction_summary
+    if missing_fields is not None:
+        payload["missing_fields"] = missing_fields
+    return json.dumps(payload, ensure_ascii=False)
+
+
+def merge_raw_data_audit(raw_data: str, missing_fields=None, extraction_summary: dict = None) -> str:
+    if raw_data:
+        try:
+            payload = json.loads(raw_data)
+        except Exception:
+            payload = {"raw_text": raw_data}
+    else:
+        payload = {}
+
+    if extraction_summary is not None:
+        payload["extraction_summary"] = extraction_summary
+    if missing_fields is not None:
+        payload["missing_fields"] = missing_fields
+    return json.dumps(payload, ensure_ascii=False)
+
+
 def _empty_result(raw_text: str = None) -> dict:
     return {
         "cups": None,
@@ -20,6 +149,7 @@ def _empty_result(raw_text: str = None) -> dict:
         "dni": None,
         "direccion": None,
         "telefono": None,
+        "atr": None,
         "potencia_p1_kw": None,
         "potencia_p2_kw": None,
         "consumo_p1_kwh": None,
@@ -36,6 +166,8 @@ def _empty_result(raw_text: str = None) -> dict:
         "total_factura": None,
         "parsed_fields": {},
         "detected_por_ocr": {},
+        "extraction_summary": {},
+        "missing_fields": [],
         "raw_text": raw_text,
     }
 
@@ -84,15 +216,15 @@ def get_vision_client():
 
 
 def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
-    full_text = unicodedata.normalize("NFKC", full_text)
+    full_text = normalize_text(full_text)
     result = _empty_result(full_text)
     parsed_fields = {}
-
-    def _to_float(val_str: str):
-        try:
-            return float(val_str.replace(",", "."))
-        except Exception:
-            return None
+    extraction_summary = {
+        "atr_source": None,
+        "potencia_p1_source": None,
+        "potencia_p2_source": None,
+        "parse_warnings": [],
+    }
 
     def parse_structured_fields(raw_text: str) -> dict:
         data = {
@@ -100,6 +232,7 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
             "fecha_fin_consumo": None,
             "importe_factura": None,
             "cups": None,
+            "atr": None,
             "potencia_p1_kw": None,
             "potencia_p2_kw": None,
             "consumo_p1_kwh": None,
@@ -137,21 +270,24 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
 
         importe_match = re.search(r"IMPORTE\s+FACTURA[:\s]*[\r\n\s]*([\d.,]+)", raw_text, re.IGNORECASE)
         if importe_match:
-            data["importe_factura"] = _to_float(importe_match.group(1))
+            data["importe_factura"] = parse_es_number(importe_match.group(1))
             detected_pf["importe_factura"] = data["importe_factura"] is not None
         else:
             detected_pf["importe_factura"] = False
 
+        data["atr"] = extract_atr(raw_text)
+        detected_pf["atr"] = data["atr"] is not None
+
         pot_p1 = re.search(r"potencia\s+(?:contratada\s+en\s+)?(?:p1|punta)[^0-9]{0,10}([\d.,]+)\s*k?w", raw_text, re.IGNORECASE)
         if pot_p1:
-            data["potencia_p1_kw"] = _to_float(pot_p1.group(1))
+            data["potencia_p1_kw"] = parse_es_number(pot_p1.group(1))
             detected_pf["potencia_p1_kw"] = data["potencia_p1_kw"] is not None
         else:
             detected_pf["potencia_p1_kw"] = False
 
         pot_p2 = re.search(r"potencia\s+(?:contratada\s+en\s+)?(?:p2|valle)[^0-9]{0,10}([\d.,]+)\s*k?w", raw_text, re.IGNORECASE)
         if pot_p2:
-            data["potencia_p2_kw"] = _to_float(pot_p2.group(1))
+            data["potencia_p2_kw"] = parse_es_number(pot_p2.group(1))
             detected_pf["potencia_p2_kw"] = data["potencia_p2_kw"] is not None
         else:
             detected_pf["potencia_p2_kw"] = False
@@ -160,7 +296,7 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
             m = re.search(rf"Consumo\s+en\s+P{p}\s*[:\-]?\s*([\d.,]+)\s*kWh", raw_text, re.IGNORECASE)
             key = f"consumo_p{p}_kwh"
             if m:
-                data[key] = _to_float(m.group(1))
+                data[key] = parse_es_number(m.group(1))
                 detected_pf[key] = data[key] is not None
             else:
                 detected_pf[key] = False
@@ -181,36 +317,46 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
     elif structured.get("cups"):
         result["cups"] = structured.get("cups")
 
+    atr_value = extract_atr(full_text)
+    if atr_value:
+        result["atr"] = atr_value
+        extraction_summary["atr_source"] = "raw_text"
+    elif structured.get("atr"):
+        result["atr"] = structured.get("atr")
+        extraction_summary["atr_source"] = "structured"
+
     detected = {}
+    detected["atr"] = result["atr"] is not None
+
+    potencias = _extract_potencias_with_sources(full_text)
+    if potencias["p1"] is not None:
+        result["potencia_p1_kw"] = potencias["p1"]
+        extraction_summary["potencia_p1_source"] = potencias["p1_source"] or "raw_text"
+    if potencias["p2"] is not None:
+        result["potencia_p2_kw"] = potencias["p2"]
+        extraction_summary["potencia_p2_source"] = potencias["p2_source"] or "raw_text"
+    if potencias["warnings"]:
+        extraction_summary["parse_warnings"].extend(potencias["warnings"])
 
     consumo_match = re.search(r"(\d+[.,]?\d*)\s*kWh", full_text, re.IGNORECASE)
     if consumo_match:
-        val_str = consumo_match.group(1).replace(",", ".")
-        try:
-            result["consumo_kwh"] = float(val_str)
-            detected["consumo_kwh"] = True
-        except Exception:
-            pass
+        result["consumo_kwh"] = parse_es_number(consumo_match.group(1))
+        detected["consumo_kwh"] = result["consumo_kwh"] is not None
     else:
         detected["consumo_kwh"] = False
 
     total_match = re.search(r"TOTAL.*?\s+(\d+[.,]?\d*)\s*(?:€|EUR)", full_text, re.IGNORECASE)
     if total_match:
-        val_str = total_match.group(1).replace(",", ".")
-        try:
-            result["importe"] = float(val_str)
-            detected["importe"] = True
-        except Exception:
-            pass
+        result["importe"] = parse_es_number(total_match.group(1))
+        detected["importe"] = result["importe"] is not None
     if result["importe"] is None:
         matches = re.findall(r"(\d+[.,]?\d*)\s*(?:€|EUR)", full_text, re.IGNORECASE)
         if matches:
-            try:
-                vals = [float(m.replace(",", ".")) for m in matches]
+            vals = [parse_es_number(m) for m in matches]
+            vals = [v for v in vals if v is not None]
+            if vals:
                 result["importe"] = max(vals)
                 detected["importe"] = True
-            except Exception:
-                pass
     if result["importe"] is None and structured.get("importe_factura") is not None:
         result["importe"] = structured.get("importe_factura")
         detected["importe"] = True
@@ -372,19 +518,20 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
         for pat in patterns:
             m = re.search(pat, full_text, re.IGNORECASE)
             if m:
-                val = m.group(1).replace(",", ".")
-                try:
-                    return float(val)
-                except Exception:
-                    continue
+                val = parse_es_number(m.group(1))
+                if val is not None:
+                    return val
+                continue
         return None
 
-    result["potencia_p1_kw"] = _extract_number(
-        [r"potencia\s*p1[^0-9]{0,10}([\d.,]+)\s*k?w", r"potencia\s+punta[^0-9]{0,10}([\d.,]+)\s*k?w"]
-    )
-    result["potencia_p2_kw"] = _extract_number(
-        [r"potencia\s*p2[^0-9]{0,10}([\d.,]+)\s*k?w", r"potencia\s+valle[^0-9]{0,10}([\d.,]+)\s*k?w"]
-    )
+    if result["potencia_p1_kw"] is None:
+        result["potencia_p1_kw"] = _extract_number(
+            [r"potencia\s*p1[^0-9]{0,10}([\d.,]+)\s*k?w", r"potencia\s+punta[^0-9]{0,10}([\d.,]+)\s*k?w"]
+        )
+    if result["potencia_p2_kw"] is None:
+        result["potencia_p2_kw"] = _extract_number(
+            [r"potencia\s*p2[^0-9]{0,10}([\d.,]+)\s*k?w", r"potencia\s+valle[^0-9]{0,10}([\d.,]+)\s*k?w"]
+        )
     detected["potencia_p1_kw"] = result["potencia_p1_kw"] is not None
     detected["potencia_p2_kw"] = result["potencia_p2_kw"] is not None
 
@@ -424,6 +571,10 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
         ]
     )
     detected["total_factura"] = result["total_factura"] is not None
+    detected["total_factura"] = result["total_factura"] is not None
+    if result["total_factura"] is None and structured.get("importe_factura") is not None:
+        result["total_factura"] = structured.get("importe_factura")
+        detected["total_factura"] = True
 
     for field in [
         "potencia_p1_kw",
@@ -438,10 +589,20 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
         if result.get(field) is None and structured.get(field) is not None:
             result[field] = structured.get(field)
             detected[field] = True
+            if field == "potencia_p1_kw" and not extraction_summary["potencia_p1_source"]:
+                extraction_summary["potencia_p1_source"] = "structured"
+            if field == "potencia_p2_kw" and not extraction_summary["potencia_p2_source"]:
+                extraction_summary["potencia_p2_source"] = "structured"
 
     if result.get("bono_social") is None and structured.get("bono_social") is not None:
         result["bono_social"] = structured.get("bono_social")
         detected["bono_social"] = True
+
+    if result.get("atr") is None and structured.get("atr") is not None:
+        result["atr"] = structured.get("atr")
+        detected["atr"] = True
+        if not extraction_summary["atr_source"]:
+            extraction_summary["atr_source"] = "structured"
 
     if result["direccion"]:
         # Intento simple de extraer provincia de la direccion
@@ -463,8 +624,28 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
     else:
         result["provincia"] = None
 
+    required_fields = [
+        "atr",
+        "potencia_p1_kw",
+        "potencia_p2_kw",
+        "consumo_p1_kwh",
+        "consumo_p2_kwh",
+        "consumo_p3_kwh",
+        "total_factura",
+    ]
+    missing_fields = []
+    for field in required_fields:
+        val = result.get(field)
+        if isinstance(val, str):
+            if not val.strip():
+                missing_fields.append(field)
+        elif val is None:
+            missing_fields.append(field)
+
     result["parsed_fields"] = parsed_fields
     result["detected_por_ocr"] = detected
+    result["extraction_summary"] = extraction_summary
+    result["missing_fields"] = missing_fields
 
 
     return result

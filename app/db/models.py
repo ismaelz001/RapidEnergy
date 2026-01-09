@@ -39,6 +39,7 @@ class Factura(Base):
     # Deduplicacion
     file_hash = Column(String, unique=True, index=True, nullable=True)
     numero_factura = Column(String, nullable=True)
+    atr = Column(String, nullable=True)
 
 
     # Potencia

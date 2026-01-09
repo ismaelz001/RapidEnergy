@@ -18,6 +18,9 @@ export default function Step2ValidarPage({ params }) {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [showDebug, setShowDebug] = useState(false);
   const [autoSaveStatus, setAutoSaveStatus] = useState('saved'); 
+  const [autoSaveError, setAutoSaveError] = useState(null);
+  const [serverMissingFields, setServerMissingFields] = useState([]);
+  const [serverErrors, setServerErrors] = useState({});
   const [rawOcrData, setRawOcrData] = useState(null); // Para el panel de debug
 
   const isTestMode = process.env.NEXT_PUBLIC_TEST_MODE === 'true';
@@ -51,6 +54,7 @@ export default function Step2ValidarPage({ params }) {
         
         const mappedData = {
           cups: data.cups || '',
+          atr: data.atr || '',
           total_factura: data.total_factura || data.importe || 0,
           cliente: data.cliente?.nombre || data.titular || '',
           consumo_total: data.consumo_kwh || 0,
@@ -89,6 +93,52 @@ export default function Step2ValidarPage({ params }) {
   }, [params.id]);
 
   const form = formData;
+  const numberFieldKeys = new Set([
+    'total_factura',
+    'consumo_total',
+    'potencia_p1',
+    'potencia_p2',
+    'consumo_p1',
+    'consumo_p2',
+    'consumo_p3',
+    'consumo_p4',
+    'consumo_p5',
+    'consumo_p6',
+    'iva',
+    'impuesto_electrico'
+  ]);
+  const requiredFields = [
+    'atr',
+    'potencia_p1',
+    'potencia_p2',
+    'consumo_p1',
+    'consumo_p2',
+    'consumo_p3',
+    'total_factura'
+  ];
+  const fieldLabels = {
+    atr: 'ATR',
+    potencia_p1: 'Potencia P1',
+    potencia_p2: 'Potencia P2',
+    consumo_p1: 'Consumo P1',
+    consumo_p2: 'Consumo P2',
+    consumo_p3: 'Consumo P3',
+    total_factura: 'Total factura'
+  };
+
+  const normalizeAtr = (value) => {
+    if (!value) return '';
+    const normalized = value.toString().trim().toUpperCase().replace(',', '.').replace(/\s+/g, '');
+    return /2\.?0TD/.test(normalized) ? '2.0TD' : normalized;
+  };
+
+  const parseNumberInput = (value) => {
+    if (value === '' || value === null || value === undefined) return null;
+    const normalized = value.toString().replace(',', '.').replace(/\s+/g, '');
+    const parsed = Number(normalized);
+    return Number.isNaN(parsed) ? null : parsed;
+  };
+
 
   // Auto-save
   useEffect(() => {
@@ -97,11 +147,30 @@ export default function Step2ValidarPage({ params }) {
     const timer = setTimeout(async () => {
       try {
         setAutoSaveStatus('saving');
+        setAutoSaveError(null);
         const { updateFactura } = await import('@/lib/apiClient');
-        await updateFactura(params.id, formData);
+        const payload = buildPayload(formData);
+        const result = await updateFactura(params.id, payload);
+        if (result && typeof result === 'object') {
+          const missing = Array.isArray(result.missing_fields)
+            ? result.missing_fields
+            : Object.keys(result.errors || {});
+          setServerMissingFields(missing);
+          setServerErrors(result.errors || {});
+        } else {
+          setServerMissingFields([]);
+          setServerErrors({});
+        }
         setAutoSaveStatus('saved');
       } catch (e) {
         console.error("Auto-save failed:", e);
+        const message =
+          e?.data?.detail?.message ||
+          e?.data?.message ||
+          e?.message ||
+          'No se pudo guardar automaticamente';
+        setAutoSaveError(message);
+        setAutoSaveStatus('error');
       }
     }, 1000);
 
@@ -110,7 +179,8 @@ export default function Step2ValidarPage({ params }) {
 
   const handleChange = (e) => {
     const { name, value } = e.target;
-    updateFormData({ [name]: value });
+    const nextValue = numberFieldKeys.has(name) ? value.replace(',', '.') : value;
+    updateFormData({ [name]: nextValue });
   };
 
   // P6: Validación estricta y de negocio
@@ -129,13 +199,31 @@ export default function Step2ValidarPage({ params }) {
     return /^(ES)?[0-9A-Z]{18,22}$/.test(clean);
   };
 
-  const criticalFields = ['cups', 'total_factura', 'cliente', 'consumo_total'];
+  const buildPayload = (data) => ({
+    cups: normalizeCUPS(data.cups) || null,
+    atr: normalizeAtr(data.atr) || null,
+    consumo_kwh: parseNumberInput(data.consumo_total),
+    potencia_p1_kw: parseNumberInput(data.potencia_p1),
+    potencia_p2_kw: parseNumberInput(data.potencia_p2),
+    consumo_p1_kwh: parseNumberInput(data.consumo_p1),
+    consumo_p2_kwh: parseNumberInput(data.consumo_p2),
+    consumo_p3_kwh: parseNumberInput(data.consumo_p3),
+    consumo_p4_kwh: parseNumberInput(data.consumo_p4),
+    consumo_p5_kwh: parseNumberInput(data.consumo_p5),
+    consumo_p6_kwh: parseNumberInput(data.consumo_p6),
+    iva: parseNumberInput(data.iva),
+    impuesto_electrico: parseNumberInput(data.impuesto_electrico),
+    total_factura: parseNumberInput(data.total_factura),
+  });
+
   const allFields = Object.keys(form);
   const completedFields = allFields.filter(key => isValid(form[key])).length;
-  const missingFields = criticalFields.filter(key => !isValid(form[key]));
+  const missingFields = requiredFields.filter(key => !isValid(form[key]));
+  const missingFieldLabels = missingFields.map(field => fieldLabels[field] || field);
+  const serverMissingFieldLabels = serverMissingFields.map(field => fieldLabels[field] || field);
   
-  // BLOQUEO DE NEGOCIO: Bloquear 'Continuar' solo si CUPS está vacío (MVP Flexible)
-  const criticalComplete = criticalFields.every(key => isValid(form[key]));
+  // Bloquear si faltan los campos mínimos de 2.0TD
+  const criticalComplete = missingFields.length === 0;
 
   const handleNext = () => {
     if (!criticalComplete) return;
@@ -207,30 +295,61 @@ export default function Step2ValidarPage({ params }) {
         <ProgressBar
           current={completedFields}
           total={allFields.length}
-          missingFields={missingFields.map(f => f.replace('_', ' '))}
+          missingFields={missingFieldLabels}
         />
 
         {/* Auto-save status */}
         <div className="flex justify-end">
-          <span className="text-xs text-gris-secundario">
-            {autoSaveStatus === 'saving' ? '☁️ Guardando...' : '☁️ Guardado automático'}
+          <span className={`text-xs ${autoSaveStatus === 'error' ? 'text-rojo-error' : 'text-gris-secundario'}`}>
+            {autoSaveStatus === 'saving'
+              ? '☁️ Guardando...'
+              : autoSaveStatus === 'error'
+                ? '⚠️ Error al guardar'
+                : '☁️ Guardado automático'}
           </span>
         </div>
+        {autoSaveError && (
+          <div className="bg-rojo-error/5 border border-rojo-error/20 rounded-lg p-3 text-xs text-rojo-error">
+            {autoSaveError}
+          </div>
+        )}
+
+        {serverMissingFieldLabels.length > 0 && (
+          <div className="bg-ambar-alerta/10 border border-ambar-alerta/30 rounded-lg p-3">
+            <p className="text-xs font-semibold text-ambar-alerta">Checklist backend</p>
+            <ul className="mt-2 space-y-1 text-xs text-gris-texto">
+              {serverMissingFieldLabels.map((label) => (
+                <li key={label} className="flex items-center gap-2">
+                  <span className="text-ambar-alerta">[ ]</span>
+                  <span>Falta {label}</span>
+                </li>
+              ))}
+            </ul>
+            {Object.keys(serverErrors).length > 0 && (
+              <p className="text-[11px] text-gris-secundario mt-2">
+                {Object.values(serverErrors).join(' · ')}
+              </p>
+            )}
+          </div>
+        )}
 
         {/* Campos críticos (Datos principales) */}
-        <div className="bg-[#0F172A] border border-white/8 rounded-[12px] p-5">
-          <h3 className="text-lg font-semibold text-[#F1F5F9] mb-4">
-            Datos principales
-          </h3>
-          <div className="space-y-4">
+        <div className="card">
+          <div className="flex items-center gap-2 mb-6 p-2 bg-blue-500/5 rounded-lg border border-blue-500/10">
+            <span className="text-xl">📝</span>
+            <h3 className="text-lg font-bold text-white">
+              Datos principales
+            </h3>
+          </div>
+          <div className="space-y-6">
             <div>
-              <label htmlFor="cups" className="label text-[#F1F5F9]">
-                CUPS *
+              <label htmlFor="cups" className="label text-white">
+                CUPS <span className="text-[#94A3B8] font-normal text-xs ml-2">(Código Universal)</span>
               </label>
               <Input
                 id="cups"
                 name="cups"
-                value={form.cups}
+                value={form.cups || ''} 
                 onChange={handleChange}
                 onBlur={(e) => {
                   const clean = normalizeCUPS(e.target.value);
@@ -240,60 +359,78 @@ export default function Step2ValidarPage({ params }) {
                 }}
                 validated={isCUPSPlausible(form.cups)}
                 error={form.cups && !isCUPSPlausible(form.cups)}
-                errorMessage="Formato no estándar, revisa (aunque puedes continuar)"
-                placeholder="ES0123456789012345AB"
-              />
-              {form.cups && !isCUPSPlausible(form.cups) && (
-                <p className="text-[10px] text-ambar-alerta mt-1 italic">
-                  ⚠️ El CUPS no parece estándar (España utiliza ES + 20/22 caracteres). Asegúrate de que sea correcto.
-                </p>
-              )}
-            </div>
-
-            <div className="pt-4 border-t border-white/[0.05]">
-              <label htmlFor="total_factura" className="label text-[#F1F5F9]">
-                Total factura (€) *
-              </label>
-              <Input
-                id="total_factura"
-                name="total_factura"
-                type="number"
-                step="0.01"
-                value={form.total_factura}
-                onChange={handleChange}
-                validated={isValid(form.total_factura)}
-                placeholder="124.50"
+                errorMessage="Formato no estándar"
+                placeholder="ES ---"
               />
             </div>
 
-            <div className="pt-4 border-t border-white/5">
-              <label htmlFor="cliente" className="label text-[#F1F5F9]">
-                Cliente *
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4 border-t border-[rgba(255,255,255,0.05)]">
+              <div>
+                <label htmlFor="atr" className="label text-white">
+                  ATR <span className="text-xs text-blue-400 ml-1">*</span>
+                </label>
+                <Input
+                  id="atr"
+                  name="atr"
+                  value={form.atr || ''}
+                  onChange={handleChange}
+                  onBlur={(e) => {
+                    const normalized = normalizeAtr(e.target.value);
+                    if (normalized !== e.target.value) {
+                      updateFormData({ atr: normalized });
+                    }
+                  }}
+                  validated={isValid(form.atr)}
+                  placeholder="---"
+                />
+              </div>
+
+               <div>
+                <label htmlFor="total_factura" className="label text-white">
+                  Total factura (€) <span className="text-xs text-blue-400 ml-1">*</span>
+                </label>
+                <Input
+                  id="total_factura"
+                  name="total_factura"
+                  type="number"
+                  step="0.01"
+                  value={form.total_factura || ''}
+                  onChange={handleChange}
+                  validated={isValid(form.total_factura)}
+                  placeholder="---"
+                />
+              </div>
+            </div>
+
+            <div className="pt-4 border-t border-[rgba(255,255,255,0.05)]">
+               {/* Additional Client Fields... */}
+              <label htmlFor="cliente" className="label text-white">
+                Cliente
               </label>
               <Input
                 id="cliente"
                 name="cliente"
-                value={form.cliente}
+                value={form.cliente || ''}
                 onChange={handleChange}
                 validated={isValid(form.cliente)}
-                placeholder="Juan López Martínez"
+                placeholder="---"
               />
             </div>
-
-            <div className="pt-4 border-t border-white/5">
-              <label htmlFor="consumo_total" className="label text-[#F1F5F9]">
-                Consumo total (kWh) *
+            
+            <div className="pt-4 border-t border-[rgba(255,255,255,0.05)]">
+              <label htmlFor="consumo_total" className="label text-white">
+                 Consumo total (kWh)
               </label>
-              <Input
-                id="consumo_total"
-                name="consumo_total"
-                type="number"
-                step="0.01"
-                value={form.consumo_total}
-                onChange={handleChange}
-                validated={isValid(form.consumo_total)}
-                placeholder="342"
-              />
+               <Input
+                 id="consumo_total"
+                 name="consumo_total"
+                 type="number"
+                 step="0.01"
+                 value={form.consumo_total || ''}
+                 onChange={handleChange}
+                 validated={isValid(form.consumo_total)}
+                 placeholder="---"
+               />
             </div>
           </div>
         </div>
@@ -415,7 +552,7 @@ export default function Step2ValidarPage({ params }) {
         {!criticalComplete && (
           <div className="bg-ambar-alerta/5 border border-ambar-alerta/20 rounded-lg p-4">
             <p className="text-sm text-ambar-alerta">
-              Completa todos los campos críticos para continuar
+              Completa los campos mínimos para comparar: {missingFieldLabels.join(', ') || 'Pendiente'}
             </p>
           </div>
         )}
