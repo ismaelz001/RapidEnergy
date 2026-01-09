@@ -150,14 +150,30 @@ export default function Step3ComparerPage({ params }) {
               )}
 
               {/* Hero de ahorro */}
-              <div className="bg-verde-ahorro/10 border-2 border-verde-ahorro rounded-xl p-6">
-                <h2 className="text-4xl font-black text-verde-ahorro mb-3">
-                  ESTÁS AHORRANDO {totalAnnualSaving}€ AL AÑO
-                </h2>
-                <div className="text-gris-texto">
-                  <span className="font-medium">Factura actual:</span> {currentTotalDisplay.toFixed(2)}€/mes
-                  <span className="mx-2">→</span>
-                  <span className="font-medium">Nueva factura:</span> {bestOffer && Number.isFinite(bestOffer.estimated_total) ? bestOffer.estimated_total.toFixed(2) : '---'}€/mes
+              <div className="bg-gradient-to-r from-[#14532D]/30 to-[#16A34A]/5 border border-[#16A34A]/30 rounded-2xl p-8 text-center shadow-lg shadow-green-900/10">
+                <span className="text-sm font-bold tracking-widest text-[#16A34A] uppercase mb-1 block">
+                  Ahorro anual estimado
+                </span>
+                <div className="flex items-baseline justify-center gap-2 mb-4">
+                  <h2 className="text-6xl font-black text-[#16A34A] tracking-tighter drop-shadow-sm">
+                    {totalAnnualSaving}
+                  </h2>
+                  <span className="text-2xl font-bold text-[#16A34A]/80">€/año</span>
+                </div>
+                
+                <div className="inline-flex items-center gap-4 text-sm text-[#94A3B8] bg-[#020617]/50 rounded-full px-4 py-2 border border-white/5">
+                  <div>
+                    <span className="text-gray-500 mr-1">Actual:</span>
+                    <span className="text-white font-mono line-through opacity-70">{currentTotalDisplay.toFixed(2)}€</span>
+                  </div>
+                  <div className="text-white">→</div>
+                  <div>
+                    <span className="text-gray-500 mr-1">Nueva:</span>
+                    <span className="text-[#16A34A] font-bold font-mono">
+                      {bestOffer && Number.isFinite(bestOffer.estimated_total) ? bestOffer.estimated_total.toFixed(2) : '---'}€
+                    </span>
+                    <span className="text-[10px] text-gray-500 ml-1">/mes</span>
+                  </div>
                 </div>
               </div>
 

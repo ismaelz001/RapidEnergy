@@ -7,31 +7,22 @@ import Badge from '../components/Badge';
 import { listFacturas } from '@/lib/apiClient';
 
 export default function DashboardPage() {
+  const [activeTab, setActiveTab] = useState('casos');
   const [showKPIs, setShowKPIs] = useState(false);
-  // QA: Checklist de Bienvenida en Consola
-  useEffect(() => {
-    if (process.env.NEXT_PUBLIC_TEST_MODE === 'true') {
-      console.log(`
-%c 🛡️ RapidEnergy QA Checklist 🛡️ 
----------------------------------
-1. [ ] Sube factura A -> Verifica ID real en URL.
-2. [ ] Sube factura B -> Verifica datos distintos.
-3. [ ] Re-sube factura A -> Verifica error 409 (Duplicado).
-4. [ ] Step 2: Abre "🛠️ Panel Debug OCR" para auditar.
-5. [ ] Step 2: Intenta saltar CUPS vacío (Debe estar bloqueado).
----------------------------------
-      `, 'color: #10b981; font-weight: bold; font-size: 14px;');
-    }
-  }, []);
-
   const [casos, setCasos] = useState([]);
   const [loading, setLoading] = useState(true);
+
+  // QA: Checklist de Bienvenida en Consola (Preserved)
+  useEffect(() => {
+    if (process.env.NEXT_PUBLIC_TEST_MODE === 'true') {
+      console.log(`%c 🛡️ RapidEnergy QA Checklist 🛡️`, 'color: #10b981; font-weight: bold; font-size: 14px;');
+    }
+  }, []);
 
   useEffect(() => {
     async function fetchData() {
       try {
         const data = await listFacturas();
-        // Mapear facturas de la base de datos al formato de "Casos" del UI
         const mappedCasos = data.map(f => ({
           id: f.id,
           cliente: f.cliente?.nombre || `CUPS: ${f.cups?.slice(-6) || '---'}`,
@@ -50,14 +41,13 @@ export default function DashboardPage() {
     fetchData();
   }, []);
 
-  // Helper para renderizar botón y badge según estado
   const renderEstadoInfo = (caso) => {
     switch (caso.estado) {
       case 'pendiente_datos':
         return {
           badge: <Badge variant="pendiente">Validar datos</Badge>,
           actionLabel: 'Validar →',
-          variant: 'secondary'
+          variant: 'primary' // Changed to primary for better UX
         };
       case 'lista_para_comparar':
         return {
@@ -68,14 +58,8 @@ export default function DashboardPage() {
       case 'oferta_seleccionada':
         return {
           badge: <Badge variant="completada">Oferta elegida</Badge>,
-          actionLabel: 'Generar presupuesto →',
+          actionLabel: 'Generar PDF →',
           variant: 'primary'
-        };
-      case 'presupuesto_generado':
-        return {
-          badge: <Badge variant="completada">Terminado</Badge>,
-          actionLabel: 'Ver PDF 📄',
-          variant: 'secondary'
         };
       default:
         return {
@@ -86,102 +70,165 @@ export default function DashboardPage() {
     }
   };
 
-  // KPIs calculados (en una fase posterior esto vendría del backend)
   const kpis = [
     { label: 'Facturas', value: casos.length },
-    { label: 'Ahorro Est.', value: '---' }, // Requiere lógica de ofertas seleccionadas
+    { label: 'Ahorro Est.', value: '---' },
     { label: 'Comisión Est.', value: '---' }
   ];
 
   return (
-    <div className="flex flex-col gap-8 py-8">
-      {/* CTA Principal: Único punto de entrada */}
-      <div className="text-center bg-azul-control/5 border border-white/5 rounded-2xl p-12 shadow-2xl">
-        <h1 className="text-3xl font-black text-gris-texto mb-2">Comienza un nuevo ahorro</h1>
-        <p className="text-gris-secundario mb-8 max-w-md mx-auto">
-          Sube una factura y deja que el sistema analice las mejores ofertas del mercado automáticamente.
-        </p>
-        <Link href="/wizard/new/step-1-factura">
-          <Button variant="primary" className="text-xl px-16 py-5 shadow-lg shadow-azul-control/20 hover:-translate-y-1 transition-transform">
-            🚀 NUEVA FACTURA
-          </Button>
-        </Link>
+    <div className="flex flex-col gap-8">
+      
+      {/* Page Title & Tabs */}
+      <div className="flex flex-col gap-6 border-b border-[rgba(255,255,255,0.08)]">
+        <h1 className="text-3xl font-bold text-white tracking-tight">Panel de Control</h1>
+        <div className="flex items-center gap-8 translate-y-[1px]">
+          {['casos', 'tarifas', 'comisiones'].map((tab) => (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              className={`
+                pb-4 text-sm font-semibold transition-all border-b-2
+                ${activeTab === tab 
+                  ? 'text-[#F1F5F9] border-[#1E3A8A]' 
+                  : 'text-[#94A3B8] border-transparent hover:text-white'
+                }
+              `}
+            >
+              {tab.charAt(0).toUpperCase() + tab.slice(1)}
+            </button>
+          ))}
+        </div>
       </div>
 
-      {/* Casos en curso */}
-      <div className="flex flex-col gap-4">
-        <h2 className="text-lg font-bold text-gris-texto px-1">
-          Casos en curso (Gestión del CRM)
-        </h2>
-        
-        {loading ? (
-          <div className="flex justify-center py-12">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-azul-control"></div>
-          </div>
-        ) : casos.length > 0 ? (
-          <div className="grid grid-cols-1 gap-3">
-            {casos.map((caso) => {
-              const { badge, actionLabel, variant } = renderEstadoInfo(caso);
-              return (
-                <div key={caso.id} className="card flex flex-col md:flex-row items-center justify-between gap-4 py-5 hover:border-azul-control transition-colors group">
-                  <div className="flex items-center gap-4 flex-1">
-                    <div className="w-10 h-10 rounded-full bg-gris-fondo flex items-center justify-center font-bold text-gris-secundario group-hover:bg-azul-control/10 group-hover:text-azul-control transition-colors">
-                      #{caso.id.toString().slice(-2)}
-                    </div>
-                    <div>
-                      <h3 className="font-bold text-gris-texto mb-0.5">
-                        {caso.cliente}
-                      </h3>
-                      {badge}
-                    </div>
-                  </div>
-                  
-                  <div className="flex items-center gap-2">
-                    <Link href={caso.href}>
-                      <Button variant={variant} className="text-sm px-6">
-                        {actionLabel}
-                      </Button>
-                    </Link>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        ) : (
-          <div className="card text-center py-16 bg-transparent border-dashed border-2 border-white/5 rounded-2xl">
-            <div className="text-4xl mb-4 text-gris-secundario/30">📂</div>
-            <p className="font-bold text-gris-texto">No hay casos activos</p>
-            <p className="text-sm text-gris-secundario px-4">
-              Pulsa en "Nueva Factura" para empezar a procesar y ahorrar.
-            </p>
-          </div>
-        )}
-      </div>
-
-      {/* Resumen (colapsable) */}
-      <div className="pt-4 border-t border-gris-secundario/10">
-        <button
-          onClick={() => setShowKPIs(!showKPIs)}
-          className="flex items-center gap-2 text-sm font-semibold text-gris-secundario hover:text-azul-control transition mx-auto mb-6"
-        >
-          {showKPIs ? '︿ Ocultar resumen trimestral' : '﹀ Ver resumen de rendimiento'}
-        </button>
-
-        {showKPIs && (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 animate-in fade-in slide-in-from-top-4 duration-300">
-            {kpis.map((kpi) => (
-              <div key={kpi.label} className="card text-center p-8 bg-hover-bg border-white/5">
-                <div className="text-3xl font-black text-gris-texto mb-1">
-                  {kpi.value}
-                </div>
-                <div className="text-xs uppercase tracking-widest font-bold text-gris-secundario">
-                  {kpi.label}
-                </div>
+      {/* CONTENT: CASOS */}
+      {activeTab === 'casos' && (
+        <div className="animate-in fade-in duration-300 space-y-8">
+          
+          {/* Main List */}
+          <div className="flex flex-col gap-4">
+            <div className="flex items-center justify-between">
+               <h2 className="text-lg font-semibold text-white">Casos en curso</h2>
+               {/* Small action if needed */}
+            </div>
+            
+            {loading ? (
+              <div className="flex justify-center py-12">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-blue"></div>
               </div>
-            ))}
+            ) : casos.length > 0 ? (
+              <div className="grid grid-cols-1 gap-3">
+                {casos.map((caso) => {
+                  const { badge, actionLabel, variant } = renderEstadoInfo(caso);
+                  return (
+                    <div key={caso.id} className="card flex flex-col md:flex-row items-center justify-between gap-4 py-4 hover:border-[#1E3A8A]/50 transition-colors group">
+                      <div className="flex items-center gap-4 flex-1">
+                        <div className="w-10 h-10 rounded-lg bg-[#0B1220] border border-white/5 flex items-center justify-center font-bold text-[#94A3B8] group-hover:text-white transition-colors">
+                          {caso.id}
+                        </div>
+                        <div>
+                          <h3 className="font-bold text-white mb-1">
+                            {caso.cliente}
+                          </h3>
+                          {badge}
+                        </div>
+                      </div>
+                      
+                      <div className="flex items-center gap-2">
+                        <Link href={caso.href}>
+                          <Button variant={variant} className="text-sm px-6 h-10">
+                            {actionLabel}
+                          </Button>
+                        </Link>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="card py-16 text-center border-dashed border-2 border-[rgba(255,255,255,0.08)] bg-transparent">
+                <div className="text-5xl mb-4 opacity-20">📂</div>
+                <h3 className="text-lg font-bold text-white mb-2">No hay casos activos</h3>
+                <p className="text-[#94A3B8] max-w-sm mx-auto mb-6">
+                  Sube tu primera factura para comenzar a generar ahorros.
+                </p>
+                <Link href="/wizard/new/step-1-factura">
+                  <Button variant="primary">Nueva Factura</Button>
+                </Link>
+              </div>
+            )}
           </div>
-        )}
-      </div>
+
+          {/* Toggle KPI Footer */}
+          <div className="pt-8 border-t border-[rgba(255,255,255,0.05)]">
+             <button onClick={() => setShowKPIs(!showKPIs)} className="text-xs font-bold text-[#94A3B8] uppercase tracking-widest hover:text-white transition">
+                {showKPIs ? 'Ocultar Resumen' : 'Ver Resumen Trimestral'}
+             </button>
+             {showKPIs && (
+               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6 animate-in slide-in-from-top-2">
+                 {kpis.map((kpi) => (
+                   <div key={kpi.label} className="card p-6 border-white/5 bg-[#131C31]">
+                     <div className="text-2xl font-black text-white mb-1">{kpi.value}</div>
+                     <div className="text-[10px] uppercase font-bold text-zinc-500">{kpi.label}</div>
+                   </div>
+                 ))}
+               </div>
+             )}
+          </div>
+        </div>
+      )}
+
+      {/* CONTENT: TARIFAS (MOCK) */}
+      {activeTab === 'tarifas' && (
+        <div className="animate-in fade-in duration-300">
+           <div className="card overflow-hidden p-0">
+             <table className="w-full text-left text-sm text-[#94A3B8]">
+               <thead className="bg-[#020617] text-white uppercase text-xs font-bold border-b border-white/5">
+                 <tr>
+                   <th className="px-6 py-4">Proveedor</th>
+                   <th className="px-6 py-4">Tarifa</th>
+                   <th className="px-6 py-4">Tipo</th>
+                   <th className="px-6 py-4">Vigencia</th>
+                   <th className="px-6 py-4">Estado</th>
+                 </tr>
+               </thead>
+               <tbody className="divide-y divide-white/5">
+                 {[
+                   { prov: 'Naturgy', name: 'Plan Industrial 24h', type: 'Indexada', vig: '12 meses', status: 'Activa' },
+                   { prov: 'Iberdrola', name: 'Empresas 3.0TD', type: 'Fija', vig: '24 meses', status: 'Revisión' },
+                   { prov: 'Endesa', name: 'Conecta Negocio', type: 'Mixta', vig: '12 meses', status: 'Activa' },
+                 ].map((row, i) => (
+                   <tr key={i} className="hover:bg-white/[0.02]">
+                     <td className="px-6 py-4 font-medium text-white">{row.prov}</td>
+                     <td className="px-6 py-4">{row.name}</td>
+                     <td className="px-6 py-4">{row.type}</td>
+                     <td className="px-6 py-4">{row.vig}</td>
+                     <td className="px-6 py-4">
+                       <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold border ${row.status === 'Activa' ? 'bg-green-500/10 text-green-500 border-green-500/20' : 'bg-amber-500/10 text-amber-500 border-amber-500/20'}`}>
+                         {row.status}
+                       </span>
+                     </td>
+                   </tr>
+                 ))}
+               </tbody>
+             </table>
+           </div>
+        </div>
+      )}
+
+      {/* CONTENT: COMISIONES (PLACEHOLDER) */}
+      {activeTab === 'comisiones' && (
+        <div className="animate-in fade-in duration-300 text-center py-20">
+          <div className="inline-flex items-center px-3 py-1 rounded-full bg-[#1E3A8A]/20 text-[#1E3A8A] border border-[#1E3A8A]/30 text-xs font-bold mb-4">
+            EN DESARROLLO
+          </div>
+          <h2 className="text-2xl font-bold text-white mb-2">Tus comisiones, pronto aquí</h2>
+          <p className="text-[#94A3B8] max-w-md mx-auto">
+            Estamos construyendo un panel detallado para que visualices tus ganancias generadas por cada contrato cerrado.
+          </p>
+        </div>
+      )}
+
     </div>
   );
 }

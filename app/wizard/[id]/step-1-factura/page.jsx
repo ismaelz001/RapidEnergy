@@ -85,19 +85,21 @@ export default function Step1FacturaPage({ params }) {
           <div
             onDrop={handleDrop}
             onDragOver={(e) => e.preventDefault()}
-            className="border-2 border-dashed border-gris-secundario rounded-xl p-12 text-center bg-gris-fondo hover:border-azul-control hover:bg-azul-control/5 transition cursor-pointer"
+            className="border-2 border-dashed border-[rgba(255,255,255,0.1)] rounded-2xl p-16 text-center bg-[#0F172A] hover:border-[#1E3A8A] hover:bg-[#1E3A8A]/5 transition-all cursor-pointer group"
             onClick={() => document.getElementById('file-input').click()}
           >
-            <div className="text-6xl mb-4">📄</div>
-            <p className="text-lg text-gris-texto mb-2">
-              Arrastra la factura aquí
+            <div className="w-16 h-16 mx-auto mb-6 bg-[#1E3A8A]/10 rounded-full flex items-center justify-center text-2xl group-hover:scale-110 transition-transform">
+              📄
+            </div>
+            <p className="text-xl font-bold text-white mb-2">
+              Arrastra la factura aquí.
             </p>
-            <p className="text-sm text-gris-secundario mb-4">
-              o haz clic para seleccionar
+            <p className="text-sm text-[#94A3B8] mb-6">
+              Nosotros hacemos el resto.
             </p>
-            <p className="text-xs text-gris-secundario">
-              PDF, JPG, PNG · Máx 10MB
-            </p>
+            <span className="inline-flex py-2 px-4 rounded-full bg-[#1E3A8A] text-white text-xs font-bold uppercase tracking-wide">
+              Seleccionar archivo
+            </span>
             <input
               id="file-input"
               type="file"

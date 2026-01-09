@@ -3,82 +3,75 @@
 @tailwind utilities;
 
 :root {
+  /* HARD RULE: Palette V1.0 */
   --app-bg: #0B1220;
   --card-bg: #0F172A;
-  --hover-bg: #1E293B;
   --text-main: #F1F5F9;
   --text-secondary: #94A3B8;
-  --border-soft: rgba(255, 255, 255, 0.08);
-  --border-inner: rgba(255, 255, 255, 0.05);
   --primary-blue: #1E3A8A;
+  --primary-green: #16A34A;
+  --border-soft: rgba(255, 255, 255, 0.08);
+  --border-focus: rgba(255, 255, 255, 0.2);
+}
+
+/* Base */
+body {
+  background-color: var(--app-bg);
+  color: var(--text-main);
+  font-family: 'Inter', sans-serif; /* Assumed available or default sans */
 }
 
 /* Global Dark Forms */
 input, textarea, select {
-  background-color: #020617;
+  background-color: #020617; /* Slate-950 equivalent */
   color: #F8FAFC;
   border-color: rgba(255, 255, 255, 0.1);
 }
 
-input::placeholder, textarea::placeholder, select::placeholder {
-  color: #64748B;
-}
+input::placeholder { color: #64748B; }
 
-/* Fix autofill colors for Chrome/Webkit */
-input:-webkit-autofill,
-textarea:-webkit-autofill,
-select:-webkit-autofill {
+/* Autofill Fix */
+input:-webkit-autofill {
   -webkit-text-fill-color: #F8FAFC !important;
   -webkit-box-shadow: 0 0 0px 1000px #020617 inset !important;
-  caret-color: #F8FAFC;
   transition: background-color 9999s ease-in-out 0s;
 }
 
-body {
-  background-color: var(--app-bg);
-  color: var(--text-main);
+/* Components */
+.card {
+  @apply rounded-xl border border-[rgba(255,255,255,0.08)] bg-[#0F172A] p-6 shadow-xl;
 }
 
 .btn-primary {
-  @apply inline-flex items-center justify-center rounded-lg px-6 py-3 font-semibold bg-azul-control text-white hover:bg-blue-800 transition;
+  @apply inline-flex items-center justify-center rounded-lg px-6 py-3 font-semibold bg-[#1E3A8A] text-white hover:bg-blue-800 transition shadow-lg shadow-blue-900/20 active:scale-95;
 }
 
 .btn-secondary {
-  @apply inline-flex items-center justify-center rounded-lg px-6 py-3 font-semibold border border-gris-secundario text-gris-texto hover:bg-slate-800 transition;
-}
-
-.card {
-  @apply rounded-xl border border-white/5 bg-[#0F172A] p-6 shadow-xl;
+  @apply inline-flex items-center justify-center rounded-lg px-6 py-3 font-semibold border border-[rgba(255,255,255,0.1)] text-[#94A3B8] hover:bg-slate-800 hover:text-white transition active:scale-95;
 }
 
 .input {
-  @apply w-full rounded-lg border border-gris-secundario px-3 py-2 outline-none focus:border-azul-control focus:ring-2 focus:ring-azul-control/20 transition;
-}
-
-.input-validated {
-  @apply border-verde-ahorro bg-verde-ahorro/5;
-}
-
-.input-error {
-  @apply border-rojo-error bg-rojo-error/5;
-}
-
-.label {
-  @apply block text-sm font-medium text-gris-texto mb-1;
+  @apply w-full rounded-lg bg-[#020617] border border-[rgba(255,255,255,0.1)] px-4 py-3 text-sm outline-none focus:border-[#1E3A8A] focus:ring-1 focus:ring-[#1E3A8A] transition text-white placeholder-slate-500;
 }
 
 .badge {
-  @apply inline-flex items-center px-2 py-1 rounded text-xs font-medium border;
+  @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border;
 }
 
+/* Status Badges */
 .badge-pendiente {
-  @apply bg-ambar-alerta/10 text-ambar-alerta border-ambar-alerta;
+  @apply bg-amber-500/10 text-amber-500 border-amber-500/20;
 }
 
 .badge-seleccionada {
-  @apply bg-azul-control/10 text-azul-control border-azul-control;
+  @apply bg-blue-500/10 text-blue-500 border-blue-500/20;
 }
 
 .badge-completada {
-  @apply bg-verde-ahorro/10 text-verde-ahorro border-verde-ahorro;
+  @apply bg-[#16A34A]/10 text-[#16A34A] border-[#16A34A]/20;
+}
+
+/* Utility Gradients - Only for Hero/Header */
+.bg-gradient-premium {
+  background: linear-gradient(135deg, #010528 0%, #004B8E 100%);
 }
