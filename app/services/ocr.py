@@ -252,10 +252,10 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
         }
         detected_pf = {}
 
-        # 1. CUPS VALIDATION ROBUSTA
-        # Buscamos candidatos que empiecen por ES y tengan longitud plausible
-        # Normalizamos y pasamos el validador oficial.
-        candidates = re.findall(r"(ES[A-Z0-9\-\s]{18,25})", raw_text, re.IGNORECASE)
+        # 1. CUPS EXTRACTION
+        # Regex más estricta: ES + exactamente 18-20 caracteres alfanuméricos (permite espacios/guiones internos)
+        # Esto evita capturar texto extra como "TIPO" o saltos de línea
+        candidates = re.findall(r"ES[\s\-]?[0-9]{4}[\s\-]?[0-9]{4}[\s\-]?[0-9]{4}[\s\-]?[0-9]{4}[\s\-]?[A-Z0-9]{2,4}", raw_text, re.IGNORECASE)
         valid_cups_found = None
         
         for cand in candidates:
