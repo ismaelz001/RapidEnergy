@@ -25,14 +25,8 @@ def normalize_cups(text: str) -> str | None:
             
     # 3. Validar longitud bruta plausible (ES + 16 num + 2 letras = 20 chars min)
     # Algunos sistemas pueden tener 20 o 22 caracteres.
-    # ES + 16 Digits + 2 Letters = 20 chars
-    # + Optional 1 Digit + 1 Letter = 22 chars
     if len(cleaned) < 20 or len(cleaned) > 22:
-        # A veces el OCR pega cosas extra. 
-        # Intentamos extraer el patrón si está dentro de una cadena más larga?
-        # Por ahora simple: si no mide 20-22, sospechoso.
-        # Pero a veces Gemini devuelve "CUPS: ES..." -> ya limpiamos espacios.
-        pass
+        return None  # Longitud inválida
 
     return cleaned
 
