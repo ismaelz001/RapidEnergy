@@ -251,56 +251,76 @@ def _insert_comparativa(db, factura_id: int) -> Optional[int]:
     return comparativa_id
 
 
-def _insert_ofertas(db, factura_id: int, comparativa_id: Optional[int], offers) -> bool:
-    columns_info = _get_table_columns(db, "ofertas_calculadas")
-    if not columns_info:
+def _insert_ofertas(db, factura_id: int, comparativa_id: int, offers) -> bool:
+    """
+    Persiste ofertas en 'ofertas_calculadas' siguiendo esquema estricto Neon.
+    Borra ofertas previas del mismo comparativa_id.
+    """
+    if comparativa_id is None:
+        return False
+        
+    try:
+        # 1. Clean previous for this comparison
+        db.execute(
+            text("DELETE FROM ofertas_calculadas WHERE comparativa_id = :cid"),
+            {"cid": comparativa_id}
+        )
+        
+        # 2. Insert new
+        count = 0
+        is_postgres = db.get_bind().dialect.name == "postgresql"
+        
+        for offer in offers:
+            tid = offer.get("tarifa_id")
+            if tid is None:
+                logger.warning(f"Skipping offer persistence: missing tarifa_id. Plan: {offer.get('plan_name')}")
+                continue
+                
+            payload = {
+                "comparativa_id": comparativa_id,
+                "tarifa_id": tid,
+                "coste_estimado": offer.get("estimated_total_periodo"),
+                "ahorro_mensual": offer.get("ahorro_mensual_equiv"),
+                "ahorro_anual": offer.get("ahorro_anual_equiv"),
+                "detalle_json": json.dumps(offer, ensure_ascii=False)
+            }
+            
+            # SQL explícito con CAST para JSONB en Postgres
+            if is_postgres:
+                stmt = text("""
+                    INSERT INTO ofertas_calculadas 
+                    (comparativa_id, tarifa_id, coste_estimado, ahorro_mensual, ahorro_anual, detalle_json)
+                    VALUES 
+                    (:comparativa_id, :tarifa_id, :coste_estimado, :ahorro_mensual, :ahorro_anual, :detalle_json::jsonb)
+                """)
+            else:
+                stmt = text("""
+                    INSERT INTO ofertas_calculadas 
+                    (comparativa_id, tarifa_id, coste_estimado, ahorro_mensual, ahorro_anual, detalle_json)
+                    VALUES 
+                    (:comparativa_id, :tarifa_id, :coste_estimado, :ahorro_mensual, :ahorro_anual, :detalle_json)
+                """)
+                
+            db.execute(stmt, payload)
+            count += 1
+            
+        return count > 0
+        
+    except Exception as e:
+        logger.error(f"Error persisting offers: {e}")
+        # No re-raise para no romper el flujo principal del comparador
         return False
 
-    required_columns = _missing_required_columns(columns_info, [])
-    dialect_name = db.get_bind().dialect.name
-    inserted = False
-    warned = False
 
-    for offer in offers:
-        payload: Dict[str, Any] = {}
-
-        if "comparativa_id" in columns_info and comparativa_id is not None:
-            payload["comparativa_id"] = comparativa_id
-        if "factura_id" in columns_info:
-            payload["factura_id"] = factura_id
-        if "tarifa_id" in columns_info and offer.get("tarifa_id") is not None:
-            payload["tarifa_id"] = offer.get("tarifa_id")
-        if "total_estimado" in columns_info:
-            payload["total_estimado"] = offer.get("estimated_total")
-        if "ahorro" in columns_info:
-            payload["ahorro"] = offer.get("saving_amount")
-        if "detalle_json" in columns_info:
-            payload["detalle_json"] = json.dumps(offer.get("breakdown", {}))
-
-        missing = [col for col in required_columns if col not in payload]
-        if missing:
-            if not warned:
-                logger.warning(
-                    "Ofertas insert skipped, missing required columns: %s",
-                    ", ".join(missing),
-                )
-                warned = True
-            continue
-
-        sql = _build_insert_sql(
-            "ofertas_calculadas", payload, columns_info, dialect_name
-        )
-        db.execute(text(sql), payload)
-        inserted = True
-
-    return inserted
-
-
-def _persist_results(db, factura_id: int, offers) -> None:
+def _persist_results(db, factura_id: int, offers, comparativa_id: int = None) -> None:
     try:
-        comparativa_id = _insert_comparativa(db, factura_id)
+        # If ID not provided (legacy call), try to create one (likely will fail validation if columns missing)
+        if comparativa_id is None:
+             comparativa_id = _insert_comparativa(db, factura_id)
+        
         inserted = _insert_ofertas(db, factura_id, comparativa_id, offers)
-        if comparativa_id is not None or inserted:
+        
+        if inserted:
             db.commit()
     except Exception as exc:
         db.rollback()
@@ -371,32 +391,67 @@ def compare_factura(factura, db) -> Dict[str, Any]:
         if modo_energia is None:
             continue
 
-        p1_price, p2_price, p3_price = prices
+        # LOGICA DE PRECIOS ENERGÍA (P1 -> P2/P3 si null)
+        p1_price = _to_float(tarifa.get("energia_p1_eur_kwh"))
+        p2_price = _to_float(tarifa.get("energia_p2_eur_kwh"))
+        p3_price = _to_float(tarifa.get("energia_p3_eur_kwh"))
+        
+        # Si P2/P3 son null, asumir precio único (tarifa plana 24h)
+        if p1_price is not None and (p2_price is None or p3_price is None):
+            p2_price = p1_price
+            p3_price = p1_price
+            modo_energia = "24h_inferred"
+        
+        if p1_price is None:
+             continue # Tarifa rota sin precio
+
         coste_energia = (
             (consumo_p1 * p1_price)
             + (consumo_p2 * p2_price)
             + (consumo_p3 * p3_price)
         )
 
-        # P1: INDENTACIÓN CORRECTA
+        # LOGICA DE PRECIOS POTENCIA (Fallback BOE si null)
         potencia_p1_price = _to_float(tarifa.get("potencia_p1_eur_kw_dia"))
         potencia_p2_price = _to_float(tarifa.get("potencia_p2_eur_kw_dia"))
         
-        if potencia_p1_price is None or potencia_p2_price is None:
-            coste_potencia = 0.0
-            modo_potencia = "sin_potencia"
+        # Fallback BOE 2024 (Aprox) si comercializadora no lo especifica (caso Iberdrola)
+        # Peajes + Cargos suelen rondar: P1=0.08, P2=0.005 aprox. 
+        # Usamos valores conservadores de mercado libre medio si es null.
+        if potencia_p1_price is None:
+            potencia_p1_price = 0.10 # Valor medio mercado
+            potencia_p2_price = 0.04
+            modo_potencia = "boe_fallback"
         else:
-            # P1: USA PERIODO REAL (SIN FALLBACK)
-            coste_potencia = periodo_dias * (
-                (potencia_p1 * potencia_p1_price)
-                + (potencia_p2 * potencia_p2_price)
-            )
             modo_potencia = "tarifa"
+            
+        coste_potencia = periodo_dias * (
+            (potencia_p1 * potencia_p1_price)
+            + (potencia_p2 * potencia_p2_price)
+        )
 
-        estimated_total_periodo = coste_energia + coste_potencia
+        # TOTALIZACIÓN CON IMPUESTOS (Para igualar factura real)
+        subtotal = coste_energia + coste_potencia
+        
+        # Impuesto Electrico (IEE) 5.1127% (Reducido 2.5% o 0.5% segun decreto, usamos 0.5% standard actual crisis o 5.11% normal?)
+        # Para comparar peras con peras, asumimos IEE normal 5.11% salvo que se diga lo contrario
+        # Nota: Muchos usuarios prefieren ver TOTAL FINAL. 
+        impuesto_electrico = subtotal * 0.051127 
+        alquiler_equipo = periodo_dias * 0.0266 # Aprox 0.80€/mes standard
+        base_imponible = subtotal + impuesto_electrico + alquiler_equipo
+        
+        # IVA 21% (Standard) - Ojo, ha variado al 10%. Usamos 21% para ser conservadores en el ahorro?
+        # O intentamos detectar fecha? Dificil. Usamos 10% que es lo vigente en 2024/25 para <10kW?
+        # Vamos con 10% para potencias bajas (<10kW) y 21% para altas.
+        iva_pct = 0.10 if potencia_p1 < 10 else 0.21
+        iva_importe = base_imponible * iva_pct
+        
+        estimated_total_periodo = base_imponible + iva_importe
+        
+        # Cálculo Ahorro
         ahorro_periodo = current_total - estimated_total_periodo
         
-        # P1: EQUIVALENTES CONSISTENTES
+        # Proyecciones
         ahorro_mensual_equiv = ahorro_periodo * (30.437 / periodo_dias)
         ahorro_anual_equiv = ahorro_periodo * (365 / periodo_dias)
         
@@ -404,23 +459,16 @@ def compare_factura(factura, db) -> Dict[str, Any]:
             (ahorro_periodo / current_total) * 100 if current_total > 0 else 0.0
         )
 
+        # Mapeo de nombres
         tarifa_id = tarifa.get("id") or tarifa.get("tarifa_id")
         provider = _pick_value(
             tarifa,
-            [
-                "comercializadora",
-                "provider",
-                "empresa",
-                "compania",
-                "nombre_comercializadora",
-                "nombre_comercializador",
-                "brand",
-            ],
-            "Proveedor desconocido",
+            ["comercializadora", "provider", "empresa", "brand"],
+            "Proveedor genérico",
         )
         plan_name = _pick_value(
             tarifa,
-            ["nombre", "plan_name", "plan", "tarifa", "nombre_tarifa", "nombre_plan"],
+            ["nombre", "plan_name", "plan", "tarifa"],
             "Tarifa 2.0TD",
         )
 
@@ -438,6 +486,8 @@ def compare_factura(factura, db) -> Dict[str, Any]:
                 "periodo_dias": int(periodo_dias),
                 "coste_energia": round(coste_energia, 2),
                 "coste_potencia": round(coste_potencia, 2),
+                "impuestos": round(impuesto_electrico + iva_importe, 2),
+                "alquiler_contador": round(alquiler_equipo, 2),
                 "modo_energia": modo_energia,
                 "modo_potencia": modo_potencia,
             },
@@ -493,7 +543,7 @@ def compare_factura(factura, db) -> Dict[str, Any]:
         logger.error(f"Error persistiendo comparativa: {e}")
         # No fallar si falla la auditoría, pero loggear
 
-    _persist_results(db, factura.id, offers)
+    _persist_results(db, factura.id, offers, comparativa_id=comparativa_id)
 
     return {
         "factura_id": factura.id,

@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 # Importamos rutas
 from app.routes.webhook import router as webhook_router
 from app.routes.clientes import router as clientes_router
+from app.routes.debug import router as debug_router
 
 from app.db.conn import Base, engine
 from app.db import models
@@ -15,6 +16,15 @@ app = FastAPI(
     title="RapidEnergy API",
     version="1.0.0"
 )
+
+@app.on_event("startup")
+async def startup_event():
+    import os
+    db_url = os.getenv("DATABASE_URL", "")
+    masked_url = "SQLite/Local"
+    if "@" in db_url:
+        masked_url = db_url.split("@")[1]
+    print(f"🚀 [STARTUP] Conectado a BD: {masked_url}")
 
 # Inicializar Base de Datos (crear tablas)
 Base.metadata.create_all(bind=engine)
@@ -69,3 +79,5 @@ def debug_gemini():
 # Incluimos las rutas
 app.include_router(webhook_router)
 app.include_router(clientes_router)
+app.include_router(debug_router)
+

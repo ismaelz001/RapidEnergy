@@ -263,6 +263,19 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
             # Normalizar
             norm = normalize_cups(cand)
             print(f"🧹 NORMALIZED: {norm}")
+            
+            # [CUPS-AUDIT] LOG #3: CUPS PARSING DETAIL
+            from app.utils.cups import BLACKLIST
+            blacklist_hit = False
+            blacklist_word = None
+            for word in BLACKLIST:
+                if word in cand.upper():
+                    blacklist_hit = True
+                    blacklist_word = word
+                    break
+            
+            print(f"[CUPS-AUDIT] #3 - PARSE: raw='{cand}' norm='{norm}' blacklist={blacklist_hit}({blacklist_word}) valid_len={20 <= len(norm) <= 22 if norm else False}")
+
             if not norm:
                 print("❌ REJECTED BY NORMALIZATION")
                 continue
@@ -819,6 +832,18 @@ def extract_data_with_gemini(file_bytes: bytes, is_pdf: bool = True) -> dict:
 
 def extract_data_from_pdf(file_bytes: bytes) -> dict:
     is_pdf = file_bytes.startswith(b"%PDF")
+    
+    # [CUPS-AUDIT] LOG #1: Motor OCR previsto
+    import os
+    gemini_key_present = bool(os.getenv("GEMINI_API_KEY"))
+    app_version = os.getenv("APP_VERSION", "unknown")
+    print(f"""
+[CUPS-AUDIT] #1 - OCR ENGINE SELECTION
+  Motor previsto: {'GEMINI-1.5-FLASH' if gemini_key_present else 'PYPDF/VISION'}
+  GEMINI_API_KEY presente: {gemini_key_present}
+  APP_VERSION: {app_version}
+  Tipo archivo: {'PDF' if is_pdf else 'IMAGE'}
+""")
     
     # INTENTAR GEMINI PRIMERO (Premium)
     api_key = os.getenv("GEMINI_API_KEY")

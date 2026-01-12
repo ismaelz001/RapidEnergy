@@ -35,16 +35,24 @@ def mass_upload():
 
                 if response.status_code == 200:
                     data = response.json()
-                    ocr = data.get("ocr_preview", {})
+                    factura_id = data.get('id')
                     
+                    # FETCH REAL DATA FROM DATABASE
+                    real_data_response = requests.get(f"https://rapidenergy.onrender.com/webhook/facturas/{factura_id}")
+                    if real_data_response.status_code == 200:
+                        real_data = real_data_response.json()
+                        cups = real_data.get("cups")  # CUPS REAL DE LA BBDD
+                    else:
+                        cups = "ERROR_FETCH"
+                    
+                    ocr = data.get("ocr_preview", {})
                     engine = ocr.get("ocr_engine", "Unknown/Vision")
-                    cups = ocr.get("cups")
                     cliente = ocr.get("titular") or ocr.get("cliente")
                     total = ocr.get("total_factura") or ocr.get("importe")
                     
-                    print(f"   ✅ ÉXITO (ID: {data.get('id')})")
+                    print(f"   ✅ ÉXITO (ID: {factura_id})")
                     print(f"      Motor Used: {engine}")
-                    print(f"      CUPS:       {cups}")
+                    print(f"      CUPS (BBDD):       {cups}")
                     print(f"      Cliente:    {cliente}")
                     print(f"      Total:      {total} €")
                     

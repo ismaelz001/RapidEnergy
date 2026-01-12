@@ -6,6 +6,9 @@ from app.exceptions import DomainError
 from pydantic import BaseModel
 from typing import Optional
 import json
+import logging
+import inspect
+
 
 router = APIRouter(prefix="/webhook", tags=["webhook"])
 
@@ -81,14 +84,7 @@ def validate_factura_completitud(factura: Factura):
     return len(errors) == 0, errors
 
 
-def normalize_cups(cups: str) -> str:
-    """Normaliza CUPS: uppercase, quita espacios/guiones/puntos. NO rechaza nada."""
-    if not cups:
-        return None
-    import re
-    cleaned = cups.strip().upper()
-    cleaned = re.sub(r'[\s\-.]', '', cleaned)
-    return cleaned if cleaned else None
+from app.utils.cups import normalize_cups, is_valid_cups
 
 
 @router.post("/upload_v2")
@@ -152,6 +148,10 @@ async def process_factura(file: UploadFile, db: Session = Depends(get_db)):
     
     # --- NORMALIZACIÓN Y DEDUPLICACIÓN TRI-FACTOR ---
     cups_extraido = normalize_cups(ocr_data.get("cups"))
+    # Validación estricta para persistencia: si no es válido, lo descartamos ahora
+    if cups_extraido and not is_valid_cups(cups_extraido):
+        print(f"[WEBHOOK] CUPS inválido detectado y descartado: {cups_extraido}")
+        cups_extraido = None
     fecha_ocr = ocr_data.get("fecha")
     total_ocr = ocr_data.get("total_factura")
     
@@ -276,9 +276,21 @@ async def process_factura(file: UploadFile, db: Session = Depends(get_db)):
     except:
         pass
 
+    # Usamos el CUPS ya validado en el paso de deduplicación
+    cups_final_db = cups_extraido
+    
+    # [CUPS-AUDIT] LOG #4: Persistence
+    print(f"""
+[CUPS-AUDIT] #4 - DATABASE PERSISTENCE
+  factura_id: (pending commit)
+  cups_ocr_input: {ocr_data.get('cups')}
+  cups_final_db: {cups_final_db}
+  atr: {ocr_data.get('atr')}
+""")
+
     nueva_factura = Factura(
         filename=file.filename,
-        cups=normalize_cups(ocr_data.get("cups")),
+        cups=cups_final_db,
         consumo_kwh=ocr_data.get("consumo_kwh"),
         importe=ocr_data.get("importe"), # Base imponible fallback?
         total_factura=ocr_data.get("total_factura"), # Priority
@@ -317,6 +329,18 @@ async def process_factura(file: UploadFile, db: Session = Depends(get_db)):
         nueva_factura.raw_data, missing_fields=list(errors.keys())
     )
 
+    # [CUPS-AUDIT] PRUEBA IRREFUTABLE START
+    try:
+        logging.warning(f"""[CUPS-AUDIT] STEP 1 PERSISTENCE:
+        cups_raw: {str(ocr_data.get('cups'))[:80]}
+        cups_norm: {str(nueva_factura.cups)[:80]}
+        cups_valid: {is_valid_cups(str(nueva_factura.cups)) if nueva_factura.cups else False}
+        normalize_source: {inspect.getsourcefile(normalize_cups)}
+        """)
+    except Exception as e:
+        print(f"[CUPS-AUDIT] Logger Error: {e}")
+    # [CUPS-AUDIT] END
+
     db.add(nueva_factura)
     db.commit()
     db.refresh(nueva_factura)
@@ -352,7 +376,15 @@ def update_factura(factura_id: int, factura_update: FacturaUpdate, db: Session =
     update_data = factura_update.dict(exclude_unset=True)
     for key, value in update_data.items():
         if key == 'cups' and value:
-            value = normalize_cups(value)
+            norm = normalize_cups(value)
+            if norm and is_valid_cups(norm):
+                value = norm
+            else:
+                # Si es inválido, ¿lo rechazamos o lo dejamos null? 
+                # El usuario pidió "cups_norm=None". 
+                # Pero en un PUT explícito quizás deberíamos dar error?
+                # Siguiendo la instrucción estricta "Persistir cups_norm (no el raw)" y "if ... not is_valid ... None"
+                value = None
         if key == "atr" and value:
             from app.services.ocr import extract_atr
             normalized_atr = extract_atr(str(value))
@@ -366,6 +398,18 @@ def update_factura(factura_id: int, factura_update: FacturaUpdate, db: Session =
     factura.raw_data = merge_raw_data_audit(
         factura.raw_data, missing_fields=list(errors.keys())
     )
+
+    # [CUPS-AUDIT] PRUEBA IRREFUTABLE START
+    try:
+        logging.warning(f"""[CUPS-AUDIT] STEP 2 UPDATE:
+        factura_id: {factura.id}
+        cups_final: {str(factura.cups)[:80]}
+        cups_valid: {is_valid_cups(str(factura.cups)) if factura.cups else False}
+        normalize_source: {inspect.getsourcefile(normalize_cups)}
+        """)
+    except Exception as e:
+        print(f"[CUPS-AUDIT] Logger Error: {e}")
+    # [CUPS-AUDIT] END
 
     db.commit()
     db.refresh(factura)

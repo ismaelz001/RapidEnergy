@@ -1,4 +1,5 @@
 import re
+import logging
 
 CONTROL_LETTERS = "TRWAGMYFPDXBNJZSQVHLCKE"
 BLACKLIST = ["FACTURA", "RESUMEN", "TOTAL", "CLIENTE", "SUMINISTRO", "TELEFONO", "ELECTRICIDAD"]
@@ -15,18 +16,20 @@ def normalize_cups(text: str) -> str | None:
         return None
     
     # 1. Limpiar caracteres básicos
-    cleaned = text.upper()
-    cleaned = re.sub(r"[\s\-\.\n]", "", cleaned)
+    # Eliminamos espacios, guiones, puntos, saltos de línea
+    cleaned = re.sub(r"[\s\-\.\n]+", "", text.upper())
     
     # 2. Check Blacklist
     for bad_word in BLACKLIST:
         if bad_word in cleaned:
+            logging.warning(f"[CUPS-NORM] Rejecting '{text}' (cleaned: '{cleaned}') - Reason: blacklist '{bad_word}'")
             return None
             
     # 3. Validar longitud bruta plausible (ES + 16 num + 2 letras = 20 chars min)
     # Algunos sistemas pueden tener 20 o 22 caracteres.
     if len(cleaned) < 20 or len(cleaned) > 22:
-        return None  # Longitud inválida
+        logging.warning(f"[CUPS-NORM] Rejecting '{text}' (cleaned: '{cleaned}', len={len(cleaned)}) - Reason: length invalid (expected 20-22)")
+        return None
 
     return cleaned
 

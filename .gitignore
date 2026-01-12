@@ -1,24 +1,53 @@
-.env
-__pycache__/
-*.pyc
-files/
-google_creds.json
-debug_ocr_creds.py
-*.log
+# System & IDE
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Node / Next.js
 node_modules/
 .next/
 dist/
 build/
-.DS_Store
-.vscode/
+coverage/
 
-# Ignore root data folder but not app routes
-/facturas/
-!/app/facturas/
-!/app/**/facturas/
-
-local.db
+# Python
 __pycache__/
+*.pyc
+*.pyo
+*.pyd
+venv/
+env/
+.pytest_cache/
 
-scripts/patch_db_atr.py
-tests/qa_prod_exec.py
+# Secrets & Local Env (High Risk)
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+google_creds.json
+*_creds.json
+secret_*.json
+_secrets_stash/
+
+# Local DB
+*.db
+*.sqlite3
+local.db
+
+# Archives & Temporary Data
+__archive__/
+facturas/
+temp_facturas/
+facturas.zip
+tmp/
+*.log
+
+# Project specific
+scripts/test_cups_audit.py
+test_cups_local.py
+test_facturas_local.py
+verify_local_logic.py
+debug_*.py
+mnonexistent_file_test.py
