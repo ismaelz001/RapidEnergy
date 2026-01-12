@@ -91,8 +91,8 @@ def normalize_cups(cups: str) -> str:
     return cleaned
 
 
-@router.post("/upload")
-async def upload_factura(file: UploadFile, db: Session = Depends(get_db)):
+@router.post("/upload_v2")
+async def process_factura(file: UploadFile, db: Session = Depends(get_db)):
     # --- LOGS DE DIAGNÓSTICO (OBJETIVO 1) ---
     print(f"\n🚀 [UPLOAD] Recibiendo archivo: {file.filename}")
     print(f"📁 Tipo: {file.content_type}")
