@@ -1,27 +1,24 @@
 import requests
 
 BASE_URL = "https://rapidenergy.onrender.com"
-IDS_TO_CLEAN = list(range(38, 55)) # Clean wide range
+IDS_TO_CLEAN = list(range(62, 80))  # Expanded range
 
 def clean_and_verify():
-    print(f"🧹 Limpiando registros sucios de pruebas anteriores ({IDS_TO_CLEAN[0]} - {IDS_TO_CLEAN[-1]})...")
+    print(f"🧹 Limpiando registros ({IDS_TO_CLEAN[0]} - {IDS_TO_CLEAN[-1]})...")
     
     for fid in IDS_TO_CLEAN:
         try:
             r = requests.get(f"{BASE_URL}/webhook/facturas/{fid}")
             if r.status_code == 200:
                 data = r.json()
-                client_id = data.get("cliente_id") or (data.get("cliente") or {}).get("id")
+                client_id = data.get("cliente_id")
                 
                 if client_id:
-                    print(f"   Deleting Client {client_id} (linked to Factura {fid})...")
                     requests.delete(f"{BASE_URL}/clientes/{client_id}")
                 else:
-                    print(f"   Deleting Orphan Factura {fid}...")
                     requests.delete(f"{BASE_URL}/webhook/facturas/{fid}")
-            # else: skip not found
-                
-        except Exception as e:
+                    
+        except Exception:
             pass
 
     print("\n✨ Limpieza completada.")
