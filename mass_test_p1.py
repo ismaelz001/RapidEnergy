@@ -2,7 +2,7 @@ import requests
 import os
 import json
 
-API_URL = "https://rapidenergy.onrender.com/webhook/upload"
+API_URL = "https://rapidenergy.onrender.com/webhook/upload_v2"
 DIR_PATH = "e:/MecaEnergy/temp_facturas/facturas"
 
 def mass_upload():

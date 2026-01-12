@@ -2,7 +2,7 @@ import requests
 import time
 import sys
 
-URL = "https://rapidenergy.onrender.com/"
+URL = "https://rapidenergy.onrender.com/debug/gemini"
 
 def poll_for_update():
     print(f"Polling {URL} for version 1.1.0...")
@@ -17,11 +17,10 @@ def poll_for_update():
             sys.stdout.write(f"\rAttempt {i+1}: Version={version} | GeminiEnv={engine_status}   ")
             sys.stdout.flush()
             
-            if "1.1.0" in version:
-                print("\n\n✅ DEPLOY COMPLETED!")
+            if r.status_code == 200:
+                print("\n\n✅ DEBUG ENDPOINT ALIVE!")
                 print("--------------------------------------------------")
-                print(f"Version: {version}")
-                print(f"Gemini Configured in ENV: {engine_status}")
+                print(json.dumps(data, indent=2))
                 print("--------------------------------------------------")
                 return
             

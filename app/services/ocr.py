@@ -217,6 +217,8 @@ def get_vision_client():
     return None, "\n".join(logs)
 
 
+from app.utils.cups import normalize_cups, is_valid_cups
+
 def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
     full_text = normalize_text(full_text)
     result = _empty_result(full_text)
@@ -244,41 +246,30 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
             "consumo_p4_kwh": None,
             "consumo_p5_kwh": None,
             "consumo_p6_kwh": None,
+            "consumo_p6_kwh": None,
             "bono_social": None,
             "parsed_fields": {},
         }
         detected_pf = {}
 
-        # 1. CUPS (Mucho más estricto para evitar "ESTA ES TU FACTURA")
-        # Un CUPS real tiene ES + 16 números + 2 letras + (opcional 2 letras/números)
-        # Buscamos ES seguido de dígitos y letras, pero excluyendo frases comunes
-        # 1. CUPS NUCLEAR: SOLO ES + digitos al principio.
-        # Si tiene letras después del ES, lo ignoramos preventivamente.
-        # Esto mata "ESUMEN", "ESTA", "ESTU"...
-        cups_match = re.search(r"(ES[0-9]{16}[0-9A-Z]*)", raw_text, re.IGNORECASE)
-        if cups_match:
-            raw_cups = cups_match.group(1).upper().strip()
-            # Limpiar ruidos
-            cleaned_cups = re.sub(r"[\s\-]", "", raw_cups)
-            
-            # VALIDACIÓN CRÍTICA: Un CUPS debe tener muchos números. 
-            # Si tiene palabras como FACTURA, ELECTRICIDAD, no es un CUPS.
-            blacklist = ["FACTURA", "ELECTRI", "SUMINISTRO", "TELEFONO", "CLIENTE"]
-            is_blacklisted = any(word in cleaned_cups for word in blacklist)
-            
-            # Los CUPS reales tienen 20 o 22 caracteres, de los cuales 16 son números
-            # Exigimos al menos 14 dígitos para evitar falsos positivos
-            digits_count = len(re.findall(r"\d", cleaned_cups))
-            has_enough_digits = digits_count >= 14
-            
-            # DEBUG SENTINEL: Si ves este mensaje en logs, tienes la versión nueva 1.2.0
-            print(f"[OCR DEBUG] Evaluando posible CUPS '{cleaned_cups}' | Digits: {digits_count} | Blacklisted: {is_blacklisted}")
-            
-            if not is_blacklisted and has_enough_digits and len(cleaned_cups) >= 18:
-                valid_cups = re.search(r"ES[0-9]{10,20}[0-9A-Z]{0,5}", cleaned_cups)
-                data["cups"] = valid_cups.group(0) if valid_cups else None
-            else:
-                data["cups"] = None
+        # 1. CUPS VALIDATION ROBUSTA
+        # Buscamos candidatos que empiecen por ES y tengan longitud plausible
+        # Normalizamos y pasamos el validador oficial.
+        candidates = re.findall(r"(ES[A-Z0-9\-\s]{18,25})", raw_text, re.IGNORECASE)
+        valid_cups_found = None
+        
+        for cand in candidates:
+            # Normalizar
+            norm = normalize_cups(cand)
+            if not norm:
+                continue
+                
+            # Validar Módulo 529
+            if is_valid_cups(norm):
+                valid_cups_found = norm
+                break # Encontramos uno válido
+        
+        data["cups"] = valid_cups_found
         
         detected_pf["cups"] = data["cups"] is not None
 
@@ -793,10 +784,19 @@ def extract_data_with_gemini(file_bytes: bytes, is_pdf: bool = True) -> dict:
                 result["total_factura"] = data[key]
         
         # Asegurar que cups esté normalizado y limpio
+        # Asegurar que cups esté normalizado y limpio
         if result.get("cups"):
-            raw_cups = str(result["cups"]).replace(" ", "").replace("-", "").upper()
-            match = re.search(r"ES[0-9A-Z]{18,22}", raw_cups)
-            result["cups"] = match.group(0) if match else None
+            cand = str(result["cups"])
+            norm = normalize_cups(cand)
+            
+            # Validar con algoritmo oficial
+            if norm and is_valid_cups(norm):
+                result["cups"] = norm
+            else:
+                print(f"[GEMINI CHECK] CUPS rechazado (inválido): {cand}")
+                result["cups"] = None
+                if "cups" not in result["missing_fields"]:
+                     result["missing_fields"].append("cups")
 
         # Completar metadatos
         result["parsed_fields"] = {k: v is not None for k, v in data.items()}
