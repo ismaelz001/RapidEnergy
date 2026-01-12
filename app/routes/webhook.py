@@ -142,6 +142,7 @@ async def upload_factura(file: UploadFile, db: Session = Depends(get_db)):
     import os
     if os.getenv("TEST_MODE") == "true":
         print(f"\n--- [DEBUG OCR] ---")
+        print(f"Motor: {ocr_data.get('ocr_engine', 'Standard/Vision')}")
         print(f"Archivo: {file.filename}")
         print(f"Hash: {file_hash}")
         print(f"CUPS Detectado: {ocr_data.get('cups')}")

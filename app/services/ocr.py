@@ -775,6 +775,7 @@ def extract_data_with_gemini(file_bytes: bytes, is_pdf: bool = True) -> dict:
         
         # Mapear a la estructura de resultado esperada
         result = _empty_result("Extraído con Gemini 1.5 Flash")
+        result["ocr_engine"] = "gemini-1.5-flash"
         
         # Poblar campos básicos
         for key in data:
@@ -783,9 +784,11 @@ def extract_data_with_gemini(file_bytes: bytes, is_pdf: bool = True) -> dict:
             elif key == "importe_factura":
                 result["total_factura"] = data[key]
         
-        # Asegurar que cups esté normalizado
+        # Asegurar que cups esté normalizado y limpio
         if result.get("cups"):
-            result["cups"] = result["cups"].replace(" ", "").upper()
+            raw_cups = str(result["cups"]).replace(" ", "").replace("-", "").upper()
+            match = re.search(r"ES[0-9A-Z]{18,22}", raw_cups)
+            result["cups"] = match.group(0) if match else None
 
         # Completar metadatos
         result["parsed_fields"] = {k: v is not None for k, v in data.items()}
