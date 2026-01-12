@@ -51,6 +51,21 @@ def read_root():
         "gemini_configured": "YES" if os.getenv("GEMINI_API_KEY") else "NO"
     }
 
+@app.get("/debug/gemini")
+def debug_gemini():
+    import google.generativeai as genai
+    key = os.getenv("GEMINI_API_KEY")
+    if not key:
+        return {"status": "MISSING_KEY"}
+    
+    try:
+        genai.configure(api_key=key)
+        model = genai.GenerativeModel("gemini-1.5-flash")
+        response = model.generate_content("Say 'OK'")
+        return {"status": "SUCCESS", "response": response.text}
+    except Exception as e:
+        return {"status": "ERROR", "detail": str(e)}
+
 # Incluimos las rutas
 app.include_router(webhook_router)
 app.include_router(clientes_router)
