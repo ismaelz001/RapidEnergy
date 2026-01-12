@@ -252,7 +252,10 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
         # 1. CUPS (Mucho más estricto para evitar "ESTA ES TU FACTURA")
         # Un CUPS real tiene ES + 16 números + 2 letras + (opcional 2 letras/números)
         # Buscamos ES seguido de dígitos y letras, pero excluyendo frases comunes
-        cups_match = re.search(r"(ES[0-9A-Z \t\-]{18,24})", raw_text, re.IGNORECASE)
+        # 1. CUPS NUCLEAR: SOLO ES + digitos al principio.
+        # Si tiene letras después del ES, lo ignoramos preventivamente.
+        # Esto mata "ESUMEN", "ESTA", "ESTU"...
+        cups_match = re.search(r"(ES[0-9]{16}[0-9A-Z]*)", raw_text, re.IGNORECASE)
         if cups_match:
             raw_cups = cups_match.group(1).upper().strip()
             # Limpiar ruidos
