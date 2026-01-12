@@ -249,18 +249,30 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
         }
         detected_pf = {}
 
-        # 1. CUPS (Flexible spaces)
-        # Matches ES followed by 18-32 alphanums/spaces/dashes (increased from 24)
-        cups_match = re.search(r"(ES[ \t0-9A-Z\-]{18,32})", raw_text, re.IGNORECASE)
+        # 1. CUPS (Mucho más estricto para evitar "ESTA ES TU FACTURA")
+        # Un CUPS real tiene ES + 16 números + 2 letras + (opcional 2 letras/números)
+        # Buscamos ES seguido de dígitos y letras, pero excluyendo frases comunes
+        cups_match = re.search(r"(ES[0-9A-Z \t\-]{18,24})", raw_text, re.IGNORECASE)
         if cups_match:
-            # Normalize immediately
-            raw_cups = cups_match.group(1).upper().splitlines()[0]
+            raw_cups = cups_match.group(1).upper().strip()
+            # Limpiar ruidos
             cleaned_cups = re.sub(r"[\s\-]", "", raw_cups)
-            valid_cups = re.search(r"ES[0-9A-Z]{18,24}", cleaned_cups)
-            data["cups"] = valid_cups.group(0) if valid_cups else cleaned_cups
-            detected_pf["cups"] = True
-        else:
-            detected_pf["cups"] = False
+            
+            # VALIDACIÓN CRÍTICA: Un CUPS debe tener muchos números. 
+            # Si tiene palabras como FACTURA, ELECTRICIDAD, no es un CUPS.
+            blacklist = ["FACTURA", "ELECTRI", "SUMINISTRO", "TELEFONO", "CLIENTE"]
+            is_blacklisted = any(word in cleaned_cups for word in blacklist)
+            
+            # Los CUPS reales tienen al menos 4-5 números después del ES
+            has_enough_digits = len(re.findall(r"\d", cleaned_cups)) >= 10
+            
+            if not is_blacklisted and has_enough_digits and len(cleaned_cups) >= 18:
+                valid_cups = re.search(r"ES[0-9]{10,20}[0-9A-Z]{0,5}", cleaned_cups)
+                data["cups"] = valid_cups.group(0) if valid_cups else None
+            else:
+                data["cups"] = None
+        
+        detected_pf["cups"] = data["cups"] is not None
 
         # 2. Fechas range (Multiple formats)
         # Format 1: 31 de agosto de 2025 a 30 de septiembre...
