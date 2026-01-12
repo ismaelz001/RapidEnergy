@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session, joinedload
 from app.db.conn import get_db
 from app.db.models import Factura, Cliente, Comparativa
 from app.exceptions import DomainError
+from app.utils.cups import normalize_cups, is_valid_cups
 from pydantic import BaseModel
 from typing import Optional
 import json
@@ -81,14 +82,7 @@ def validate_factura_completitud(factura: Factura):
     return len(errors) == 0, errors
 
 
-def normalize_cups(cups: str) -> str:
-    """Sanitiza el CUPS: trim, uppercase, elimina espacios, guiones y puntos."""
-    if not cups:
-        return None
-    import re
-    cleaned = cups.strip().upper()
-    cleaned = re.sub(r'[\s\-.]', '', cleaned)
-    return cleaned
+# normalize_cups now imported from app.utils.cups (robust version with validation)
 
 
 @router.post("/upload_v2")
