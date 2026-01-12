@@ -1,5 +1,8 @@
 import re
 
+# CRASH TEST: If you see this error in Render logs, the module IS being loaded
+raise Exception("🔥 CUPS MODULE LOADED SUCCESSFULLY - Remove this line after confirming!")
+
 CONTROL_LETTERS = "TRWAGMYFPDXBNJZSQVHLCKE"
 BLACKLIST = ["FACTURA", "RESUMEN", "TOTAL", "CLIENTE", "SUMINISTRO", "TELEFONO", "ELECTRICIDAD"]
 
