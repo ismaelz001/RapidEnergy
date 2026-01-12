@@ -1,3 +1,4 @@
+import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -42,8 +43,13 @@ app.add_middleware(
 )
 
 @app.get("/")
-def root():
-    return {"status": "ok", "service": "RapidEnergy API", "version": "1.0.0"}
+def read_root():
+    return {
+        "Hello": "World",
+        "version": "1.1.0 (Strict Regex + Gemini Support)",
+        "python": "3.11.9",
+        "gemini_configured": "YES" if os.getenv("GEMINI_API_KEY") else "NO"
+    }
 
 # Incluimos las rutas
 app.include_router(webhook_router)
