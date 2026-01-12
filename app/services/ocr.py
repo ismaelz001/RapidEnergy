@@ -263,8 +263,13 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
             blacklist = ["FACTURA", "ELECTRI", "SUMINISTRO", "TELEFONO", "CLIENTE"]
             is_blacklisted = any(word in cleaned_cups for word in blacklist)
             
-            # Los CUPS reales tienen al menos 4-5 números después del ES
-            has_enough_digits = len(re.findall(r"\d", cleaned_cups)) >= 10
+            # Los CUPS reales tienen 20 o 22 caracteres, de los cuales 16 son números
+            # Exigimos al menos 14 dígitos para evitar falsos positivos
+            digits_count = len(re.findall(r"\d", cleaned_cups))
+            has_enough_digits = digits_count >= 14
+            
+            # DEBUG SENTINEL: Si ves este mensaje en logs, tienes la versión nueva 1.2.0
+            print(f"[OCR DEBUG] Evaluando posible CUPS '{cleaned_cups}' | Digits: {digits_count} | Blacklisted: {is_blacklisted}")
             
             if not is_blacklisted and has_enough_digits and len(cleaned_cups) >= 18:
                 valid_cups = re.search(r"ES[0-9]{10,20}[0-9A-Z]{0,5}", cleaned_cups)
