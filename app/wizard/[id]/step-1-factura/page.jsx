@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import WizardLayout from '@/app/components/wizard/WizardLayout';
 import { uploadFactura } from '@/lib/apiClient';
 
@@ -11,6 +12,7 @@ export default function Step1FacturaPage({ params }) {
   const [uploading, setUploading] = useState(false);
   const [ocrData, setOcrData] = useState(null);
   const [error, setError] = useState(null);
+  const [facturaId, setFacturaId] = useState(null); // BUG A FIX
 
   const handleDrop = (e) => {
     e.preventDefault();
@@ -32,6 +34,7 @@ export default function Step1FacturaPage({ params }) {
 
     try {
       const res = await uploadFactura(selectedFile);
+      setFacturaId(res.id); // BUG A FIX: Siempre guardar ID
       setOcrData(res.ocr_preview);
       setUploading(false);
       
@@ -43,11 +46,30 @@ export default function Step1FacturaPage({ params }) {
       }
     } catch (err) {
       console.error("Upload error:", err);
-      // P6: Manejar conflicto (409) de duplicidad
-      if (err.status === 409 || err.message.includes("409") || err.message.toLowerCase().includes("duplicada")) {
-         setError("Esta factura ya ha sido subida anteriormente (Mismo CUPS, Fecha e Importe).");
+      // BUG D FIX: Manejar conflicto (409) con info de factura existente
+      if (err.status === 409) {
+        try {
+          const errorText = err.message || "";
+          const detailMatch = errorText.match(/\{[^}]+\}/);
+          if (detailMatch) {
+            const errorDetail = JSON.parse(detailMatch[0]);
+            if (errorDetail.id) {
+              setOcrData({
+                duplicate: true,
+                existing_id: errorDetail.id,
+                existing_client: errorDetail.client,
+                message: errorDetail.message || "Esta factura ya fue subida."
+              });
+              setUploading(false);
+              return;
+            }
+          }
+        } catch (parseErr) {
+          console.log("No se pudo parsear detalle 409:", parseErr);
+        }
+        setError("Esta factura ya ha sido subida anteriormente.");
       } else {
-         setError("No se pudo procesar la factura. Inténtalo de nuevo.");
+        setError(err.message || "No se pudo procesar la factura. Inténtalo de nuevo.");
       }
       setUploading(false);
     }
@@ -66,7 +88,7 @@ export default function Step1FacturaPage({ params }) {
     <WizardLayout
       currentStep={1}
       nextLabel="SIGUIENTE"
-      nextDisabled={!ocrData}
+      nextDisabled={!facturaId} // BUG A FIX: Solo necesita ID, no OCR
       onNext={handleNext}
     >
       <div className="flex flex-col gap-6">
@@ -142,6 +164,41 @@ export default function Step1FacturaPage({ params }) {
                   <div>
                     <span className="text-gris-secundario">• Cliente:</span> {ocrData.titular || ocrData.cliente || 'No detectado'}
                   </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Duplicate state - BUG D FIX */}
+        {ocrData?.duplicate && !uploading && (
+          <div className="card border-ambar-alerta bg-ambar-alerta/5">
+            <div className="flex items-start gap-3">
+              <span className="text-2xl">📋</span>
+              <div className="flex-1">
+                <h3 className="font-semibold text-gris-texto mb-2">
+                  Factura ya registrada
+                </h3>
+                <p className="text-sm text-gris-secundario mb-4">
+                  {ocrData.message}
+                </p>
+                {ocrData.existing_client && (
+                  <div className="text-sm text-gris-texto mb-4">
+                    <span className="text-gris-secundario">Cliente:</span> {ocrData.existing_client.nombre || 'Sin nombre'}
+                  </div>
+                )}
+                <div className="flex gap-3">
+                  <Link href={`/wizard/${ocrData.existing_id}/step-2-validar`}>
+                    <button className="px-4 py-2 bg-azul-control text-white rounded-lg hover:bg-blue-700 transition text-sm font-medium">
+                      Ir a validar
+                    </button>
+                  </Link>
+                  <button 
+                    onClick={() => window.location.href = '/dashboard'}
+                    className="px-4 py-2 border border-gris-secundario text-gris-texto rounded-lg hover:bg-white/5 transition text-sm font-medium"
+                  >
+                    Volver al dashboard
+                  </button>
                 </div>
               </div>
             </div>

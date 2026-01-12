@@ -108,6 +108,7 @@ export default function Step2ValidarPage({ params }) {
     'impuesto_electrico'
   ]);
   const requiredFields = [
+    'cups', // CUPS es obligatorio (no puede estar vacío)
     'atr',
     'potencia_p1',
     'potencia_p2',
@@ -117,6 +118,7 @@ export default function Step2ValidarPage({ params }) {
     'total_factura'
   ];
   const fieldLabels = {
+    cups: 'CUPS',
     atr: 'ATR',
     potencia_p1: 'Potencia P1',
     potencia_p2: 'Potencia P2',
@@ -344,7 +346,8 @@ export default function Step2ValidarPage({ params }) {
           <div className="space-y-6">
             <div>
               <label htmlFor="cups" className="label text-white">
-                CUPS <span className="text-[#94A3B8] font-normal text-xs ml-2">(Código Universal)</span>
+                CUPS <span className="text-xs text-blue-400 ml-1">*</span>
+                <span className="text-[#94A3B8] font-normal text-xs ml-2">(Código Universal)</span>
               </label>
               <Input
                 id="cups"
@@ -357,9 +360,9 @@ export default function Step2ValidarPage({ params }) {
                     updateFormData({ cups: clean });
                   }
                 }}
-                validated={isCUPSPlausible(form.cups)}
-                error={form.cups && !isCUPSPlausible(form.cups)}
-                errorMessage="Formato no estándar"
+                validated={isValid(form.cups) && isCUPSPlausible(form.cups)}
+                error={!isValid(form.cups) || (form.cups && !isCUPSPlausible(form.cups))}
+                errorMessage={!isValid(form.cups) ? "CUPS es obligatorio" : "Formato no estándar (permitido pero verifica)"}
                 placeholder="ES ---"
               />
             </div>

@@ -1,9 +1,11 @@
 from fastapi import APIRouter, UploadFile, Depends, HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from app.db.conn import get_db
-from app.db.models import Factura
+from app.db.models import Factura, Cliente
+from app.exceptions import DomainError
 from pydantic import BaseModel
 from typing import Optional
+import json
 
 router = APIRouter(prefix="/webhook", tags=["webhook"])
 
@@ -29,6 +31,18 @@ class FacturaUpdate(BaseModel):
     numero_factura: Optional[str] = None
 
 
+class OfferSelection(BaseModel):
+    """Modelo para recibir la oferta seleccionada por el usuario."""
+    provider: str
+    plan_name: str
+    estimated_total: float
+    saving_amount: float
+    saving_percent: float
+    commission: Optional[float] = None
+    tag: Optional[str] = None
+    breakdown: Optional[dict] = None
+
+
 REQUIRED_FACTURA_FIELDS = [
     "atr",
     "consumo_p1_kwh",
@@ -44,8 +58,14 @@ def validate_factura_completitud(factura: Factura):
     """
     Valida que una factura tenga los campos minimos para comparar (2.0TD).
     Devuelve (is_valid: bool, errors: dict[field, str]).
+    CUPS es OBLIGATORIO (no puede estar vacío).
     """
     errors = {}
+    
+    # Validación CUPS obligatoria
+    if not factura.cups or not str(factura.cups).strip():
+        errors["cups"] = "CUPS es obligatorio y no puede estar vacío"
+    
     for field in REQUIRED_FACTURA_FIELDS:
         val = getattr(factura, field, None)
         # Para booleanos, solo consideramos ausente si es None (False es válido)
@@ -85,19 +105,37 @@ async def upload_factura(file: UploadFile, db: Session = Depends(get_db)):
     import hashlib
     file_hash = hashlib.sha256(file_bytes).hexdigest()
     
-    existing_by_hash = db.query(Factura).filter(Factura.file_hash == file_hash).first()
+    existing_by_hash = (
+        db.query(Factura)
+        .options(joinedload(Factura.cliente)) # Eager load cliente
+        .filter(Factura.file_hash == file_hash)
+        .first()
+    )
+    
     if existing_by_hash:
+        client_info = None
+        msg = "Esta factura ya fue subida anteriormente."
+        if existing_by_hash.cliente:
+            c = existing_by_hash.cliente
+            client_info = {
+                "id": c.id,
+                "nombre": c.nombre,
+                "estado": c.estado
+            }
+            msg = f"Factura duplicada. Pertenece al cliente {c.nombre}."
+            
         raise HTTPException(
             status_code=409,
             detail={
                 "status": "duplicate",
-                "message": "Esta factura ya fue subida anteriormente (detectado por archivo idéntico).",
-                "id": existing_by_hash.id
+                "message": msg,
+                "id": existing_by_hash.id,
+                "client": client_info
             }
         )
 
     # 2. OCR y extraccion de datos
-    from app.services.ocr import extract_data_from_pdf
+    from app.services.ocr import extract_data_from_pdf, build_raw_data_payload, merge_raw_data_audit
     ocr_data = extract_data_from_pdf(file_bytes)
     
     # --- LOGS DE DEBUG QA (TEST_MODE) ---
@@ -107,14 +145,14 @@ async def upload_factura(file: UploadFile, db: Session = Depends(get_db)):
         print(f"Archivo: {file.filename}")
         print(f"Hash: {file_hash}")
         print(f"CUPS Detectado: {ocr_data.get('cups')}")
-        print(f"Total Detectado: {ocr_data.get('total_factura') or ocr_data.get('importe')}")
-        print(f"Cliente Detectado: {ocr_data.get('titular') or ocr_data.get('cliente')}")
+        print(f"Total Detectado: {ocr_data.get('total_factura')}")
+        print(f"Cliente Detectado: {ocr_data.get('titular')}")
         print(f"-------------------\n")
     
     # --- NORMALIZACIÓN Y DEDUPLICACIÓN TRI-FACTOR ---
     cups_extraido = normalize_cups(ocr_data.get("cups"))
     fecha_ocr = ocr_data.get("fecha")
-    total_ocr = ocr_data.get("total_factura") or ocr_data.get("importe")
+    total_ocr = ocr_data.get("total_factura")
     
     if cups_extraido and fecha_ocr and total_ocr:
         # Buscamos duplicado exacto por datos
@@ -126,7 +164,7 @@ async def upload_factura(file: UploadFile, db: Session = Depends(get_db)):
             .first()
         )
         if duplicate:
-            raise HTTPException(
+             raise HTTPException(
                 status_code=409,
                 detail={
                     "status": "conflict",
@@ -145,7 +183,7 @@ async def upload_factura(file: UploadFile, db: Session = Depends(get_db)):
             .first()
         )
         if existing_by_num:
-             raise HTTPException(
+              raise HTTPException(
                 status_code=409,
                 detail={
                     "status": "conflict",
@@ -155,31 +193,15 @@ async def upload_factura(file: UploadFile, db: Session = Depends(get_db)):
             )
 
     # 3. Logica Upsert Cliente
-    from app.db.models import Cliente
-
     # Datos personales del OCR (solo para clientes nuevos)
     nombre_ocr = ocr_data.get("titular")
     email_ocr = ocr_data.get("email")
     dni_ocr = ocr_data.get("dni")
     direccion_ocr = ocr_data.get("direccion")
     telefono_ocr = ocr_data.get("telefono")
-    provincia_ocr = ocr_data.get("provincia") # New field
+    provincia_ocr = ocr_data.get("provincia")
+    
     cliente_db = None
-
-    # Fallback dedupe: CUPS + filename (legacy)
-    if cups_extraido:
-        existing_factura = (
-            db.query(Factura)
-            .filter(Factura.cups == cups_extraido)
-            .filter(Factura.filename == file.filename)
-            .first()
-        )
-        if existing_factura:
-             return {
-                "status": "duplicate",
-                "message": "Factura ya existente para este CUPS y nombre de archivo.",
-                "redirect_url": f"/facturas/{existing_factura.id}"
-            }
 
     if cups_extraido:
         # Buscar cliente existente por CUPS (YA NORMALIZADO)
@@ -237,28 +259,42 @@ async def upload_factura(file: UploadFile, db: Session = Depends(get_db)):
             db.refresh(cliente_db)
 
     # 4. Crear factura vinculada
-    from app.services.ocr import build_raw_data_payload
+    # Ensure dias_facturados goes into parsed_fields/raw_data since no column exists
+    raw_payload_str = build_raw_data_payload(
+        ocr_data.get("raw_text"),
+        extraction_summary=ocr_data.get("extraction_summary"),
+    )
+    # Merge parsed_fields into raw_data JSON for debugging/fallback
+    try:
+        payload_json = json.loads(raw_payload_str)
+        if "parsed_fields" in ocr_data:
+            payload_json["parsed_fields"] = ocr_data["parsed_fields"]
+        if "dias_facturados" in ocr_data:
+            payload_json["dias_facturados"] = ocr_data["dias_facturados"]
+        raw_payload_str = json.dumps(payload_json, ensure_ascii=False)
+    except:
+        pass
+
     nueva_factura = Factura(
         filename=file.filename,
-        cups=ocr_data.get("cups"),
+        cups=normalize_cups(ocr_data.get("cups")),
         consumo_kwh=ocr_data.get("consumo_kwh"),
-        importe=ocr_data.get("importe"),
+        importe=ocr_data.get("importe"), # Base imponible fallback?
+        total_factura=ocr_data.get("total_factura"), # Priority
         fecha=ocr_data.get("fecha"),
         fecha_inicio=ocr_data.get("fecha_inicio_consumo"),
         fecha_fin=ocr_data.get("fecha_fin_consumo"),
-        raw_data=build_raw_data_payload(
-            ocr_data.get("raw_text"),
-            extraction_summary=ocr_data.get("extraction_summary"),
-        ),
+        raw_data=raw_payload_str,
+        
         # FIX: Fallback ATR extraction
-        atr=ocr_data.get("atr") or extract_atr(ocr_data.get("raw_text")),
+        atr=ocr_data.get("atr"),
         cliente_id=cliente_db.id if cliente_db else None,
         
         # Deduplicacion
         file_hash=file_hash,
         numero_factura=ocr_data.get("numero_factura"),
         
-        # Nuevos campos mapeados para persistencia completa
+        # Nuevos campos mapeados
         potencia_p1_kw=ocr_data.get("potencia_p1_kw"),
         potencia_p2_kw=ocr_data.get("potencia_p2_kw"),
         consumo_p1_kwh=ocr_data.get("consumo_p1_kwh"),
@@ -272,12 +308,10 @@ async def upload_factura(file: UploadFile, db: Session = Depends(get_db)):
         alquiler_contador=ocr_data.get("alquiler_contador"),
         impuesto_electrico=ocr_data.get("impuesto_electrico"),
         iva=ocr_data.get("iva"),
-        total_factura=ocr_data.get("total_factura"),
     )
 
     es_valida, errors = validate_factura_completitud(nueva_factura)
     nueva_factura.estado_factura = "lista_para_comparar" if es_valida else "pendiente_datos"
-    from app.services.ocr import merge_raw_data_audit
     nueva_factura.raw_data = merge_raw_data_audit(
         nueva_factura.raw_data, missing_fields=list(errors.keys())
     )
@@ -289,7 +323,7 @@ async def upload_factura(file: UploadFile, db: Session = Depends(get_db)):
     return {
         "id": nueva_factura.id,
         "filename": nueva_factura.filename,
-        "ocr_preview": ocr_data,
+        "ocr_preview": ocr_data, # Use the clean dict from OCR
         "message": "Factura procesada y guardada correctamente",
     }
 
@@ -375,7 +409,222 @@ def comparar_factura(factura_id: int, db: Session = Depends(get_db)):
     try:
         result = compare_factura(factura, db)
         return result
+    except DomainError as e:
+        # P1 PRODUCCIÓN: Mapear errores de dominio a HTTP 422
+        raise HTTPException(
+            status_code=422,
+            detail={"code": e.code, "message": e.message}
+        )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error generando ofertas: {str(e)}")
+
+
+@router.post("/facturas/{factura_id}/seleccion")
+def guardar_seleccion_oferta(factura_id: int, offer: OfferSelection, db: Session = Depends(get_db)):
+    """
+    ENTREGABLE 1: Guardar la oferta seleccionada por el usuario.
+    - Persiste la oferta como JSON en la factura
+    - Actualiza el estado a 'oferta_seleccionada'
+    """
+    factura = db.query(Factura).filter(Factura.id == factura_id).first()
+    if not factura:
+        raise HTTPException(status_code=404, detail="Factura no encontrada")
+    
+    # Convertir oferta a JSON y guardar
+    offer_dict = offer.dict()
+    factura.selected_offer_json = json.dumps(offer_dict, ensure_ascii=False)
+    factura.estado_factura = "oferta_seleccionada"
+    
+    db.commit()
+    db.refresh(factura)
+    
+    return {
+        "status": "ok",
+        "message": "Oferta seleccionada guardada correctamente",
+        "factura_id": factura.id,
+        "estado": factura.estado_factura,
+        "selected_offer": offer_dict
+    }
+
+
+@router.get("/facturas/{factura_id}/presupuesto.pdf")
+def generar_presupuesto_pdf(factura_id: int, db: Session = Depends(get_db)):
+    """
+    ENTREGABLE 2: Generar PDF real con la oferta seleccionada.
+    - Requiere que exista oferta seleccionada
+    - Genera PDF con datos del cliente, CUPS, factura actual, oferta seleccionada
+    - NO incluye comisión
+    - Devuelve PDF para descarga
+    """
+    from fastapi.responses import StreamingResponse
+    from io import BytesIO
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib import colors
+    from reportlab.lib.units import cm
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.enums import TA_CENTER, TA_RIGHT
+    from datetime import datetime
+    
+    factura = db.query(Factura).filter(Factura.id == factura_id).first()
+    if not factura:
+        raise HTTPException(status_code=404, detail="Factura no encontrada")
+    
+    # Validar que exista oferta seleccionada
+    if not factura.selected_offer_json:
+        raise HTTPException(
+            status_code=400, 
+            detail="No hay una oferta seleccionada para esta factura. Por favor, selecciona una oferta primero."
+        )
+    
+    try:
+        selected_offer = json.loads(factura.selected_offer_json)
+    except:
+        raise HTTPException(status_code=500, detail="Error al leer la oferta seleccionada")
+    
+    # Crear PDF en memoria
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=2*cm, leftMargin=2*cm, topMargin=2*cm, bottomMargin=2*cm)
+    
+    # Estilos
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle(
+        'CustomTitle',
+        parent=styles['Heading1'],
+        fontSize=24,
+        textColor=colors.HexColor('#1E40AF'),
+        spaceAfter=30,
+        alignment=TA_CENTER
+    )
+    heading_style = ParagraphStyle(
+        'CustomHeading',
+        parent=styles['Heading2'],
+        fontSize=14,
+        textColor=colors.HexColor('#1E40AF'),
+        spaceAfter=12,
+        spaceBefore=12
+    )
+    
+    # Contenido del PDF
+    story = []
+    
+    # Título
+    story.append(Paragraph("PRESUPUESTO ENERGÉTICO", title_style))
+    story.append(Spacer(1, 0.5*cm))
+    
+    # Fecha
+    fecha_actual = datetime.now().strftime("%d/%m/%Y")
+    story.append(Paragraph(f"<b>Fecha:</b> {fecha_actual}", styles['Normal']))
+    story.append(Spacer(1, 0.3*cm))
+    
+    # Información del cliente
+    cliente_nombre = factura.cliente.nombre if factura.cliente else "Cliente"
+    story.append(Paragraph("DATOS DEL CLIENTE", heading_style))
+    
+    cliente_data = [
+        ["Cliente:", cliente_nombre],
+        ["CUPS:", factura.cups or "No disponible"],
+    ]
+    cliente_table = Table(cliente_data, colWidths=[4*cm, 12*cm])
+    cliente_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (0, -1), colors.HexColor('#F1F5F9')),
+        ('TEXTCOLOR', (0, 0), (-1, -1), colors.black),
+        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+        ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 10),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.grey)
+    ]))
+    story.append(cliente_table)
+    story.append(Spacer(1, 0.5*cm))
+    
+    # Factura actual
+    story.append(Paragraph("SITUACIÓN ACTUAL", heading_style))
+    current_data = [
+        ["Total factura actual:", f"{factura.total_factura:.2f} €/mes"],
+    ]
+    current_table = Table(current_data, colWidths=[8*cm, 8*cm])
+    current_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#FEF2F2')),
+        ('TEXTCOLOR', (0, 0), (-1, -1), colors.black),
+        ('ALIGN', (0, 0), (0, -1), 'LEFT'),
+        ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
+        ('FONTNAME', (0, 0), (-1, -1), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 11),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 10),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.grey)
+    ]))
+    story.append(current_table)
+    story.append(Spacer(1, 0.5*cm))
+    
+    # Oferta propuesta
+    story.append(Paragraph("OFERTA PROPUESTA", heading_style))
+    oferta_data = [
+        ["Comercializadora:", selected_offer.get('provider', 'N/A')],
+        ["Tarifa:", selected_offer.get('plan_name', 'N/A')],
+        ["Total estimado:", f"{selected_offer.get('estimated_total', 0):.2f} €/mes"],
+        ["Ahorro mensual:", f"{selected_offer.get('saving_amount', 0):.2f} €"],
+        ["Ahorro anual estimado:", f"{selected_offer.get('saving_amount', 0) * 12:.2f} €"],
+    ]
+    oferta_table = Table(oferta_data, colWidths=[8*cm, 8*cm])
+    oferta_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#F0FDF4')),
+        ('TEXTCOLOR', (0, 0), (-1, -1), colors.black),
+        ('ALIGN', (0, 0), (0, -1), 'LEFT'),
+        ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
+        ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 10),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.grey)
+    ]))
+    story.append(oferta_table)
+    story.append(Spacer(1, 1*cm))
+    
+    # Resumen de ahorro
+    ahorro_anual = selected_offer.get('saving_amount', 0) * 12
+    story.append(Paragraph("RESUMEN", heading_style))
+    resumen_data = [
+        ["AHORRO TOTAL ANUAL ESTIMADO:", f"{ahorro_anual:.2f} €"]
+    ]
+    resumen_table = Table(resumen_data, colWidths=[10*cm, 6*cm])
+    resumen_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#16A34A')),
+        ('TEXTCOLOR', (0, 0), (-1, -1), colors.white),
+        ('ALIGN', (0, 0), (0, -1), 'LEFT'),
+        ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
+        ('FONTNAME', (0, 0), (-1, -1), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 14),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 12),
+        ('TOPPADDING', (0, 0), (-1, -1), 12),
+    ]))
+    story.append(resumen_table)
+    story.append(Spacer(1, 1*cm))
+    
+    # Nota al pie
+    nota_style = ParagraphStyle(
+        'Nota',
+        parent=styles['Normal'],
+        fontSize=8,
+        textColor=colors.grey,
+        alignment=TA_CENTER
+    )
+    story.append(Paragraph(
+        "Este presupuesto es un cálculo estimado basado en los datos de consumo proporcionados.<br/>Los ahorros reales pueden variar según el perfil de consumo.",
+        nota_style
+    ))
+    
+    # Generar PDF
+    doc.build(story)
+    buffer.seek(0)
+    
+    # Devolver como respuesta
+    return StreamingResponse(
+        buffer,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f"attachment; filename=presupuesto_factura_{factura_id}.pdf"
+        }
+    )
+

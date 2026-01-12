@@ -44,6 +44,40 @@ def test_total_factura_fallback_importe_factura():
     raw_text = "IMPORTE FACTURA: 26,87 EUR"
     parsed = parse_invoice_text(raw_text)
 
+
+def test_iberdrola_consumos_total_factura():
+    raw_text = """
+    Datos del contrato
+    Titular: Juan Cliente
+    NIF: 12345678A
+    DirecciÇün de suministro: Calle Falsa 123, Madrid
+
+    IdentificaciÇün punto de suministro (CUPS): ES 0031 4050 6789 0123 AB 1F
+    Peaje de acceso de transporte y distribuciÇün (ATR): 2.0TD
+    Potencia contratada: Punta 4,600 kW Valle 4,600 kW
+
+    InformaciÇün del consumo
+    PERIODO DE FACTURACIÇ"N: 31/08/2025 - 30/09/2025
+    DIAS FACTURADOS: 30
+
+    Sus consumos desagregados han sido punta: 59 kWh; llano: 55,99 kWh; valle 166,72 kWh.
+
+    Importes
+    IMPORTE TOTAL 32,13 ƒ'ª
+    IVA (21%) 6,75 ƒ'ª
+    TOTAL IMPORTE FACTURA 38,88 ƒ'ª
+    """
+    parsed = parse_invoice_text(raw_text)
+    assert parsed["cups"] == "ES0031405067890123AB1F"
+    assert parsed["consumo_p1_kwh"] == 59.0
+    assert parsed["consumo_p2_kwh"] == 55.99
+    assert parsed["consumo_p3_kwh"] == 166.72
+    assert parsed["total_factura"] == 38.88
+    assert parsed["fecha_inicio_consumo"] == "31/08/2025"
+    assert parsed["fecha_fin_consumo"] == "30/09/2025"
+    assert parsed["dias_facturados"] == 30
+    assert parsed["missing_fields"] == []
+
 def test_regression_naturgy_pvpc_truncated():
     # Use realistic text including specific keywords for extraction source validation
     raw_text = (

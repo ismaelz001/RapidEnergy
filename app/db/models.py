@@ -63,11 +63,36 @@ class Factura(Base):
     impuesto_electrico = Column(Float, nullable=True)
     iva = Column(Float, nullable=True)
     total_factura = Column(Float, nullable=True)
+    
+    # P1: Periodo de facturación (obligatorio para comparar)
+    periodo_dias = Column(Integer, nullable=True)
 
     # Estado
     estado_factura = Column(String, default="pendiente_datos")
+    
+    # Oferta seleccionada (Persistencia para MVP)
+    selected_offer_json = Column(Text, nullable=True)
     
     cliente_id = Column(Integer, ForeignKey("clientes.id"), nullable=True)
     
     # Relación: Una factura pertenece a un cliente
     cliente = relationship("Cliente", back_populates="facturas")
+
+
+class Comparativa(Base):
+    """P1: Auditoría de comparaciones de ofertas"""
+    __tablename__ = "comparativas"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    factura_id = Column(Integer, ForeignKey("facturas.id"), nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Inputs de la comparación
+    periodo_dias = Column(Integer, nullable=True)
+    current_total = Column(Float, nullable=True)
+    inputs_json = Column(Text, nullable=True)
+    
+    # Resultados
+    offers_json = Column(Text, nullable=True)
+    status = Column(String, default="ok")
+    error_json = Column(Text, nullable=True)

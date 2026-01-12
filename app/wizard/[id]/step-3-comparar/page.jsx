@@ -82,9 +82,50 @@ export default function Step3ComparerPage({ params }) {
     selectOffer(offer.id);
   };
 
-  const handleGeneratePresupuesto = () => {
-    if (isRecalculationNeeded) return;
-    setShowSuccessModal(true);
+  const handleGeneratePresupuesto = async () => {
+    if (isRecalculationNeeded || !selectedOffer) return;
+    
+    setLoading(true);
+    setError(null);
+    
+    try {
+      // ENTREGABLE 3: Conectar Step 3 con backend real
+      // 1) Guardar selección de oferta
+      const { selectOffer: saveOffer, downloadPresupuestoPDF } = await import('@/lib/apiClient');
+      
+      await saveOffer(params.id, {
+        provider: selectedOffer.provider,
+        plan_name: selectedOffer.plan_name,
+        estimated_total: selectedOffer.estimated_total,
+        saving_amount: selectedOffer.saving_amount,
+        saving_percent: selectedOffer.saving_percent,
+        commission: selectedOffer.commission || 0,
+        tag: selectedOffer.tag,
+        breakdown: selectedOffer.breakdown
+      });
+      
+      // 2) Descargar PDF
+      const pdfBlob = await downloadPresupuestoPDF(params.id);
+      
+      // Crear link de descarga
+      const url = window.URL.createObjectURL(pdfBlob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `presupuesto_factura_${params.id}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+      
+      // 3) Mostrar modal de éxito SOLO si todo fue bien
+      setShowSuccessModal(true);
+      
+    } catch (err) {
+      console.error("Error generando presupuesto:", err);
+      setError(err.message || "No se pudo generar el presupuesto. Por favor, intenta de nuevo.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleConfirmRecalculation = () => {
@@ -250,7 +291,7 @@ export default function Step3ComparerPage({ params }) {
                 ¡Presupuesto Generado!
               </h2>
               <p className="text-gris-secundario mb-6">
-                El PDF se ha descargado correctamente y se ha enviado una copia a tu email.
+                El PDF se ha descargado correctamente. Revisa tu carpeta de descargas.
               </p>
               
               <div className="bg-white/5 p-4 rounded-xl mb-6 text-left">

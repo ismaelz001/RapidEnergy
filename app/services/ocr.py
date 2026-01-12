@@ -145,6 +145,7 @@ def _empty_result(raw_text: str = None) -> dict:
         "fecha": None,
         "fecha_inicio_consumo": None,
         "fecha_fin_consumo": None,
+        "dias_facturados": None,  # Added field in result dict (even if not in DB, useful for raw_data)
         "titular": None,
         "dni": None,
         "direccion": None,
@@ -230,6 +231,7 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
         data = {
             "fecha_inicio_consumo": None,
             "fecha_fin_consumo": None,
+            "dias_facturados": None,
             "importe_factura": None,
             "cups": None,
             "atr": None,
@@ -246,60 +248,113 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
         }
         detected_pf = {}
 
-        cups_match = re.search(r"(ES[A-Z0-9]{16,24})", raw_text, re.IGNORECASE)
+        # 1. CUPS (Flexible spaces)
+        # Matches ES followed by 18-32 alphanums/spaces/dashes (increased from 24)
+        cups_match = re.search(r"(ES[ \t0-9A-Z\-]{18,32})", raw_text, re.IGNORECASE)
         if cups_match:
-            data["cups"] = cups_match.group(1)
+            # Normalize immediately
+            raw_cups = cups_match.group(1).upper().splitlines()[0]
+            cleaned_cups = re.sub(r"[\s\-]", "", raw_cups)
+            valid_cups = re.search(r"ES[0-9A-Z]{18,24}", cleaned_cups)
+            data["cups"] = valid_cups.group(0) if valid_cups else cleaned_cups
             detected_pf["cups"] = True
         else:
             detected_pf["cups"] = False
 
+        # 2. Fechas range (Multiple formats)
+        # Format 1: 31 de agosto de 2025 a 30 de septiembre...
         meses = "enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre"
-        rango = re.search(
+        rango_text = re.search(
             rf"(\d{{1,2}}\s+de\s+(?:{meses})\s+de\s+\d{{4}})\s+a\s+(\d{{1,2}}\s+de\s+(?:{meses})\s+de\s+\d{{4}})",
             raw_text,
             re.IGNORECASE,
         )
-        if rango:
-            data["fecha_inicio_consumo"] = rango.group(1)
-            data["fecha_fin_consumo"] = rango.group(2)
-            detected_pf["fecha_inicio_consumo"] = True
-            detected_pf["fecha_fin_consumo"] = True
-        else:
-            detected_pf["fecha_inicio_consumo"] = False
-            detected_pf["fecha_fin_consumo"] = False
+        if rango_text:
+            data["fecha_inicio_consumo"] = rango_text.group(1)
+            data["fecha_fin_consumo"] = rango_text.group(2)
 
-        importe_match = re.search(r"IMPORTE\s+FACTURA[:\s]*[\r\n\s]*([\d.,]+)", raw_text, re.IGNORECASE)
-        if importe_match:
-            data["importe_factura"] = parse_es_number(importe_match.group(1))
-            detected_pf["importe_factura"] = data["importe_factura"] is not None
+        # Format 2: dd/mm/yyyy - dd/mm/yyyy or similar
+        # "PERIODO DE FACTURACIÓN: 31/08/2025 - 30/09/2025"
+        if not data["fecha_inicio_consumo"]:
+            rango_fechas = re.search(
+                r"(\d{2}[/-]\d{2}[/-]\d{4})\s*(?:-|al|a)\s*(\d{2}[/-]\d{2}[/-]\d{4})", 
+                raw_text, 
+                re.IGNORECASE
+            )
+            if rango_fechas:
+                data["fecha_inicio_consumo"] = rango_fechas.group(1)
+                data["fecha_fin_consumo"] = rango_fechas.group(2)
+        
+        detected_pf["fecha_inicio_consumo"] = data["fecha_inicio_consumo"] is not None
+        detected_pf["fecha_fin_consumo"] = data["fecha_fin_consumo"] is not None
+
+        # 2b. Dias Facturados
+        # Allow extra spaces or chars between words
+        dias_match = re.search(r"(?:dias|días|periodo)[^0-9\n]{0,30}facturad[oa]s?[^0-9\n]{0,10}[:]\s*(\d+)", raw_text, re.IGNORECASE)
+        if not dias_match:
+             # Very simple fallback: "DIAS FACTURADOS: 30"
+             dias_match = re.search(r"DIAS\s+FACTURADOS\s*[:]\s*(\d+)", raw_text, re.IGNORECASE)
+
+        if dias_match:
+            try:
+                data["dias_facturados"] = int(dias_match.group(1))
+            except:
+                pass
+        
+        # 3. Importe Factura (High Priority)
+        # Look for explicit "TOTAL FACTURA" or "TOTAL A PAGAR" to avoid "Base Imponible"
+        # BUG C FIX: TOTAL A PAGAR tiene máxima prioridad
+        total_pagar_match = re.search(
+            r"TOTAL\s+A\s+PAGAR[^0-9\n]{0,30}([\d.,]+)\s*(?:€|EUR)", 
+            raw_text, 
+            re.IGNORECASE
+        )
+        if total_pagar_match:
+            data["importe_factura"] = parse_es_number(total_pagar_match.group(1))
+            detected_pf["importe_factura"] = True
         else:
-            detected_pf["importe_factura"] = False
+            # Luego TOTAL IMPORTE FACTURA o TOTAL FACTURA
+            high_prio_match = re.search(
+                r"(?:TOTAL\s+IMPORTE\s+FACTURA|TOTAL\s+FACTURA)[^0-9\n]{0,20}([\d.,]+)\s*(?:€|EUR)", 
+                raw_text, 
+                re.IGNORECASE
+            )
+            if high_prio_match:
+                data["importe_factura"] = parse_es_number(high_prio_match.group(1))
+                detected_pf["importe_factura"] =True
+            else:
+                # Fallback to "IMPORTE FACTURA"
+                importe_match = re.search(r"IMPORTE\s+FACTURA[:\s]*[\r\n\s]*([\d.,]+)", raw_text, re.IGNORECASE)
+                if importe_match:
+                    data["importe_factura"] = parse_es_number(importe_match.group(1))
+                    detected_pf["importe_factura"] = data["importe_factura"] is not None
+                else:
+                    detected_pf["importe_factura"] = False
 
         data["atr"] = extract_atr(raw_text)
         detected_pf["atr"] = data["atr"] is not None
 
-        pot_p1 = re.search(r"potencia\s+(?:contratada\s+en\s+)?(?:p1|punta)[^0-9]{0,10}([\d.,]+)\s*k?w", raw_text, re.IGNORECASE)
-        if pot_p1:
-            data["potencia_p1_kw"] = parse_es_number(pot_p1.group(1))
-            detected_pf["potencia_p1_kw"] = data["potencia_p1_kw"] is not None
-        else:
-            detected_pf["potencia_p1_kw"] = False
-
-        pot_p2 = re.search(r"potencia\s+(?:contratada\s+en\s+)?(?:p2|valle)[^0-9]{0,10}([\d.,]+)\s*k?w", raw_text, re.IGNORECASE)
-        if pot_p2:
-            data["potencia_p2_kw"] = parse_es_number(pot_p2.group(1))
-            detected_pf["potencia_p2_kw"] = data["potencia_p2_kw"] is not None
-        else:
-            detected_pf["potencia_p2_kw"] = False
-
-        for p in range(1, 7):
-            m = re.search(rf"Consumo\s+en\s+P{p}\s*[:\-]?\s*([\d.,]+)\s*kWh", raw_text, re.IGNORECASE)
-            key = f"consumo_p{p}_kwh"
-            if m:
-                data[key] = parse_es_number(m.group(1))
-                detected_pf[key] = data[key] is not None
-            else:
-                detected_pf[key] = False
+        # 5. Consumption (Expanded mapping)
+        # P1 = Punta, P2 = Llano, P3 = Valle (Generic approach)
+        
+        # Note: Added 'punta', 'llano', 'valle' keywords
+        consume_patterns = {
+            "p1": [r"consumo\s+en\s+P1\s*[:\-]?\s*([\d.,]+)", r"punta\s*[:\-]?\s*([\d.,]+)\s*kwh"],
+            "p2": [r"consumo\s+en\s+P2\s*[:\-]?\s*([\d.,]+)", r"llano\s*[:\-]?\s*([\d.,]+)\s*kwh"],
+            "p3": [r"consumo\s+en\s+P3\s*[:\-]?\s*([\d.,]+)", r"valle\s*[:\-]?\s*([\d.,]+)\s*kwh"],
+            "p4": [r"consumo\s+en\s+P4\s*[:\-]?\s*([\d.,]+)", r"supervalle\s*[:\-]?\s*([\d.,]+)\s*kwh"], 
+            "p5": [r"consumo\s+en\s+P5\s*[:\-]?\s*([\d.,]+)"],
+            "p6": [r"consumo\s+en\s+P6\s*[:\-]?\s*([\d.,]+)"],
+        }
+        
+        for p_key, patterns in consume_patterns.items():
+            key = f"consumo_{p_key}_kwh"
+            for pat in patterns:
+                m = re.search(pat, raw_text, re.IGNORECASE)
+                if m:
+                    data[key] = parse_es_number(m.group(1))
+                    break
+            detected_pf[key] = data[key] is not None
 
         bono = re.search(r"\bbono\s+social\b", raw_text, re.IGNORECASE)
         data["bono_social"] = True if bono else None
@@ -311,11 +366,17 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
     structured = parse_structured_fields(full_text)
     parsed_fields.update(structured.get("parsed_fields", {}))
 
-    cups_match = re.search(r"(ES[A-Z0-9]{16,24})", full_text, re.IGNORECASE)
-    if cups_match:
-        result["cups"] = cups_match.group(1)
-    elif structured.get("cups"):
+    # Merge strategies
+    if structured.get("cups"):
         result["cups"] = structured.get("cups")
+    else:
+        # Fallback regex
+        cups_match = re.search(r"(ES[ \t0-9A-Z\-]{16,24})", full_text, re.IGNORECASE)
+        if cups_match:
+            raw_cups = cups_match.group(1).upper().splitlines()[0]
+            cleaned_cups = re.sub(r"[\s\-]", "", raw_cups)
+            valid_cups = re.search(r"ES[0-9A-Z]{18,24}", cleaned_cups)
+            result["cups"] = valid_cups.group(0) if valid_cups else cleaned_cups
 
     atr_value = extract_atr(full_text)
     if atr_value:
@@ -338,6 +399,7 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
     if potencias["warnings"]:
         extraction_summary["parse_warnings"].extend(potencias["warnings"])
 
+    # Generic total consumption
     consumo_match = re.search(r"(\d+[.,]?\d*)\s*kWh", full_text, re.IGNORECASE)
     if consumo_match:
         result["consumo_kwh"] = parse_es_number(consumo_match.group(1))
@@ -345,34 +407,51 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
     else:
         detected["consumo_kwh"] = False
 
-    total_match = re.search(r"TOTAL.*?\s+(\d+[.,]?\d*)\s*(?:€|EUR)", full_text, re.IGNORECASE)
-    if total_match:
-        result["importe"] = parse_es_number(total_match.group(1))
-        detected["importe"] = result["importe"] is not None
-    if result["importe"] is None:
-        matches = re.findall(r"(\d+[.,]?\d*)\s*(?:€|EUR)", full_text, re.IGNORECASE)
-        if matches:
-            vals = [parse_es_number(m) for m in matches]
-            vals = [v for v in vals if v is not None]
-            if vals:
-                result["importe"] = max(vals)
-                detected["importe"] = True
+    # Total Importe Strategy
+    if structured.get("importe_factura"):
+        # Highest priority from structured (explicit TOTAL FACTURA)
+        result["importe"] = structured.get("importe_factura")
+        detected["importe"] = True
+    else:
+        # Fallback strategy
+        total_match = re.search(r"TOTAL.*?\s+(\d+[.,]?\d*)\s*(?:€|EUR)", full_text, re.IGNORECASE)
+        if total_match:
+            result["importe"] = parse_es_number(total_match.group(1))
+            detected["importe"] = result["importe"] is not None
+        
+        if result["importe"] is None:
+            # Find max money value
+            matches = re.findall(r"(\d+[.,]?\d*)\s*(?:€|EUR)", full_text, re.IGNORECASE)
+            if matches:
+                vals = [parse_es_number(m) for m in matches]
+                vals = [v for v in vals if v is not None]
+                if vals:
+                    result["importe"] = max(vals)
+                    detected["importe"] = True
+
     if result["importe"] is None and structured.get("importe_factura") is not None:
         result["importe"] = structured.get("importe_factura")
         detected["importe"] = True
     if "importe" not in detected:
         detected["importe"] = False
 
+    # Dates
     date_matches = re.findall(r"(\d{4}[/-]\d{2}[/-]\d{2}|\d{2}[/-]\d{2}[/-]\d{4})", full_text)
     if date_matches:
         result["fecha"] = date_matches[0]
         detected["fecha"] = True
-    else:
-        detected["fecha"] = False
+    
+    # Prefer structured start/end
     if structured.get("fecha_inicio_consumo"):
         result["fecha_inicio_consumo"] = structured.get("fecha_inicio_consumo")
     if structured.get("fecha_fin_consumo"):
         result["fecha_fin_consumo"] = structured.get("fecha_fin_consumo")
+
+    if structured.get("dias_facturados"):
+         if "parsed_fields" not in result:
+             result["parsed_fields"] = {}
+         result["parsed_fields"]["dias_facturados"] = structured.get("dias_facturados")
+         result["dias_facturados"] = structured.get("dias_facturados") # Add to root too
 
     # Extraer Numero de Factura
     num_fact_match = re.search(
@@ -535,13 +614,14 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
     detected["potencia_p1_kw"] = result["potencia_p1_kw"] is not None
     detected["potencia_p2_kw"] = result["potencia_p2_kw"] is not None
 
-    for periodo in ["p1", "p2", "p3", "p4", "p5", "p6"]:
-        val = _extract_number(
-            [rf"consumo\s*{periodo}[^0-9]{{0,10}}([\d.,]+)\s*kwh", rf"{periodo}\s*consumo[^0-9]{{0,10}}([\d.,]+)\s*kwh"]
-        )
-        result[f"consumo_{periodo}_kwh"] = val
-        detected[f"consumo_{periodo}_kwh"] = val is not None
-
+    for field in [
+        "consumo_p1_kwh", "consumo_p2_kwh", "consumo_p3_kwh",
+        "consumo_p4_kwh", "consumo_p5_kwh", "consumo_p6_kwh"
+    ]:
+        if result.get(field) is None and structured.get(field) is not None:
+             result[field] = structured.get(field)
+             detected[field] = True
+    
     bono_match = re.search(r"\bbono\s+social\b", full_text, re.IGNORECASE)
     result["bono_social"] = True if bono_match else None
     detected["bono_social"] = bono_match is not None
@@ -563,47 +643,17 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
     result["iva"] = _extract_number([r"\biva\b[^0-9]{0,10}([\d.,]+)"])
     detected["iva"] = result["iva"] is not None
 
-    result["total_factura"] = _extract_number(
-        [
-            r"\btotal\s+factura[^0-9]{0,10}([\d.,]+)",
-            r"\bimporte\s+total[^0-9]{0,10}([\d.,]+)",
-            r"\btotal\s+importe[^0-9]{0,10}([\d.,]+)",
-        ]
-    )
-    detected["total_factura"] = result["total_factura"] is not None
-    detected["total_factura"] = result["total_factura"] is not None
+    # Total Factura Final Consolidation
     if result["total_factura"] is None and structured.get("importe_factura") is not None:
-        result["total_factura"] = structured.get("importe_factura")
-        detected["total_factura"] = True
+         result["total_factura"] = structured.get("importe_factura")
+    
+    # Fallback to plain regex if still missing (already done in structured/matches above)
+    if result["total_factura"] is None:
+         result["total_factura"] = result.get("importe")
 
-    for field in [
-        "potencia_p1_kw",
-        "potencia_p2_kw",
-        "consumo_p1_kwh",
-        "consumo_p2_kwh",
-        "consumo_p3_kwh",
-        "consumo_p4_kwh",
-        "consumo_p5_kwh",
-        "consumo_p6_kwh",
-    ]:
-        if result.get(field) is None and structured.get(field) is not None:
-            result[field] = structured.get(field)
-            detected[field] = True
-            if field == "potencia_p1_kw" and not extraction_summary["potencia_p1_source"]:
-                extraction_summary["potencia_p1_source"] = "structured"
-            if field == "potencia_p2_kw" and not extraction_summary["potencia_p2_source"]:
-                extraction_summary["potencia_p2_source"] = "structured"
+    detected["total_factura"] = result["total_factura"] is not None
 
-    if result.get("bono_social") is None and structured.get("bono_social") is not None:
-        result["bono_social"] = structured.get("bono_social")
-        detected["bono_social"] = True
-
-    if result.get("atr") is None and structured.get("atr") is not None:
-        result["atr"] = structured.get("atr")
-        detected["atr"] = True
-        if not extraction_summary["atr_source"]:
-            extraction_summary["atr_source"] = "structured"
-
+    
     if result["direccion"]:
         # Intento simple de extraer provincia de la direccion
         provincias = [
