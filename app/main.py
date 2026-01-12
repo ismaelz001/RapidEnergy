@@ -25,9 +25,15 @@ Base.metadata.create_all(bind=engine)
 # - https://*.rodorte.com (producción)
 # - De hecho, permitimos CUALQUIER https:// para máxima compatibilidad si es una API pública.
 
+# CORS Configuration (FIX: permitir dominios Vercel explícitamente)
 app.add_middleware(
     CORSMiddleware,
-    allow_origin_regex=r"https://.*|http://localhost:\d+",
+    allow_origins=[
+        "http://localhost:3000",
+        "https://rapid-energy-iwdtwxqzr-ismaelz001s-projects.vercel.app",
+        "https://*.vercel.app",  # Previews
+    ],
+    allow_origin_regex=r"https://.*\.vercel\.app|http://localhost:\d+",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
