@@ -50,20 +50,39 @@ export default function Step1FacturaPage({ params }) {
       if (err.status === 409) {
         try {
           const errorText = err.message || "";
-          const detailMatch = errorText.match(/\{[^}]+\}/);
-          if (detailMatch) {
-            const errorDetail = JSON.parse(detailMatch[0]);
-            if (errorDetail.id) {
-              setOcrData({
-                duplicate: true,
-                existing_id: errorDetail.id,
-                existing_client: errorDetail.client,
-                message: errorDetail.message || "Esta factura ya fue subida."
-              });
-              setUploading(false);
-              return;
-            }
+          
+          // Debug para ver qué llega realmente
+          console.log("Raw conflict error:", errorText);
+
+          // Intentar parsear el JSON si viene como string
+          let errorDetail = {};
+          
+          try {
+             // A veces el error viene como "Error: {...}"
+             const jsonStart = errorText.indexOf('{');
+             const jsonEnd = errorText.lastIndexOf('}');
+             
+             if (jsonStart !== -1 && jsonEnd !== -1) {
+                const jsonStr = errorText.substring(jsonStart, jsonEnd + 1);
+                errorDetail = JSON.parse(jsonStr);
+             }
+          } catch (e) {
+             console.log("JSON extraction failed", e);
           }
+          
+          if (errorDetail.detail) errorDetail = errorDetail.detail;
+
+          if (errorDetail.id) {
+            setOcrData({
+              duplicate: true,
+              existing_id: errorDetail.id,
+              existing_client: errorDetail.client || errorDetail.existing_client,
+              message: errorDetail.message || "Esta factura ya fue subida."
+            });
+            setUploading(false);
+            return;
+          }
+
         } catch (parseErr) {
           console.log("No se pudo parsear detalle 409:", parseErr);
         }
