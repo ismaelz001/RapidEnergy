@@ -7,6 +7,8 @@ from app.routes.clientes import router as clientes_router
 
 from app.db.conn import Base, engine
 from app.db import models
+# P1 FIX: Importar explícitamente para registrar en SQLAlchemy
+from app.db.models import Factura, Cliente, Comparativa
 
 app = FastAPI(
     title="RapidEnergy API",
