@@ -27,6 +27,12 @@ export default function RootLayout({ children }) {
               <a href="/dashboard" className="text-sm font-medium text-[#94A3B8] hover:text-white transition">
                 Dashboard
               </a>
+              <a href="/clientes" className="text-sm font-medium text-[#94A3B8] hover:text-white transition">
+                Clientes
+              </a>
+              <a href="/facturas" className="text-sm font-medium text-[#94A3B8] hover:text-white transition">
+                Facturas
+              </a>
               <a href="/wizard/new/step-1-factura" className="inline-flex items-center justify-center h-10 px-5 text-sm font-bold text-white bg-[#1E3A8A] hover:bg-[#172554] rounded-lg shadow-lg shadow-blue-900/40 transition-all hover:scale-105 active:scale-95">
                 + Nueva Factura
               </a>
