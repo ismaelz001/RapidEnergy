@@ -259,17 +259,26 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
         valid_cups_found = None
         
         for cand in candidates:
+            print(f"🔍 CUPS CANDIDATE: {cand}")
             # Normalizar
             norm = normalize_cups(cand)
+            print(f"🧹 NORMALIZED: {norm}")
             if not norm:
+                print("❌ REJECTED BY NORMALIZATION")
                 continue
                 
             # Validar Módulo 529
-            if is_valid_cups(norm):
+            is_valid = is_valid_cups(norm)
+            print(f"🔢 VALIDATION RESULT: {is_valid}")
+            if is_valid:
                 valid_cups_found = norm
+                print(f"✅ VALID CUPS FOUND: {norm}")
                 break # Encontramos uno válido
+            else:
+                print(f"❌ REJECTED BY MOD529")
         
         data["cups"] = valid_cups_found
+        print(f"🏁 FINAL CUPS VALUE: {valid_cups_found}")
         
         detected_pf["cups"] = data["cups"] is not None
 
