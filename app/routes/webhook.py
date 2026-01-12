@@ -88,6 +88,7 @@ from app.utils.cups import normalize_cups, is_valid_cups
 
 
 @router.post("/upload_v2")
+@router.post("/upload")  # Alias para compatibilidad con frontend
 async def process_factura(file: UploadFile, db: Session = Depends(get_db)):
     # --- LOGS DE DIAGNÓSTICO (OBJETIVO 1) ---
     print(f"\n🚀 [UPLOAD] Recibiendo archivo: {file.filename}")
