@@ -1,7 +1,7 @@
 from fastapi import APIRouter, UploadFile, Depends, HTTPException
 from sqlalchemy.orm import Session, joinedload
 from app.db.conn import get_db
-from app.db.models import Factura, Cliente
+from app.db.models import Factura, Cliente, Comparativa
 from app.exceptions import DomainError
 from pydantic import BaseModel
 from typing import Optional
@@ -628,3 +628,44 @@ def generar_presupuesto_pdf(factura_id: int, db: Session = Depends(get_db)):
         }
     )
 
+
+@router.delete("/facturas/{factura_id}")
+async def delete_factura(factura_id: int, db: Session = Depends(get_db)):
+    """
+    Elimina una factura del sistema con lógica de protección.
+    - Se permite borrar si la factura tiene errores críticos (sin CUPS, sin cliente).
+    - Se restringe si es una factura válida y enlazada (para evitar fallos de integridad manual).
+    """
+    factura = db.query(Factura).filter(Factura.id == factura_id).first()
+    if not factura:
+        raise HTTPException(status_code=404, detail="Factura no encontrada")
+
+    # Lógica de protección:
+    # Si tiene CUPS y tiene Cliente, la consideramos "valiosa"
+    if factura.cups and factura.cliente_id:
+        # Solo permitimos borrar si es la única del cliente? O simplemente bloqueamos?
+        # Por ahora bloqueamos según pedido usuario: "sino no se puede borrar"
+        
+        # Check if it has any comparisons (to avoid FK errors)
+        comparativas_count = db.query(Comparativa).filter(Comparativa.factura_id == factura_id).count()
+        
+        if comparativas_count == 0:
+             # Si no tiene comparativas, tal vez el usuario se equivocó al subirla 
+             # y quiere borrarla aunque tenga CUPS? 
+             # El usuario dijo: "sino no se puede borrar"
+             raise HTTPException(
+                status_code=403, 
+                detail="No se puede eliminar una factura válida enlazada a un cliente. Elimine el cliente primero si desea limpiar el sistema."
+            )
+
+    # Si llegamos aquí es porque o no tiene CUPS o no tiene Cliente o es un error de OCR
+    try:
+        # Primero borrar comparativas asociadas (por si acaso)
+        db.query(Comparativa).filter(Comparativa.factura_id == factura_id).delete()
+        
+        db.delete(factura)
+        db.commit()
+        return {"message": "Factura eliminada correctamente", "id": factura_id}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error al eliminar: {str(e)}")

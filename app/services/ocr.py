@@ -6,6 +6,7 @@ import unicodedata
 from google.oauth2 import service_account
 from google.cloud import vision
 import pypdf
+import google.generativeai as genai
 
 
 def normalize_text(raw: str) -> str:
@@ -701,8 +702,100 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
     return result
 
 
+
+def extract_data_with_gemini(file_bytes: bytes, is_pdf: bool = True) -> dict:
+    """
+    Extracción premium usando Gemini 1.5 Flash.
+    """
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        return None
+
+    try:
+        genai.configure(api_key=api_key)
+        model = genai.GenerativeModel("gemini-1.5-flash")
+
+        # Preparar el archivo para Gemini
+        mime_type = "application/pdf" if is_pdf else "image/jpeg"
+        # Prompt optimizado para facturas eléctricas españolas
+        prompt = """
+        Extrae los siguientes campos de esta factura eléctrica española y devuélvelos en formato JSON estricto.
+        Sé extremadamente preciso con el CUPS, el nombre del titular y el consumo por periodos.
+        Los campos son:
+        - cups: El código CUPS (ES + 18-20 caracteres).
+        - titular: El nombre completo del cliente/titular.
+        - dni: DNI o NIF del titular.
+        - direccion: Dirección completa del suministro.
+        - fecha_inicio_consumo: Fecha de inicio del periodo de facturación (DD/MM/YYYY).
+        - fecha_fin_consumo: Fecha de fin del periodo de facturación (DD/MM/YYYY).
+        - dias_facturados: Número de días del periodo.
+        - importe_factura: Importe total de la factura con IVA (número).
+        - atr: Peaje de acceso o tarifa (ej: 2.0TD).
+        - potencia_p1_kw: Potencia contratada en P1 (punta).
+        - potencia_p2_kw: Potencia contratada en P2 (valle).
+        - consumo_p1_kwh: Consumo real en P1 (punta) en kWh.
+        - consumo_p2_kwh: Consumo real en P2 (llano) en kWh.
+        - consumo_p3_kwh: Consumo real en P3 (valle) en kWh.
+        - bono_social: True/False si tiene bono social.
+        - alquiler_contador: Importe del alquiler del contador.
+        - impuesto_electrico: Importe del impuesto eléctrico.
+        - iva: Importe del IVA.
+
+        IMPORTANTE: Diferencia claramente entre 'Lectura del contador' (que suele ser un número grande acumulado) 
+        y 'Consumo del periodo' (que es lo facturado en este mes). Queremos el CONSUMO DEL PERIODO.
+        Si un campo no se encuentra, pon null.
+        Solo devuelve el JSON, nada de texto adicional.
+        """
+
+        response = model.generate_content([
+            prompt,
+            {"mime_type": mime_type, "data": file_bytes}
+        ])
+
+        # Limpiar la respuesta para obtener solo el JSON
+        text_response = response.text.strip()
+        if text_response.startswith("```json"):
+            text_response = text_response.split("```json")[1].split("```")[0].strip()
+        elif text_response.startswith("```"):
+             text_response = text_response.split("```")[1].split("```")[0].strip()
+
+        data = json.loads(text_response)
+        
+        # Mapear a la estructura de resultado esperada
+        result = _empty_result("Extraído con Gemini 1.5 Flash")
+        
+        # Poblar campos básicos
+        for key in data:
+            if key in result:
+                result[key] = data[key]
+            elif key == "importe_factura":
+                result["total_factura"] = data[key]
+        
+        # Asegurar que cups esté normalizado
+        if result.get("cups"):
+            result["cups"] = result["cups"].replace(" ", "").upper()
+
+        # Completar metadatos
+        result["parsed_fields"] = {k: v is not None for k, v in data.items()}
+        result["detection_method"] = "gemini-1.5-flash"
+        
+        return result
+
+    except Exception as e:
+        print(f"Error en Gemini Extraction: {e}")
+        return None
+
 def extract_data_from_pdf(file_bytes: bytes) -> dict:
     is_pdf = file_bytes.startswith(b"%PDF")
+    
+    # INTENTAR GEMINI PRIMERO (Premium)
+    api_key = os.getenv("GEMINI_API_KEY")
+    if api_key:
+        print("Intentando extracción premium con Gemini 1.5 Flash...")
+        gemini_result = extract_data_with_gemini(file_bytes, is_pdf=is_pdf)
+        if gemini_result:
+            return gemini_result
+        print("Fallo Gemini, reintentando con método tradicional...")
 
     if is_pdf:
         try:

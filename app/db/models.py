@@ -21,7 +21,7 @@ class Cliente(Base):
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
     # Relación: Un cliente tiene muchas facturas
-    facturas = relationship("Factura", back_populates="cliente")
+    facturas = relationship("Factura", back_populates="cliente", cascade="all, delete-orphan")
 
 class Factura(Base):
     __tablename__ = "facturas"
@@ -77,6 +77,7 @@ class Factura(Base):
     
     # Relación: Una factura pertenece a un cliente
     cliente = relationship("Cliente", back_populates="facturas")
+    comparativas = relationship("Comparativa", back_populates="factura", cascade="all, delete-orphan")
 
 
 class Comparativa(Base):
@@ -96,3 +97,5 @@ class Comparativa(Base):
     offers_json = Column(Text, nullable=True)
     status = Column(String, default="ok")
     error_json = Column(Text, nullable=True)
+    
+    factura = relationship("Factura", back_populates="comparativas")
