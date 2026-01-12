@@ -91,13 +91,18 @@ def _parse_date(value) -> Optional[date]:
 
 
 def _get_days(factura) -> int:
+    """
+    DEPRECATED: Usar periodo_dias directamente.
+    Calcula días desde fechas o devuelve None si no hay fechas.
+    P1: NO usa fallback a 30 días.
+    """
     start = _parse_date(getattr(factura, "fecha_inicio", None))
     end = _parse_date(getattr(factura, "fecha_fin", None))
     if start and end:
         delta = (end - start).days
         if delta > 0:
             return delta
-    return 30
+    return None  # P1: NO fallback
 
 
 def _pick_value(mapping, keys, default):
