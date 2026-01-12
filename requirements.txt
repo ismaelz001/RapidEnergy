@@ -1,6 +1,6 @@
 fastapi
 python-multipart
-uvicorn
+uvicorn[standard]
 sqlalchemy
 python-dotenv
 psycopg2-binary
