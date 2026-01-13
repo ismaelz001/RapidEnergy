@@ -509,10 +509,11 @@ def generar_presupuesto_pdf(factura_id: int, db: Session = Depends(get_db)):
     from reportlab.lib.pagesizes import A4
     from reportlab.lib import colors
     from reportlab.lib.units import cm
-    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
     from reportlab.lib.enums import TA_CENTER, TA_RIGHT
     from datetime import datetime
+    import os
     
     factura = db.query(Factura).filter(Factura.id == factura_id).first()
     if not factura:
@@ -540,7 +541,7 @@ def generar_presupuesto_pdf(factura_id: int, db: Session = Depends(get_db)):
         'CustomTitle',
         parent=styles['Heading1'],
         fontSize=24,
-        textColor=colors.HexColor('#1E40AF'),
+        textColor=colors.HexColor('#00095C'),  # Azul oscuro EnergyLuz
         spaceAfter=30,
         alignment=TA_CENTER
     )
@@ -548,13 +549,21 @@ def generar_presupuesto_pdf(factura_id: int, db: Session = Depends(get_db)):
         'CustomHeading',
         parent=styles['Heading2'],
         fontSize=14,
-        textColor=colors.HexColor('#1E40AF'),
+        textColor=colors.HexColor('#0073EC'),  # Azul principal EnergyLuz
         spaceAfter=12,
         spaceBefore=12
     )
     
     # Contenido del PDF
     story = []
+    
+    # Logo EnergyLuz (si existe)
+    logo_path = os.path.join(os.path.dirname(__file__), '..', 'static', 'energyluz_logo.png')
+    if os.path.exists(logo_path):
+        logo = Image(logo_path, width=5*cm, height=1*cm)
+        logo.hAlign = 'CENTER'
+        story.append(logo)
+        story.append(Spacer(1, 0.3*cm))
     
     # Título
     story.append(Paragraph("PRESUPUESTO ENERGÉTICO", title_style))
@@ -659,6 +668,22 @@ def generar_presupuesto_pdf(factura_id: int, db: Session = Depends(get_db)):
     story.append(Paragraph(
         "Este presupuesto es un cálculo estimado basado en los datos de consumo proporcionados.<br/>Los ahorros reales pueden variar según el perfil de consumo.",
         nota_style
+    ))
+    story.append(Spacer(1, 0.5*cm))
+    
+    # Footer con contacto EnergyLuz
+    footer_style = ParagraphStyle(
+        'Footer',
+        parent=styles['Normal'],
+        fontSize=9,
+        textColor=colors.HexColor('#0073EC'),
+        alignment=TA_CENTER
+    )
+    story.append(Paragraph(
+        "<b>EnergyLuz</b> - Asesoramos nosotros, Ahorras tú<br/>"
+        "📧 info@energyluz.es | 📞 646 229 534<br/>"
+        "Especialistas en fotovoltaica y asesoramiento energético",
+        footer_style
     ))
     
     # Generar PDF
