@@ -476,11 +476,14 @@ def compare_factura(factura, db) -> Dict[str, Any]:
             "tarifa_id": tarifa_id,
             "provider": provider,
             "plan_name": plan_name,
+            "estimated_total": round(estimated_total_periodo, 2),  # Frontend expects this
+            "saving_amount": round(ahorro_periodo, 2),  # Frontend expects this
             "estimated_total_periodo": round(estimated_total_periodo, 2),
             "ahorro_periodo": round(ahorro_periodo, 2),
             "ahorro_mensual_equiv": round(ahorro_mensual_equiv, 2),
             "ahorro_anual_equiv": round(ahorro_anual_equiv, 2),
             "saving_percent": round(saving_percent, 2),
+            "commission": 0,  # TODO: Add commission logic if needed
             "tag": "balanced",
             "breakdown": {
                 "periodo_dias": int(periodo_dias),
