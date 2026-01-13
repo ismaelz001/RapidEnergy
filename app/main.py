@@ -30,23 +30,24 @@ async def startup_event():
 Base.metadata.create_all(bind=engine)
 
 # CORS Configuration
-# CORS Configuration
-# Usamos regex para permitir Vercel previews y cualquier subdominio
-# allow_origin_regex permite:
-# - http://localhost:3000 (local)
-# - https://*.vercel.app (previews)
-# - https://*.rodorte.com (producción)
-# - De hecho, permitimos CUALQUIER https:// para máxima compatibilidad si es una API pública.
+# Cargamos orígenes desde ENV para no tener que tocar código la próxima vez
+origins_env = os.getenv("ALLOWED_ORIGINS", "")
+extra_origins = [o.strip() for o in origins_env.split(",") if o.strip()]
 
-# CORS Configuration (FIX: permitir dominios Vercel explícitamente)
+allow_origins = [
+    "http://localhost:3000",
+    "https://energy.rodorte.com",  # Dominio Producción
+    "https://rapid-energy-iwdtwxqzr-ismaelz001s-projects.vercel.app", # Preview específica
+]
+
+# Unimos todo eliminando duplicados
+total_origins = list(set(allow_origins + extra_origins))
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "https://rapid-energy-iwdtwxqzr-ismaelz001s-projects.vercel.app",
-        "https://*.vercel.app",  # Previews
-    ],
-    allow_origin_regex=r"https://.*\.vercel\.app|http://localhost:\d+",
+    allow_origins=total_origins,
+    # El regex permite cualquier subdominio de Vercel para que las Previews nunca fallen
+    allow_origin_regex=r"https://.*\.vercel\.app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
