@@ -616,6 +616,29 @@ def generar_presupuesto_pdf(factura_id: int, db: Session = Depends(get_db)):
     
     # Oferta propuesta
     story.append(Paragraph("OFERTA PROPUESTA", heading_style))
+    
+    # Logo Comercializadora
+    provider_name = selected_offer.get('provider', '').lower()
+    logo_filename = None
+    if 'iberdrola' in provider_name:
+        logo_filename = 'logo_iberdrola.png'
+    elif 'endesa' in provider_name:
+        logo_filename = 'logo_endesa.png'
+    elif 'naturgy' in provider_name:
+        logo_filename = 'logo_naturgy.png'
+        
+    if logo_filename:
+        com_logo_path = os.path.join(os.path.dirname(__file__), '..', 'static', logo_filename)
+        if os.path.exists(com_logo_path):
+            try:
+                # Ajustar tamaño (ancho 4cm, mantener ratio)
+                com_logo = Image(com_logo_path, width=4*cm, height=1.5*cm, kind='proportional')
+                com_logo.hAlign = 'LEFT'
+                story.append(com_logo)
+                story.append(Spacer(1, 0.2*cm))
+            except:
+                pass # Si falla la imagen, no romper el PDF
+
     oferta_data = [
         ["Comercializadora:", selected_offer.get('provider', 'N/A')],
         ["Tarifa:", selected_offer.get('plan_name', 'N/A')],
