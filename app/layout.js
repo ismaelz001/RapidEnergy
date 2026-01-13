@@ -21,20 +21,17 @@ export default function RootLayout({ children }) {
         <header className="fixed top-0 w-full z-50 h-[72px] bg-gradient-premium border-b border-[rgba(255,255,255,0.08)] shadow-lg">
           <div className="mx-auto flex h-full max-w-7xl items-center justify-between px-6">
             {/* Logo */}
-            <div className="flex items-center">
-              {/* Logo from public/energyluz_logo.png */}
-              <img 
-                src="/energyluz_logo.png" 
-                alt="EnergyLuz" 
-                className="h-8 w-auto object-contain brightness-0 invert" // Brightness invert to make it white-ish on dark bg if needed, or remove if logo is already visible? Let's assume logo is dark text on transparent bg. Wait, dark logo on dark bg logic.
-                // The logo has BLUE text (#00095C). On a dark gradient (#00095C), it might be invisible.
-                // Let's use filter brightness-200 or invert?
-                // The actual logo has dark blue text. Background is dark blue.
-                // We need to make it white or use a contained background.
-                // Let's wrap it in a white pill or just force filter.
-              />
-              {/* Fallback text if logo is not loaded or for screen readers */}
-              <span className="hidden ml-3 text-lg font-bold tracking-wide text-white md:block">
+            <div className="flex items-center gap-3">
+              {/* Logo Container with White Background */}
+              <div className="flex bg-white px-2 py-1 rounded-md shadow-sm h-10 items-center justify-center">
+                <img 
+                  src="/energyluz_logo.png" 
+                  alt="EnergyLuz" 
+                  className="h-full w-auto object-contain" 
+                />
+              </div>
+              {/* Text hidden on mobile, visible on desktop */}
+              <span className="hidden ml-2 text-lg font-bold tracking-wide text-white md:block">
                 EnergyLuz <span className="text-[#0073EC] font-normal">CRM</span>
               </span>
             </div>
