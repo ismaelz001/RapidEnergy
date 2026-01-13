@@ -8,7 +8,8 @@
   --card-bg: #0F172A;
   --text-main: #F1F5F9;
   --text-secondary: #94A3B8;
-  --primary-blue: #1E3A8A;
+  /* EnergyLuz Branding */
+  --primary-blue: #0073EC;
   --primary-green: #16A34A;
   --border-soft: rgba(255, 255, 255, 0.08);
   --border-focus: rgba(255, 255, 255, 0.2);
@@ -18,7 +19,7 @@
 body {
   background-color: var(--app-bg);
   color: var(--text-main);
-  font-family: 'Inter', sans-serif; /* Assumed available or default sans */
+  /* font-family will be set via Next.js Font in layout */
 }
 
 /* Global Dark Forms */
@@ -43,7 +44,7 @@ input:-webkit-autofill {
 }
 
 .btn-primary {
-  @apply inline-flex items-center justify-center rounded-lg px-6 py-3 font-semibold bg-[#1E3A8A] text-white hover:bg-blue-800 transition shadow-lg shadow-blue-900/20 active:scale-95;
+  @apply inline-flex items-center justify-center rounded-lg px-6 py-3 font-semibold bg-[#0073EC] text-white hover:bg-blue-600 transition shadow-lg shadow-blue-500/20 active:scale-95;
 }
 
 .btn-secondary {
@@ -51,7 +52,7 @@ input:-webkit-autofill {
 }
 
 .input {
-  @apply w-full rounded-lg bg-[#020617] border border-[rgba(255,255,255,0.1)] px-4 py-3 text-sm outline-none focus:border-[#1E3A8A] focus:ring-1 focus:ring-[#1E3A8A] transition text-white placeholder-slate-500;
+  @apply w-full rounded-lg bg-[#020617] border border-[rgba(255,255,255,0.1)] px-4 py-3 text-sm outline-none focus:border-[#0073EC] focus:ring-1 focus:ring-[#0073EC] transition text-white placeholder-slate-500;
 }
 
 .badge {
@@ -64,7 +65,7 @@ input:-webkit-autofill {
 }
 
 .badge-seleccionada {
-  @apply bg-blue-500/10 text-blue-500 border-blue-500/20;
+  @apply bg-[rgba(0,115,236,0.1)] text-[#0073EC] border-[rgba(0,115,236,0.2)];
 }
 
 .badge-completada {
@@ -73,5 +74,6 @@ input:-webkit-autofill {
 
 /* Utility Gradients - Only for Hero/Header */
 .bg-gradient-premium {
-  background: linear-gradient(135deg, #010528 0%, #004B8E 100%);
+  /* EnergyLuz Dark Theme Gradient: #00095C to #0073EC (softened) */
+  background: linear-gradient(135deg, #00095C 0%, #00479A 100%);
 }
