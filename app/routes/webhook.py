@@ -356,13 +356,13 @@ async def process_factura(file: UploadFile, db: Session = Depends(get_db)):
 
 @router.get("/facturas")
 def list_facturas(db: Session = Depends(get_db)):
-    facturas = db.query(Factura).all()
+    facturas = db.query(Factura).options(joinedload(Factura.cliente)).all()
     return facturas
 
 
 @router.get("/facturas/{factura_id}")
 def get_factura(factura_id: int, db: Session = Depends(get_db)):
-    factura = db.query(Factura).filter(Factura.id == factura_id).first()
+    factura = db.query(Factura).options(joinedload(Factura.cliente)).filter(Factura.id == factura_id).first()
     if not factura:
         raise HTTPException(status_code=404, detail="Factura no encontrada")
     return factura
