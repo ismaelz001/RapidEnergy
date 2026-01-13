@@ -533,7 +533,8 @@ def generar_presupuesto_pdf(factura_id: int, db: Session = Depends(get_db)):
     
     # Crear PDF en memoria
     buffer = BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=2*cm, leftMargin=2*cm, topMargin=2*cm, bottomMargin=2*cm)
+    # Margins reducidos para asegurar una sola página
+    doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=2*cm, leftMargin=2*cm, topMargin=1.5*cm, bottomMargin=1.5*cm)
     
     # Estilos
     styles = getSampleStyleSheet()
@@ -612,33 +613,12 @@ def generar_presupuesto_pdf(factura_id: int, db: Session = Depends(get_db)):
         ('GRID', (0, 0), (-1, -1), 0.5, colors.grey)
     ]))
     story.append(current_table)
-    story.append(Spacer(1, 0.5*cm))
+    story.append(Spacer(1, 0.3*cm))
     
     # Oferta propuesta
     story.append(Paragraph("OFERTA PROPUESTA", heading_style))
     
-    # Logo Comercializadora
-    provider_name = selected_offer.get('provider', '').lower()
-    logo_filename = None
-    if 'iberdrola' in provider_name:
-        logo_filename = 'logo_iberdrola.png'
-    elif 'endesa' in provider_name:
-        logo_filename = 'logo_endesa.png'
-    elif 'naturgy' in provider_name:
-        logo_filename = 'logo_naturgy.png'
-        
-    if logo_filename:
-        com_logo_path = os.path.join(os.path.dirname(__file__), '..', 'static', logo_filename)
-        if os.path.exists(com_logo_path):
-            try:
-                # Ajustar tamaño (ancho 4cm, mantener ratio)
-                com_logo = Image(com_logo_path, width=4*cm, height=1.5*cm, kind='proportional')
-                com_logo.hAlign = 'LEFT'
-                story.append(com_logo)
-                story.append(Spacer(1, 0.2*cm))
-            except:
-                pass # Si falla la imagen, no romper el PDF
-
+    # Tabla de Oferta (Compacta)
     oferta_data = [
         ["Comercializadora:", selected_offer.get('provider', 'N/A')],
         ["Tarifa:", selected_offer.get('plan_name', 'N/A')],
@@ -658,7 +638,7 @@ def generar_presupuesto_pdf(factura_id: int, db: Session = Depends(get_db)):
         ('GRID', (0, 0), (-1, -1), 0.5, colors.grey)
     ]))
     story.append(oferta_table)
-    story.append(Spacer(1, 1*cm))
+    story.append(Spacer(1, 0.5*cm))
     
     # Resumen de ahorro
     ahorro_anual = selected_offer.get('saving_amount', 0) * 12
@@ -678,7 +658,7 @@ def generar_presupuesto_pdf(factura_id: int, db: Session = Depends(get_db)):
         ('TOPPADDING', (0, 0), (-1, -1), 12),
     ]))
     story.append(resumen_table)
-    story.append(Spacer(1, 1*cm))
+    story.append(Spacer(1, 0.5*cm))
     
     # Nota al pie
     nota_style = ParagraphStyle(
