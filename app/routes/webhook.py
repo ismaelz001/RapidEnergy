@@ -28,6 +28,7 @@ class FacturaUpdate(BaseModel):
     alquiler_contador: Optional[float] = None
     impuesto_electrico: Optional[float] = None
     iva: Optional[float] = None
+    iva_porcentaje: Optional[float] = None
     total_factura: Optional[float] = None
     estado_factura: Optional[str] = None
     cups: Optional[str] = None

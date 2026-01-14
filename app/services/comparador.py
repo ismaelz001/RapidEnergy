@@ -433,17 +433,39 @@ def compare_factura(factura, db) -> Dict[str, Any]:
         # TOTALIZACIÓN CON IMPUESTOS (Para igualar factura real)
         subtotal = coste_energia + coste_potencia
         
-        # Impuesto Electrico (IEE) 5.1127% (Reducido 2.5% o 0.5% segun decreto, usamos 0.5% standard actual crisis o 5.11% normal?)
-        # Para comparar peras con peras, asumimos IEE normal 5.11% salvo que se diga lo contrario
-        # Nota: Muchos usuarios prefieren ver TOTAL FINAL. 
-        impuesto_electrico = subtotal * 0.051127 
-        alquiler_equipo = periodo_dias * 0.0266 # Aprox 0.80€/mes standard
+        # ===== IMPUESTO ELÉCTRICO (IEE) =====
+        # PRIORIDAD 1: Usar valor real de la factura si existe
+        if hasattr(factura, 'impuesto_electrico') and factura.impuesto_electrico is not None:
+            impuesto_electrico = float(factura.impuesto_electrico)
+            modo_iee = "factura_real"
+        else:
+            # FALLBACK: Calcular con porcentaje fijo 5.11269632%
+            impuesto_electrico = subtotal * 0.0511269632
+            modo_iee = "calculado_5.11%"
+        
+        # ===== ALQUILER CONTADOR =====
+        # PRIORIDAD 1: Usar valor real de la factura si existe
+        # PRIORIDAD 2: Si NO está en factura, NO lo incluimos (asumimos que no aplica)
+        if hasattr(factura, 'alquiler_contador') and factura.alquiler_contador is not None:
+            alquiler_equipo = float(factura.alquiler_contador)
+            modo_alquiler = "factura_real"
+        else:
+            # NO incluir alquiler si no está en la factura
+            alquiler_equipo = 0.0
+            modo_alquiler = "no_aplica"
+        
         base_imponible = subtotal + impuesto_electrico + alquiler_equipo
         
-        # IVA 21% (Standard) - Ojo, ha variado al 10%. Usamos 21% para ser conservadores en el ahorro?
-        # O intentamos detectar fecha? Dificil. Usamos 10% que es lo vigente en 2024/25 para <10kW?
-        # Vamos con 10% para potencias bajas (<10kW) y 21% para altas.
-        iva_pct = 0.10 if potencia_p1 < 10 else 0.21
+        # ===== IVA =====
+        # PRIORIDAD 1: Usar porcentaje real de la factura si existe
+        if hasattr(factura, 'iva_porcentaje') and factura.iva_porcentaje is not None:
+            iva_pct = float(factura.iva_porcentaje) / 100.0  # Convertir 21 -> 0.21
+            modo_iva = f"factura_{factura.iva_porcentaje}%"
+        else:
+            # FALLBACK: Lógica por potencia (10% si <10kW, 21% si >=10kW)
+            iva_pct = 0.10 if potencia_p1 < 10 else 0.21
+            modo_iva = f"calculado_{int(iva_pct*100)}%"
+        
         iva_importe = base_imponible * iva_pct
         
         estimated_total_periodo = base_imponible + iva_importe
@@ -493,6 +515,9 @@ def compare_factura(factura, db) -> Dict[str, Any]:
                 "alquiler_contador": round(alquiler_equipo, 2),
                 "modo_energia": modo_energia,
                 "modo_potencia": modo_potencia,
+                "modo_iee": modo_iee,
+                "modo_iva": modo_iva,
+                "modo_alquiler": modo_alquiler,
             },
         }
 

@@ -12,12 +12,12 @@ import Link from 'next/link';
 export default function Step2ValidarPage({ params }) {
   const router = useRouter();
   const { formData, updateFormData } = useWizard();
-  
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [showDebug, setShowDebug] = useState(false);
-  const [autoSaveStatus, setAutoSaveStatus] = useState('saved'); 
+  const [autoSaveStatus, setAutoSaveStatus] = useState('saved');
   const [autoSaveError, setAutoSaveError] = useState(null);
   const [serverMissingFields, setServerMissingFields] = useState([]);
   const [serverErrors, setServerErrors] = useState({});
@@ -42,7 +42,7 @@ export default function Step2ValidarPage({ params }) {
         setLoading(true);
         const { getFactura } = await import('@/lib/apiClient');
         const data = await getFactura(params.id);
-        
+
         if (!data) {
           setError("No se ha encontrado la factura");
           return;
@@ -51,7 +51,7 @@ export default function Step2ValidarPage({ params }) {
         setRawOcrData(data); // Guardar para debug
 
         console.log(`%c QA Audit - Factura #${params.id} `, 'background: #2563eb; color: #fff; font-weight: bold;');
-        
+
         const mappedData = {
           cups: data.cups || '',
           atr: data.atr || '',
@@ -67,6 +67,7 @@ export default function Step2ValidarPage({ params }) {
           consumo_p5: data.consumo_p5_kwh || 0,
           consumo_p6: data.consumo_p6_kwh || 0,
           iva: data.iva || 0,
+          iva_porcentaje: data.iva_porcentaje || 21,  // Default 21%
           impuesto_electrico: data.impuesto_electrico || 0
         };
 
@@ -105,6 +106,7 @@ export default function Step2ValidarPage({ params }) {
     'consumo_p5',
     'consumo_p6',
     'iva',
+    'iva_porcentaje',
     'impuesto_electrico'
   ]);
   const requiredFields = [
@@ -145,7 +147,7 @@ export default function Step2ValidarPage({ params }) {
   // Auto-save
   useEffect(() => {
     if (loading || !params.id || params.id === 'new') return;
-    
+
     const timer = setTimeout(async () => {
       try {
         setAutoSaveStatus('saving');
@@ -187,7 +189,7 @@ export default function Step2ValidarPage({ params }) {
 
   // P6: Validación estricta y de negocio
   const isValid = (val) => val !== null && val !== undefined && String(val).trim().length > 0;
-  
+
   // --- HELPERS VALIDACIÓN CUPS (MVP FLEXIBLE) ---
   const normalizeCUPS = (raw) => {
     if (!raw) return '';
@@ -214,6 +216,7 @@ export default function Step2ValidarPage({ params }) {
     consumo_p5_kwh: parseNumberInput(data.consumo_p5),
     consumo_p6_kwh: parseNumberInput(data.consumo_p6),
     iva: parseNumberInput(data.iva),
+    iva_porcentaje: parseNumberInput(data.iva_porcentaje),
     impuesto_electrico: parseNumberInput(data.impuesto_electrico),
     total_factura: parseNumberInput(data.total_factura),
   });
@@ -223,7 +226,7 @@ export default function Step2ValidarPage({ params }) {
   const missingFields = requiredFields.filter(key => !isValid(form[key]));
   const missingFieldLabels = missingFields.map(field => fieldLabels[field] || field);
   const serverMissingFieldLabels = serverMissingFields.map(field => fieldLabels[field] || field);
-  
+
   // Bloquear si faltan los campos mínimos de 2.0TD
   const criticalComplete = missingFields.length === 0;
 
@@ -269,7 +272,7 @@ export default function Step2ValidarPage({ params }) {
         {/* Debug Panel (Solo en TEST_MODE) */}
         {isTestMode && (
           <div className="bg-azul-control/10 border border-azul-control/20 rounded-lg p-3">
-            <button 
+            <button
               onClick={() => setShowDebug(!showDebug)}
               className="text-xs font-bold text-[#F1F5F9] uppercase tracking-widest flex items-center justify-between w-full"
             >
@@ -352,7 +355,7 @@ export default function Step2ValidarPage({ params }) {
               <Input
                 id="cups"
                 name="cups"
-                value={form.cups || ''} 
+                value={form.cups || ''}
                 onChange={handleChange}
                 onBlur={(e) => {
                   const clean = normalizeCUPS(e.target.value);
@@ -388,7 +391,7 @@ export default function Step2ValidarPage({ params }) {
                 />
               </div>
 
-               <div>
+              <div>
                 <label htmlFor="total_factura" className="label text-white">
                   Total factura (€) <span className="text-xs text-blue-400 ml-1">*</span>
                 </label>
@@ -406,7 +409,7 @@ export default function Step2ValidarPage({ params }) {
             </div>
 
             <div className="pt-4 border-t border-[rgba(255,255,255,0.05)]">
-               {/* Additional Client Fields... */}
+              {/* Additional Client Fields... */}
               <label htmlFor="cliente" className="label text-white">
                 Cliente
               </label>
@@ -419,21 +422,21 @@ export default function Step2ValidarPage({ params }) {
                 placeholder="---"
               />
             </div>
-            
+
             <div className="pt-4 border-t border-[rgba(255,255,255,0.05)]">
               <label htmlFor="consumo_total" className="label text-white">
-                 Consumo total (kWh)
+                Consumo total (kWh)
               </label>
-               <Input
-                 id="consumo_total"
-                 name="consumo_total"
-                 type="number"
-                 step="0.01"
-                 value={form.consumo_total || ''}
-                 onChange={handleChange}
-                 validated={isValid(form.consumo_total)}
-                 placeholder="---"
-               />
+              <Input
+                id="consumo_total"
+                name="consumo_total"
+                type="number"
+                step="0.01"
+                value={form.consumo_total || ''}
+                onChange={handleChange}
+                validated={isValid(form.consumo_total)}
+                placeholder="---"
+              />
             </div>
           </div>
         </div>
@@ -513,27 +516,49 @@ export default function Step2ValidarPage({ params }) {
             {/* Impuestos */}
             <div className="bg-[#0F172A] border border-white/8 rounded-[12px] p-5">
               <h4 className="text-lg font-semibold text-[#F1F5F9] mb-4">Impuestos</h4>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label htmlFor="iva" className="label text-[#F1F5F9]">
-                    IVA (€) *
-                  </label>
-                  <Input
-                    id="iva"
-                    name="iva"
-                    type="number"
-                    step="0.01"
-                    value={form.iva}
-                    onChange={handleChange}
-                    validated={isValid(form.iva)}
-                    error={!isValid(form.iva)}
-                    errorMessage={!isValid(form.iva) ? 'Campo obligatorio' : ''}
-                    placeholder="26.14"
-                  />
+              <div className="space-y-4">
+                {/* IVA Section */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label htmlFor="iva" className="label text-[#F1F5F9]">
+                      IVA (€) *
+                    </label>
+                    <Input
+                      id="iva"
+                      name="iva"
+                      type="number"
+                      step="0.01"
+                      value={form.iva}
+                      onChange={handleChange}
+                      validated={isValid(form.iva)}
+                      error={!isValid(form.iva)}
+                      errorMessage={!isValid(form.iva) ? 'Campo obligatorio' : ''}
+                      placeholder="26.14"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="iva_porcentaje" className="label text-[#F1F5F9]">
+                      IVA (%) *
+                    </label>
+                    <select
+                      id="iva_porcentaje"
+                      name="iva_porcentaje"
+                      value={form.iva_porcentaje || 21}
+                      onChange={handleChange}
+                      className="w-full px-4 py-3 bg-[#1E293B] border border-white/10 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
+                    >
+                      <option value="21">21%</option>
+                      <option value="10">10%</option>
+                      <option value="4">4%</option>
+                    </select>
+                  </div>
                 </div>
+
+                {/* Impuesto Eléctrico */}
                 <div>
                   <label htmlFor="impuesto_electrico" className="label text-[#F1F5F9]">
                     Impuesto eléctrico (€)
+                    <span className="text-xs text-[#94A3B8] ml-2">(5.11269632% fijo)</span>
                   </label>
                   <Input
                     id="impuesto_electrico"
