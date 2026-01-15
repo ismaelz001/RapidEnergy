@@ -1,6 +1,11 @@
 -- Migración masiva Tarifas Iberdrola Enero 2026 --
 -- Generado automáticamente desde Excel --
 
+-- 1. LIMPIEZA PREVIA: Eliminar tarifas antiguas de Iberdrola (estimadas/BOE) para evitar duplicados con nombres distintos
+DELETE FROM tarifas WHERE comercializadora = 'Iberdrola';
+
+-- 2. INSERCIÓN DE DATOS REALES (EXCEL ENERO 2026)
+
 INSERT INTO tarifas (nombre, comercializadora, atr, energia_p1_eur_kwh, energia_p2_eur_kwh, energia_p3_eur_kwh, potencia_p1_eur_kw_dia, potencia_p2_eur_kw_dia, origen) VALUES ('2.0TD _ 2     P1 <= 10kW', 'Iberdrola', '2.0TD', NULL, NULL, NULL, 0.073777, 0.001911, 'Excel Masivo') 
 ON CONFLICT (nombre) DO UPDATE SET 
 comercializadora = EXCLUDED.comercializadora, atr = EXCLUDED.atr, energia_p1_eur_kwh = EXCLUDED.energia_p1_eur_kwh, energia_p2_eur_kwh = EXCLUDED.energia_p2_eur_kwh, energia_p3_eur_kwh = EXCLUDED.energia_p3_eur_kwh, potencia_p1_eur_kw_dia = EXCLUDED.potencia_p1_eur_kw_dia, potencia_p2_eur_kw_dia = EXCLUDED.potencia_p2_eur_kw_dia, origen = EXCLUDED.origen;
