@@ -109,25 +109,36 @@ export default function Step2ValidarPage({ params }) {
     'iva_porcentaje',
     'impuesto_electrico'
   ]);
+  const is3TD = form.atr === '3.0TD';
   const requiredFields = [
-    'cups', // CUPS es obligatorio (no puede estar vacío)
+    'cups', 
     'atr',
+    'total_factura',
     'potencia_p1',
     'potencia_p2',
     'consumo_p1',
     'consumo_p2',
     'consumo_p3',
-    'total_factura'
+    ...(is3TD ? ['potencia_p3', 'potencia_p4', 'potencia_p5', 'potencia_p6'] : []),
+    ...(is3TD ? ['consumo_p4', 'consumo_p5', 'consumo_p6'] : [])
   ];
+
   const fieldLabels = {
     cups: 'CUPS',
     atr: 'ATR',
+    total_factura: 'Total factura',
     potencia_p1: 'Potencia P1',
     potencia_p2: 'Potencia P2',
+    potencia_p3: 'Potencia P3',
+    potencia_p4: 'Potencia P4',
+    potencia_p5: 'Potencia P5',
+    potencia_p6: 'Potencia P6',
     consumo_p1: 'Consumo P1',
     consumo_p2: 'Consumo P2',
     consumo_p3: 'Consumo P3',
-    total_factura: 'Total factura'
+    consumo_p4: 'Consumo P4',
+    consumo_p5: 'Consumo P5',
+    consumo_p6: 'Consumo P6'
   };
 
   const normalizeAtr = (value) => {
@@ -454,46 +465,37 @@ export default function Step2ValidarPage({ params }) {
           <div className="flex flex-col gap-6">
             {/* Potencia */}
             <div className="bg-[#0F172A] border border-white/8 rounded-[12px] p-5">
-              <h4 className="text-lg font-semibold text-[#F1F5F9] mb-4">Potencia</h4>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label htmlFor="potencia_p1" className="label text-[#F1F5F9]">
-                    Potencia P1 (kW)
-                  </label>
-                  <Input
-                    id="potencia_p1"
-                    name="potencia_p1"
-                    type="number"
-                    step="0.01"
-                    value={form.potencia_p1}
-                    onChange={handleChange}
-                    validated={isValid(form.potencia_p1)}
-                    placeholder="4.6"
-                  />
-                </div>
-                <div>
-                  <label htmlFor="potencia_p2" className="label text-[#F1F5F9]">
-                    Potencia P2 (kW)
-                  </label>
-                  <Input
-                    id="potencia_p2"
-                    name="potencia_p2"
-                    type="number"
-                    step="0.01"
-                    value={form.potencia_p2}
-                    onChange={handleChange}
-                    validated={isValid(form.potencia_p2)}
-                    placeholder="4.6"
-                  />
-                </div>
+              <h4 className="text-lg font-semibold text-[#F1F5F9] mb-4">
+                Potencia {form.atr === '3.0TD' ? 'P1-P6' : 'P1-P2'}
+              </h4>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                {(form.atr === '3.0TD' ? ['p1', 'p2', 'p3', 'p4', 'p5', 'p6'] : ['p1', 'p2']).map((p) => (
+                  <div key={p}>
+                    <label htmlFor={`potencia_${p}`} className="label text-[#F1F5F9]">
+                      Potencia {p.toUpperCase()} (kW)
+                    </label>
+                    <Input
+                      id={`potencia_${p}`}
+                      name={`potencia_${p}`}
+                      type="number"
+                      step="0.01"
+                      value={form[`potencia_${p}`]}
+                      onChange={handleChange}
+                      validated={isValid(form[`potencia_${p}`])}
+                      placeholder="0"
+                    />
+                  </div>
+                ))}
               </div>
             </div>
 
             {/* Consumo por periodos */}
             <div className="bg-[#0F172A] border border-white/8 rounded-[12px] p-5">
-              <h4 className="text-lg font-semibold text-[#F1F5F9] mb-4">Consumo P1-P6</h4>
-              <div className="grid grid-cols-3 gap-4">
-                {['p1', 'p2', 'p3', 'p4', 'p5', 'p6'].map((p) => (
+              <h4 className="text-lg font-semibold text-[#F1F5F9] mb-4">
+                Consumo {form.atr === '3.0TD' ? 'P1-P6' : 'P1-P3'}
+              </h4>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                {(form.atr === '3.0TD' ? ['p1', 'p2', 'p3', 'p4', 'p5', 'p6'] : ['p1', 'p2', 'p3']).map((p) => (
                   <div key={p}>
                     <label htmlFor={`consumo_${p}`} className="label text-[#F1F5F9]">
                       {p.toUpperCase()} (kWh)

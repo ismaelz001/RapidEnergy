@@ -1,0 +1,65 @@
+MOTOR DE CÁLCULO - COMPARADOR MECAENERGY
+===========================================
+
+SECCIÓN 1: VARIABLES DE ENTRADA (FACTURA DEL CLIENTE)
+Variable,Símbolo,Unidad,Origen,Ejemplo
+Consumo Punta,consumo_p1,kWh,Factura OCR,50
+Consumo Llano,consumo_p2,kWh,Factura OCR,80
+Consumo Valle,consumo_p3,kWh,Factura OCR,120
+Potencia contratada P1,potencia_p1,kW,Factura OCR,4.6
+Potencia contratada P2,potencia_p2,kW,Factura OCR,4.6
+Días del periodo,periodo_dias,días,Factura OCR,30
+Total factura actual,total_factura,€,Factura OCR,75.50
+
+SECCIÓN 2: VARIABLES DE TARIFA (BBDD)
+Variable,Símbolo,Unidad,Ejemplo Endesa,Ejemplo Iberdrola,Ejemplo Naturgy
+Precio energía P1,precio_e1,€/kWh,0.1059,0.127394,0.120471
+Precio energía P2,precio_e2,€/kWh,0.1059,0.127394,null (=P1)
+Precio energía P3,precio_e3,€/kWh,0.1059,0.127394,null (=P1)
+Precio potencia P1,precio_pot1,€/kW·día,0.090214,null (PROBLEMA),0.111815
+Precio potencia P2,precio_pot2,€/kW·día,0.090214,null (PROBLEMA),0.033933
+
+SECCIÓN 3: CONSTANTES HARDCODEADAS
+Constante,Símbolo,Valor,Porcentaje,Notas
+Impuesto Eléctrico,IEE,0.051127,5.1127%,Puede variar por decreto (0.5% en crisis)
+IVA doméstico,IVA_DOM,0.10,10%,Si potencia_p1 < 10kW
+IVA comercial,IVA_COM,0.21,21%,Si potencia_p1 >= 10kW
+Alquiler contador diario,ALQ,0.0266,N/A,~0.80€/mes
+Fallback potencia P1,FB_POT1,0.073777,N/A,BOE 2025 oficial (peajes + cargos regulados)
+Fallback potencia P2,FB_POT2,0.001911,N/A,BOE 2025 oficial (peajes + cargos regulados)
+
+SECCIÓN 4: FÓRMULAS DE CÁLCULO
+Paso,Nombre,Fórmula
+1,Coste Energía,COSTE_ENERGIA = (consumo_p1 × precio_e1) + (consumo_p2 × precio_e2) + (consumo_p3 × precio_e3)
+2,Coste Potencia,COSTE_POTENCIA = periodo_dias × [(potencia_p1 × precio_pot1) + (potencia_p2 × precio_pot2)]
+3,Subtotal,SUBTOTAL = COSTE_ENERGIA + COSTE_POTENCIA
+4,Impuesto Eléctrico,IMPUESTO_ELECTRICO = SUBTOTAL × 0.051127
+5,Alquiler Contador,ALQUILER = periodo_dias × 0.0266
+6,Base Imponible,BASE_IMPONIBLE = SUBTOTAL + IMPUESTO_ELECTRICO + ALQUILER
+7,IVA,IVA = BASE_IMPONIBLE × 0.10 (si potencia < 10kW) ó × 0.21 (si >= 10kW)
+8,Total Estimado,TOTAL_ESTIMADO = BASE_IMPONIBLE + IVA
+9,Ahorro Periodo,AHORRO_PERIODO = total_factura - TOTAL_ESTIMADO
+10,Ahorro Mensual,AHORRO_MENSUAL = AHORRO_PERIODO × (30.437 / periodo_dias)
+11,Ahorro Anual,AHORRO_ANUAL = AHORRO_PERIODO × (365 / periodo_dias)
+12,Porcentaje Ahorro,PORCENTAJE = (AHORRO_PERIODO / total_factura) × 100
+
+SECCIÓN 5: EJEMPLO NUMÉRICO COMPLETO
+Concepto,Fórmula Aplicada,Resultado
+Datos entrada:,Consumo P1=50 P2=80 P3=120 kWh | Potencia P1=P2=4.6kW | Días=30,
+Tarifa Endesa:,e1=e2=e3=0.1059 | pot1=pot2=0.0902,
+---,---,---
+Coste Energía,(50×0.1059) + (80×0.1059) + (120×0.1059),26.48€
+Coste Potencia,30 × [(4.6×0.0902) + (4.6×0.0902)],24.89€
+Subtotal,26.48 + 24.89,51.37€
+Impuesto Eléctrico,51.37 × 0.051127,2.63€
+Alquiler Contador,30 × 0.0266,0.80€
+Base Imponible,51.37 + 2.63 + 0.80,54.80€
+IVA (10%),54.80 × 0.10,5.48€
+TOTAL ESTIMADO,54.80 + 5.48,60.28€
+
+SECCIÓN 6: PUNTOS PENDIENTES PARA PO
+Punto,Pregunta,Estado
+1,Precios potencia Iberdrola (P1 y P2 €/kW·día),❌ Falta dato
+2,¿Usar IEE 5.11% normal o 0.5% crisis?,❓ Por confirmar
+3,¿Aplicar descuentos comerciales (ej: 10% primer año Endesa)?,❓ Por confirmar
+4,¿Mostrar permanencia y penalizaciones?,❓ Por confirmar

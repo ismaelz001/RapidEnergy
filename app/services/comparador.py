@@ -335,13 +335,33 @@ def compare_factura(factura, db) -> Dict[str, Any]:
     if current_total is None or current_total <= 0:
         raise DomainError("TOTAL_INVALID", "La factura no tiene un total válido para comparar")
 
-    required_fields = [
-        "consumo_p1_kwh",
-        "consumo_p2_kwh",
-        "consumo_p3_kwh",
-        "potencia_p1_kw",
-        "potencia_p2_kw",
-    ]
+    # DETECCIÓN AUTOMÁTICA DE ATR (2.0TD vs 3.0TD)
+    # Leer potencia P1 primero para determinar el tipo de tarifa
+    potencia_p1 = _to_float(getattr(factura, "potencia_p1_kw", None)) or 0.0
+    
+    if potencia_p1 >= 15:
+        atr = "3.0TD"
+        num_periodos_energia = 6
+        num_periodos_potencia = 6
+    else:
+        atr = "2.0TD"
+        num_periodos_energia = 3
+        num_periodos_potencia = 2
+    
+    # VALIDACIÓN DE CAMPOS SEGÚN ATR
+    if atr == "2.0TD":
+        required_fields = [
+            "consumo_p1_kwh", "consumo_p2_kwh", "consumo_p3_kwh",
+            "potencia_p1_kw", "potencia_p2_kw",
+        ]
+    else:  # 3.0TD
+        required_fields = [
+            "consumo_p1_kwh", "consumo_p2_kwh", "consumo_p3_kwh",
+            "consumo_p4_kwh", "consumo_p5_kwh", "consumo_p6_kwh",
+            "potencia_p1_kw", "potencia_p2_kw", "potencia_p3_kw",
+            "potencia_p4_kw", "potencia_p5_kw", "potencia_p6_kw",
+        ]
+    
     missing = [
         field
         for field in required_fields
@@ -350,7 +370,7 @@ def compare_factura(factura, db) -> Dict[str, Any]:
     if missing:
         raise DomainError(
             "FIELDS_MISSING",
-            "La factura no tiene datos suficientes para comparar: " + ", ".join(missing)
+            f"La factura {atr} no tiene datos suficientes para comparar: " + ", ".join(missing)
         )
 
     # P1: PERIODO OBLIGATORIO (SIN FALLBACK)
@@ -370,15 +390,18 @@ def compare_factura(factura, db) -> Dict[str, Any]:
     if not isinstance(periodo_dias, int) or periodo_dias <= 0:
         raise DomainError("PERIOD_INVALID", "Periodo inválido")
 
-    consumo_p1 = _to_float(factura.consumo_p1_kwh) or 0.0
-    consumo_p2 = _to_float(factura.consumo_p2_kwh) or 0.0
-    consumo_p3 = _to_float(factura.consumo_p3_kwh) or 0.0
-    potencia_p1 = _to_float(factura.potencia_p1_kw) or 0.0
-    potencia_p2 = _to_float(factura.potencia_p2_kw) or 0.0
+    # LEER CONSUMOS Y POTENCIAS DINÁMICAMENTE
+    consumos = []
+    for i in range(1, num_periodos_energia + 1):
+        consumos.append(_to_float(getattr(factura, f"consumo_p{i}_kwh", None)) or 0.0)
+    
+    potencias = []
+    for i in range(1, num_periodos_potencia + 1):
+        potencias.append(_to_float(getattr(factura, f"potencia_p{i}_kw", None)) or 0.0)
 
     result = db.execute(
         text("SELECT * FROM tarifas WHERE atr = :atr"),
-        {"atr": "2.0TD"},
+        {"atr": atr},  # Usa el ATR detectado automáticamente (2.0TD o 3.0TD)
     )
     try:
         tarifas = result.mappings().all()
@@ -387,48 +410,63 @@ def compare_factura(factura, db) -> Dict[str, Any]:
 
     offers = []
     for tarifa in tarifas:
-        modo_energia, prices = _resolve_energy_prices(tarifa)
-        if modo_energia is None:
-            continue
-
-        # LOGICA DE PRECIOS ENERGÍA (P1 -> P2/P3 si null)
-        p1_price = _to_float(tarifa.get("energia_p1_eur_kwh"))
-        p2_price = _to_float(tarifa.get("energia_p2_eur_kwh"))
-        p3_price = _to_float(tarifa.get("energia_p3_eur_kwh"))
+        # LOGICA DE PRECIOS ENERGÍA DINÁMICA (soporta 2.0TD y 3.0TD)
+        # Para 2.0TD: P1, P2, P3
+        # Para 3.0TD: P1, P2, P3, P4, P5, P6
         
-        # Si P2/P3 son null, asumir precio único (tarifa plana 24h)
-        if p1_price is not None and (p2_price is None or p3_price is None):
-            p2_price = p1_price
-            p3_price = p1_price
-            modo_energia = "24h_inferred"
-        
-        if p1_price is None:
-             continue # Tarifa rota sin precio
-
-        coste_energia = (
-            (consumo_p1 * p1_price)
-            + (consumo_p2 * p2_price)
-            + (consumo_p3 * p3_price)
-        )
-
-        # LOGICA DE PRECIOS POTENCIA (Fallback BOE si null)
-        potencia_p1_price = _to_float(tarifa.get("potencia_p1_eur_kw_dia"))
-        potencia_p2_price = _to_float(tarifa.get("potencia_p2_eur_kw_dia"))
-        
-        # Fallback BOE 2024 (Aprox) si comercializadora no lo especifica (caso Iberdrola)
-        # Peajes + Cargos suelen rondar: P1=0.08, P2=0.005 aprox. 
-        # Usamos valores conservadores de mercado libre medio si es null.
-        if potencia_p1_price is None:
-            potencia_p1_price = 0.10 # Valor medio mercado
-            potencia_p2_price = 0.04
-            modo_potencia = "boe_fallback"
-        else:
-            modo_potencia = "tarifa"
+        # Obtener precios de energía según número de periodos
+        precios_energia = []
+        for i in range(1, num_periodos_energia + 1):
+            precio = _to_float(tarifa.get(f"energia_p{i}_eur_kwh"))
             
-        coste_potencia = periodo_dias * (
-            (potencia_p1 * potencia_p1_price)
-            + (potencia_p2 * potencia_p2_price)
+            # Fallback: Si P2+ son null, usar P1 (tarifa plana 24h)
+            if precio is None and i > 1:
+                precio = _to_float(tarifa.get("energia_p1_eur_kwh"))
+            
+            precios_energia.append(precio)
+        
+        # Validar que al menos P1 tenga precio
+        if precios_energia[0] is None:
+            continue  # Tarifa rota sin precio de energía
+        
+        # Calcular coste de energía
+        coste_energia = sum(
+            consumos[i] * (precios_energia[i] or 0.0)
+            for i in range(num_periodos_energia)
         )
+        modo_energia = f"{num_periodos_energia}p_dinamico"
+
+        # LOGICA DE PRECIOS POTENCIA DINÁMICA (soporta 2.0TD y 3.0TD)
+        # Para 2.0TD: P1, P2 (con fallback BOE 2025 si null)
+        # Para 3.0TD: P1, P2, P3, P4, P5, P6 (sin fallback, deben estar completos)
+        
+        precios_potencia = []
+        tiene_precios_potencia = True
+        
+        for i in range(1, num_periodos_potencia + 1):
+            precio = _to_float(tarifa.get(f"potencia_p{i}_eur_kw_dia"))
+            
+            # Fallback BOE 2025 SOLO para 2.0TD (P1 y P2)
+            if precio is None and atr == "2.0TD":
+                if i == 1:
+                    precio = 0.073777  # BOE 2025 P1
+                elif i == 2:
+                    precio = 0.001911  # BOE 2025 P2
+                tiene_precios_potencia = False  # Marca que usó fallback
+            
+            precios_potencia.append(precio or 0.0)
+        
+        # Calcular coste de potencia
+        coste_potencia = periodo_dias * sum(
+            potencias[i] * precios_potencia[i]
+            for i in range(num_periodos_potencia)
+        )
+        
+        # Determinar modo de potencia
+        if tiene_precios_potencia:
+            modo_potencia = "tarifa"
+        else:
+            modo_potencia = "boe_2025_regulado"
 
         # TOTALIZACIÓN CON IMPUESTOS (Para igualar factura real)
         subtotal = coste_energia + coste_potencia
@@ -457,14 +495,14 @@ def compare_factura(factura, db) -> Dict[str, Any]:
         base_imponible = subtotal + impuesto_electrico + alquiler_equipo
         
         # ===== IVA =====
-        # PRIORIDAD 1: Usar porcentaje real de la factura si existe
+        # PRIORIDAD 1: Usar el valor que viene de la factura (seleccionado por el usuario o extraído)
         if hasattr(factura, 'iva_porcentaje') and factura.iva_porcentaje is not None:
-            iva_pct = float(factura.iva_porcentaje) / 100.0  # Convertir 21 -> 0.21
-            modo_iva = f"factura_{factura.iva_porcentaje}%"
+            iva_pct = float(factura.iva_porcentaje) / 100.0
+            modo_iva = f"usuario_{int(factura.iva_porcentaje)}%"
         else:
-            # FALLBACK: Lógica por potencia (10% si <10kW, 21% si >=10kW)
-            iva_pct = 0.10 if potencia_p1 < 10 else 0.21
-            modo_iva = f"calculado_{int(iva_pct*100)}%"
+            # FALLBACK: 21% por defecto (Estándar actual)
+            iva_pct = 0.21
+            modo_iva = "defecto_21%"
         
         iva_importe = base_imponible * iva_pct
         
@@ -547,13 +585,16 @@ def compare_factura(factura, db) -> Dict[str, Any]:
     try:
         inputs_snapshot = {
             "cups": factura.cups,
-            "atr": factura.atr,
-            "potencia_p1": factura.potencia_p1_kw,
-            "potencia_p2": factura.potencia_p2_kw,
-            "consumo_p1": factura.consumo_p1_kwh,
-            "consumo_p2": factura.consumo_p2_kwh,
-            "consumo_p3": factura.consumo_p3_kwh,
+            "atr": atr,  # Incluir ATR detectado (2.0TD o 3.0TD)
         }
+        
+        # Agregar consumos dinámicamente
+        for i in range(1, num_periodos_energia + 1):
+            inputs_snapshot[f"consumo_p{i}"] = getattr(factura, f"consumo_p{i}_kwh", None)
+        
+        # Agregar potencias dinámicamente
+        for i in range(1, num_periodos_potencia + 1):
+            inputs_snapshot[f"potencia_p{i}"] = getattr(factura, f"potencia_p{i}_kw", None)
         
         comparativa = Comparativa(
             factura_id=factura.id,
