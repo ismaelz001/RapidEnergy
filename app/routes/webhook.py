@@ -637,8 +637,10 @@ def generar_presupuesto_pdf(factura_id: int, db: Session = Depends(get_db)):
     
     # Factura actual
     story.append(Paragraph("SITUACIÓN ACTUAL", heading_style))
+    # Calcular periodo para mostrar contexto
+    periodo_dias_actual = getattr(factura, 'periodo_dias', None) or 30
     current_data = [
-        ["Total factura actual:", f"{factura.total_factura:.2f} €/mes"],
+        ["Total factura actual:", f"{factura.total_factura:.2f} € (periodo: {periodo_dias_actual} días)"],
     ]
     current_table = Table(current_data, colWidths=[8*cm, 8*cm])
     current_table.setStyle(TableStyle([
@@ -657,13 +659,27 @@ def generar_presupuesto_pdf(factura_id: int, db: Session = Depends(get_db)):
     # Oferta propuesta
     story.append(Paragraph("OFERTA PROPUESTA", heading_style))
     
+    # ⭐ Calcular ahorro consistentemente (fuente única de verdad)
+    periodo_dias_calc = getattr(factura, 'periodo_dias', None) or 30
+    total_factura_calc = factura.total_factura or 0.0
+    total_estimado_calc = selected_offer.get('estimated_total_periodo', selected_offer.get('estimated_total', 0.0))
+    
+    ahorro_periodo_calc = total_factura_calc - total_estimado_calc
+    if ahorro_periodo_calc > 0:
+        ahorro_mensual_calc = ahorro_periodo_calc / (periodo_dias_calc / 30.0)
+        ahorro_anual_calc = ahorro_mensual_calc * 12
+    else:
+        ahorro_mensual_calc = 0.0
+        ahorro_anual_calc = 0.0
+    
     # Tabla de Oferta (Compacta)
     oferta_data = [
         ["Comercializadora:", selected_offer.get('provider', 'N/A')],
         ["Tarifa:", selected_offer.get('plan_name', 'N/A')],
-        ["Total estimado:", f"{selected_offer.get('estimated_total', 0):.2f} €/mes"],
-        ["Ahorro mensual:", f"{selected_offer.get('saving_amount', 0):.2f} €"],
-        ["Ahorro anual estimado:", f"{selected_offer.get('saving_amount', 0) * 12:.2f} €"],
+        ["Total estimado:", f"{total_estimado_calc:.2f} € (periodo: {periodo_dias_calc} días)"],
+        ["Ahorro periodo:", f"{ahorro_periodo_calc:.2f} €"],
+        ["Ahorro mensual equiv.:", f"{ahorro_mensual_calc:.2f} €/mes"],
+        ["Ahorro anual estimado:", f"{ahorro_anual_calc:.2f} €/año"],
     ]
     oferta_table = Table(oferta_data, colWidths=[8*cm, 8*cm])
     oferta_table.setStyle(TableStyle([
@@ -709,7 +725,15 @@ def generar_presupuesto_pdf(factura_id: int, db: Session = Depends(get_db)):
     story.append(Spacer(1, 0.3*cm))
     
     # TABLA A — Detalle de la factura analizada (línea base)
-    story.append(Paragraph("\u003cb\u003eA) Detalle de la factura analizada (línea base)\u003c/b\u003e", styles['Normal']))
+    # Sin tags HTML - usar TableStyle para negritas
+    subtitle_style = ParagraphStyle(
+        'Subtitle',
+        parent=styles['Normal'],
+        fontSize=10,
+        fontName='Helvetica-Bold',
+        spaceAfter=6
+    )
+    story.append(Paragraph("A) Detalle de la factura analizada (línea base)", subtitle_style))
     story.append(Spacer(1, 0.2*cm))
     
     # Intentar obtener desglose real de factura (si existe)
@@ -721,13 +745,13 @@ def generar_presupuesto_pdf(factura_id: int, db: Session = Depends(get_db)):
     factura_total = factura.total_factura or 0.0
     
     tabla_a_data = [
-        ["\u003cb\u003eConcepto\u003c/b\u003e", "\u003cb\u003eValor (€)\u003c/b\u003e"],
+        ["Concepto", "Valor (€)"],
         ["Coste energía", to_money(factura_coste_energia)],
         ["Coste potencia", to_money(factura_coste_potencia)],
         ["Impuesto eléctrico", to_money(factura_impuesto_elec)],
         ["Alquiler contador", to_money(factura_alquiler)],
         ["IVA", to_money(factura_iva)],
-        ["\u003cb\u003eTOTAL FACTURA\u003c/b\u003e", f"\u003cb\u003e{to_money(factura_total)}\u003c/b\u003e"],
+        ["TOTAL FACTURA", to_money(factura_total)],
     ]
     tabla_a = Table(tabla_a_data, colWidths=[10*cm, 6*cm])
     tabla_a.setStyle(TableStyle([
@@ -735,6 +759,8 @@ def generar_presupuesto_pdf(factura_id: int, db: Session = Depends(get_db)):
         ('TEXTCOLOR', (0, 0), (-1, -1), colors.black),
         ('ALIGN', (0, 0), (0, -1), 'LEFT'),
         ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),  # Cabecera en negrita
+        ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),  # Total en negrita
         ('FONTSIZE', (0, 0), (-1, -1), 9),
         ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
         ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
@@ -744,7 +770,7 @@ def generar_presupuesto_pdf(factura_id: int, db: Session = Depends(get_db)):
     story.append(Spacer(1, 0.5*cm))
     
     # TABLA B — Detalle de la oferta recomendada
-    story.append(Paragraph("\u003cb\u003eB) Detalle de la oferta recomendada\u003c/b\u003e", styles['Normal']))
+    story.append(Paragraph("B) Detalle de la oferta recomendada", subtitle_style))
     story.append(Spacer(1, 0.2*cm))
     
     # Leer breakdown de la oferta seleccionada
@@ -757,13 +783,12 @@ def generar_presupuesto_pdf(factura_id: int, db: Session = Depends(get_db)):
     oferta_total = selected_offer.get('estimated_total_periodo', selected_offer.get('estimated_total', 0.0))
     
     tabla_b_data = [
-        ["\u003cb\u003eConcepto\u003c/b\u003e", "\u003cb\u003eValor estimado (€)\u003c/b\u003e"],
+        ["Concepto", "Valor estimado (€)"],
         ["Energía estimada", to_money(oferta_energia)],
         ["Potencia estimada", to_money(oferta_potencia)],
-        ["Impuesto eléctrico", to_money(oferta_impuestos)],
+        ["Impuestos (IEE + IVA)", to_money(oferta_impuestos)],
         ["Alquiler contador", to_money(oferta_alquiler)],
-        ["IVA", to_money(oferta_iva)],
-        ["\u003cb\u003eTOTAL ESTIMADO\u003c/b\u003e", f"\u003cb\u003e{to_money(oferta_total)}\u003c/b\u003e"],
+        ["TOTAL ESTIMADO", to_money(oferta_total)],
     ]
     tabla_b = Table(tabla_b_data, colWidths=[10*cm, 6*cm])
     tabla_b.setStyle(TableStyle([
@@ -771,6 +796,8 @@ def generar_presupuesto_pdf(factura_id: int, db: Session = Depends(get_db)):
         ('TEXTCOLOR', (0, 0), (-1, -1), colors.black),
         ('ALIGN', (0, 0), (0, -1), 'LEFT'),
         ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),  # Cabecera en negrita
+        ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),  # Total en negrita
         ('FONTSIZE', (0, 0), (-1, -1), 9),
         ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
         ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
@@ -780,28 +807,18 @@ def generar_presupuesto_pdf(factura_id: int, db: Session = Depends(get_db)):
     story.append(Spacer(1, 0.5*cm))
     
     # TABLA C — Cálculo de ahorro
-    story.append(Paragraph("\u003cb\u003eC) Cálculo de ahorro\u003c/b\u003e", styles['Normal']))
+    story.append(Paragraph("C) Cálculo de ahorro", subtitle_style))
     story.append(Spacer(1, 0.2*cm))
     
-    # Cálculos
-    periodo_dias = getattr(factura, 'periodo_dias', None) or 30  # Fallback a 30 si no existe
-    ahorro_periodo = factura_total - oferta_total
-    
-    # Si ahorro <= 0, forzar mensual/anual a 0.00€
-    if ahorro_periodo <= 0:
-        ahorro_mensual = 0.0
-        ahorro_anual = 0.0
-        alerta_mensaje = "⚠️ No se detecta ahorro con esta oferta. La oferta no mejora la factura analizada."
-    else:
-        ahorro_mensual = ahorro_periodo / (periodo_dias / 30.0)
-        ahorro_anual = ahorro_mensual * 12
-        alerta_mensaje = None
+    # ⭐ Usar MISMOS cálculos que arriba (fuente única)
+    # Ya calculamos: ahorro_periodo_calc, ahorro_mensual_calc, ahorro_anual_calc
+    alerta_mensaje = None if ahorro_periodo_calc > 0 else "⚠️ No se detecta ahorro con esta oferta. La oferta no mejora la factura analizada."
     
     tabla_c_data = [
-        ["\u003cb\u003ePaso\u003c/b\u003e", "\u003cb\u003eFórmula\u003c/b\u003e", "\u003cb\u003eResultado\u003c/b\u003e"],
-        ["1) Ahorro periodo", f"{to_money(factura_total)} - {to_money(oferta_total)}", to_money(ahorro_periodo)],
-        ["2) Ahorro mensual", f"{to_money(ahorro_periodo)} / ({periodo_dias}/30)", to_money(ahorro_mensual)],
-        ["3) Ahorro anual", f"{to_money(ahorro_mensual)} × 12", to_money(ahorro_anual)],
+        ["Paso", "Fórmula", "Resultado"],
+        ["1) Ahorro periodo", f"{to_money(total_factura_calc)} - {to_money(total_estimado_calc)}", to_money(ahorro_periodo_calc)],
+        ["2) Ahorro mensual", f"{to_money(ahorro_periodo_calc)} / ({periodo_dias_calc}/30)", to_money(ahorro_mensual_calc)],
+        ["3) Ahorro anual", f"{to_money(ahorro_mensual_calc)} × 12", to_money(ahorro_anual_calc)],
     ]
     tabla_c = Table(tabla_c_data, colWidths=[4*cm, 7*cm, 5*cm])
     tabla_c.setStyle(TableStyle([
@@ -809,6 +826,7 @@ def generar_presupuesto_pdf(factura_id: int, db: Session = Depends(get_db)):
         ('TEXTCOLOR', (0, 0), (-1, -1), colors.black),
         ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
         ('ALIGN', (2, 0), (2, -1), 'RIGHT'),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),  # Cabecera en negrita
         ('FONTSIZE', (0, 0), (-1, -1), 8),
         ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
         ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
@@ -833,19 +851,18 @@ def generar_presupuesto_pdf(factura_id: int, db: Session = Depends(get_db)):
     
     story.append(Spacer(1, 0.5*cm))
     
-    # Log para auditoría
+    # Log para auditoría (usar valores calculados consistentes)
     logger.info(
         f"[PDF] Generado presupuesto factura_id={factura_id}, "
-        f"total_factura={factura_total:.2f}, total_estimado={oferta_total:.2f}, "
-        f"ahorro_periodo={ahorro_periodo:.2f}"
+        f"total_factura={total_factura_calc:.2f}, total_estimado={total_estimado_calc:.2f}, "
+        f"ahorro_periodo={ahorro_periodo_calc:.2f}, ahorro_anual={ahorro_anual_calc:.2f}"
     )
     # ⭐ FIN DESGLOSE TÉCNICO
     
-    # Resumen de ahorro (mantener código original)
-    ahorro_anual = selected_offer.get('saving_amount', 0) * 12
+    # Resumen de ahorro (usar cálculo unificado)
     story.append(Paragraph("RESUMEN", heading_style))
     resumen_data = [
-        ["AHORRO TOTAL ANUAL ESTIMADO:", f"{ahorro_anual:.2f} €"]
+        ["AHORRO TOTAL ANUAL ESTIMADO:", f"{ahorro_anual_calc:.2f} €/año"]
     ]
     resumen_table = Table(resumen_data, colWidths=[10*cm, 6*cm])
     resumen_table.setStyle(TableStyle([
