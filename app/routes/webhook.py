@@ -434,17 +434,49 @@ def comparar_factura(factura_id: int, db: Session = Depends(get_db)):
     if not factura:
         raise HTTPException(status_code=404, detail="Factura no encontrada")
 
-    # Validar que la factura este completa (2.0TD)
-    es_valida, errors = validate_factura_completitud(factura)
-    if not es_valida:
-        raise HTTPException(
-            status_code=400,
-            detail={
-                "message": "La factura no tiene datos suficientes para comparar. Completa los campos requeridos.",
-                "estado_factura": factura.estado_factura,
-                "errors": errors,
-            },
-        )
+    # ⭐ CAMBIO 3: VALIDACIÓN PREVIA SEGÚN ATR
+    atr = getattr(factura, "atr", None)
+    if not atr or not atr.strip():
+        # Inferir ATR por potencia si no hay OCR
+        potencia_p1 = factura.potencia_p1_kw or 0.0
+        atr = "3.0TD" if potencia_p1 >= 15 else "2.0TD"
+    else:
+        atr = atr.strip().upper()
+    
+    # Validación específica por ATR
+    if atr == "3.0TD":
+        # Para 3.0TD: exigir consumos P1-P6 + potencias P1-P2
+        required_consumos = ["consumo_p1_kwh", "consumo_p2_kwh", "consumo_p3_kwh",
+                              "consumo_p4_kwh", "consumo_p5_kwh", "consumo_p6_kwh"]
+        required_potencias = ["potencia_p1_kw", "potencia_p2_kw"]
+        
+        missing = []
+        for field in required_consumos + required_potencias:
+            val = getattr(factura, field, None)
+            if val is None:
+                missing.append(field)
+        
+        if missing:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "message": f"Factura 3.0TD incompleta: faltan {', '.join(missing)}",
+                    "atr": "3.0TD",
+                    "missing_fields": missing,
+                }
+            )
+    else:
+        # Para 2.0TD: usar validación existente
+        es_valida, errors = validate_factura_completitud(factura)
+        if not es_valida:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "message": "La factura no tiene datos suficientes para comparar. Completa los campos requeridos.",
+                    "estado_factura": factura.estado_factura,
+                    "errors": errors,
+                },
+            )
     
     # Validar que existe total_factura
     if factura.total_factura is None or factura.total_factura <= 0:
@@ -642,9 +674,171 @@ def generar_presupuesto_pdf(factura_id: int, db: Session = Depends(get_db)):
         ('GRID', (0, 0), (-1, -1), 0.5, colors.grey)
     ]))
     story.append(oferta_table)
+    story.append(Spacer(1, 0.7*cm))
+    
+    # ⭐ DESGLOSE TÉCNICO (3 TABLAS)
+    def to_money(value):
+        """Helper para formatear valores monetarios con 2 decimales
+        Maneja: None, NaN, strings ("96.43", "96,43"), floats, ints
+        """
+        try:
+            if value is None:
+                return "0.00 €"
+            
+            # Si es string, reemplazar coma por punto y limpiar espacios
+            if isinstance(value, str):
+                value = value.replace(',', '.').strip()
+                if not value:
+                    return "0.00 €"
+            
+            # Convertir a float
+            num = float(value)
+            
+            # Check NaN
+            if num != num:  # NaN check
+                return "0.00 €"
+            
+            return f"{num:.2f} €"
+        except (ValueError, TypeError):
+            return "0.00 €"
+    
+    story.append(Paragraph("DESGLOSE TÉCNICO", heading_style))
+    story.append(Spacer(1, 0.3*cm))
+    
+    # TABLA A — Detalle de la factura analizada (línea base)
+    story.append(Paragraph("\u003cb\u003eA) Detalle de la factura analizada (línea base)\u003c/b\u003e", styles['Normal']))
+    story.append(Spacer(1, 0.2*cm))
+    
+    # Intentar obtener desglose real de factura (si existe)
+    factura_coste_energia = getattr(factura, 'coste_energia', None) or 0.0
+    factura_coste_potencia = getattr(factura, 'coste_potencia', None) or 0.0
+    factura_impuesto_elec = getattr(factura, 'impuesto_electrico', None) or 0.0
+    factura_alquiler = getattr(factura, 'alquiler_contador', None) or 0.0
+    factura_iva = getattr(factura, 'iva', None) or 0.0
+    factura_total = factura.total_factura or 0.0
+    
+    tabla_a_data = [
+        ["\u003cb\u003eConcepto\u003c/b\u003e", "\u003cb\u003eValor (€)\u003c/b\u003e"],
+        ["Coste energía", to_money(factura_coste_energia)],
+        ["Coste potencia", to_money(factura_coste_potencia)],
+        ["Impuesto eléctrico", to_money(factura_impuesto_elec)],
+        ["Alquiler contador", to_money(factura_alquiler)],
+        ["IVA", to_money(factura_iva)],
+        ["\u003cb\u003eTOTAL FACTURA\u003c/b\u003e", f"\u003cb\u003e{to_money(factura_total)}\u003c/b\u003e"],
+    ]
+    tabla_a = Table(tabla_a_data, colWidths=[10*cm, 6*cm])
+    tabla_a.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#E2E8F0')),
+        ('TEXTCOLOR', (0, 0), (-1, -1), colors.black),
+        ('ALIGN', (0, 0), (0, -1), 'LEFT'),
+        ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
+        ('FONTSIZE', (0, 0), (-1, -1), 9),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+        ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#FEE2E2')),
+    ]))
+    story.append(tabla_a)
     story.append(Spacer(1, 0.5*cm))
     
-    # Resumen de ahorro
+    # TABLA B — Detalle de la oferta recomendada
+    story.append(Paragraph("\u003cb\u003eB) Detalle de la oferta recomendada\u003c/b\u003e", styles['Normal']))
+    story.append(Spacer(1, 0.2*cm))
+    
+    # Leer breakdown de la oferta seleccionada
+    breakdown = selected_offer.get('breakdown', {})
+    oferta_energia = breakdown.get('coste_energia', 0.0)
+    oferta_potencia = breakdown.get('coste_potencia', 0.0)
+    oferta_impuestos = breakdown.get('impuestos', 0.0)
+    oferta_alquiler = breakdown.get('alquiler_contador', 0.0)
+    oferta_iva = breakdown.get('iva', 0.0)
+    oferta_total = selected_offer.get('estimated_total_periodo', selected_offer.get('estimated_total', 0.0))
+    
+    tabla_b_data = [
+        ["\u003cb\u003eConcepto\u003c/b\u003e", "\u003cb\u003eValor estimado (€)\u003c/b\u003e"],
+        ["Energía estimada", to_money(oferta_energia)],
+        ["Potencia estimada", to_money(oferta_potencia)],
+        ["Impuesto eléctrico", to_money(oferta_impuestos)],
+        ["Alquiler contador", to_money(oferta_alquiler)],
+        ["IVA", to_money(oferta_iva)],
+        ["\u003cb\u003eTOTAL ESTIMADO\u003c/b\u003e", f"\u003cb\u003e{to_money(oferta_total)}\u003c/b\u003e"],
+    ]
+    tabla_b = Table(tabla_b_data, colWidths=[10*cm, 6*cm])
+    tabla_b.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#E2E8F0')),
+        ('TEXTCOLOR', (0, 0), (-1, -1), colors.black),
+        ('ALIGN', (0, 0), (0, -1), 'LEFT'),
+        ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
+        ('FONTSIZE', (0, 0), (-1, -1), 9),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+        ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#DCFCE7')),
+    ]))
+    story.append(tabla_b)
+    story.append(Spacer(1, 0.5*cm))
+    
+    # TABLA C — Cálculo de ahorro
+    story.append(Paragraph("\u003cb\u003eC) Cálculo de ahorro\u003c/b\u003e", styles['Normal']))
+    story.append(Spacer(1, 0.2*cm))
+    
+    # Cálculos
+    periodo_dias = getattr(factura, 'periodo_dias', None) or 30  # Fallback a 30 si no existe
+    ahorro_periodo = factura_total - oferta_total
+    
+    # Si ahorro <= 0, forzar mensual/anual a 0.00€
+    if ahorro_periodo <= 0:
+        ahorro_mensual = 0.0
+        ahorro_anual = 0.0
+        alerta_mensaje = "⚠️ No se detecta ahorro con esta oferta. La oferta no mejora la factura analizada."
+    else:
+        ahorro_mensual = ahorro_periodo / (periodo_dias / 30.0)
+        ahorro_anual = ahorro_mensual * 12
+        alerta_mensaje = None
+    
+    tabla_c_data = [
+        ["\u003cb\u003ePaso\u003c/b\u003e", "\u003cb\u003eFórmula\u003c/b\u003e", "\u003cb\u003eResultado\u003c/b\u003e"],
+        ["1) Ahorro periodo", f"{to_money(factura_total)} - {to_money(oferta_total)}", to_money(ahorro_periodo)],
+        ["2) Ahorro mensual", f"{to_money(ahorro_periodo)} / ({periodo_dias}/30)", to_money(ahorro_mensual)],
+        ["3) Ahorro anual", f"{to_money(ahorro_mensual)} × 12", to_money(ahorro_anual)],
+    ]
+    tabla_c = Table(tabla_c_data, colWidths=[4*cm, 7*cm, 5*cm])
+    tabla_c.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#E2E8F0')),
+        ('TEXTCOLOR', (0, 0), (-1, -1), colors.black),
+        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+        ('ALIGN', (2, 0), (2, -1), 'RIGHT'),
+        ('FONTSIZE', (0, 0), (-1, -1), 8),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+    ]))
+    story.append(tabla_c)
+    
+    # Alerta si no hay ahorro
+    if alerta_mensaje:
+        story.append(Spacer(1, 0.2*cm))
+        alerta_style = ParagraphStyle(
+            'Alerta',
+            parent=styles['Normal'],
+            fontSize=9,
+            textColor=colors.HexColor('#DC2626'),
+            alignment=TA_CENTER,
+            backColor=colors.HexColor('#FEE2E2'),
+            borderColor=colors.HexColor('#DC2626'),
+            borderWidth=1,
+            borderPadding=8,
+        )
+        story.append(Paragraph(alerta_mensaje, alerta_style))
+    
+    story.append(Spacer(1, 0.5*cm))
+    
+    # Log para auditoría
+    logger.info(
+        f"[PDF] Generado presupuesto factura_id={factura_id}, "
+        f"total_factura={factura_total:.2f}, total_estimado={oferta_total:.2f}, "
+        f"ahorro_periodo={ahorro_periodo:.2f}"
+    )
+    # ⭐ FIN DESGLOSE TÉCNICO
+    
+    # Resumen de ahorro (mantener código original)
     ahorro_anual = selected_offer.get('saving_amount', 0) * 12
     story.append(Paragraph("RESUMEN", heading_style))
     resumen_data = [
