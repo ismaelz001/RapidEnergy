@@ -316,20 +316,8 @@ def _insert_ofertas(db, factura_id: int, comparativa_id: int, offers) -> bool:
         # No re-raise para no romper el flujo principal del comparador
         return False
 
+# ⭐ _persist_results ELIMINADA - ahora todo se hace en una sola transacción en compare_factura
 
-def _persist_results(db, factura_id: int, offers, comparativa_id: int = None) -> None:
-    try:
-        # If ID not provided (legacy call), try to create one (likely will fail validation if columns missing)
-        if comparativa_id is None:
-             comparativa_id = _insert_comparativa(db, factura_id)
-        
-        inserted = _insert_ofertas(db, factura_id, comparativa_id, offers)
-        
-        if inserted:
-            db.commit()
-    except Exception as exc:
-        db.rollback()
-        logger.warning("Comparator persistence failed: %s", exc)
 
 def compare_factura(factura, db) -> Dict[str, Any]:
     """
@@ -585,19 +573,20 @@ def compare_factura(factura, db) -> Dict[str, Any]:
 
     offers = completas + parciales
 
-    # P1: PERSISTIR COMPARATIVA (AUDITORÍA)
+    # ⭐ FIX CRÍTICO: PERSISTIR COMPARATIVA + OFERTAS EN UNA SOLA TRANSACCIÓN
     comparativa_id = None
     try:
+        logger.info(f"[OFERTAS] ENTER persistence for factura_id={factura.id}")
+        
+        # 1. Crear comparativa
         inputs_snapshot = {
             "cups": factura.cups,
-            "atr": atr,  # Incluir ATR detectado (2.0TD o 3.0TD)
+            "atr": atr,
         }
         
-        # Agregar consumos dinámicamente
         for i in range(1, num_periodos_energia + 1):
             inputs_snapshot[f"consumo_p{i}"] = getattr(factura, f"consumo_p{i}_kwh", None)
         
-        # Agregar potencias dinámicamente
         for i in range(1, num_periodos_potencia + 1):
             inputs_snapshot[f"potencia_p{i}"] = getattr(factura, f"potencia_p{i}_kw", None)
         
@@ -610,14 +599,39 @@ def compare_factura(factura, db) -> Dict[str, Any]:
             status="ok"
         )
         db.add(comparativa)
-        db.commit()
-        db.refresh(comparativa)
+        db.flush()  # ⭐ FLUSH (no COMMIT) para obtener ID sin cerrar transacción
         comparativa_id = comparativa.id
+        
+        logger.info(f"[OFERTAS] Comparativa created with id={comparativa_id}")
+        
+        # 2. Insertar ofertas_calculadas (dentro de la MISMA transacción)
+        inserted = _insert_ofertas(db, factura.id, comparativa_id, offers)
+        
+        if not inserted:
+            logger.error(f"[OFERTAS] ZERO offers inserted for comparativa_id={comparativa_id}")
+            comparativa.status = "error"
+            comparativa.error_json = json.dumps({"error": "No offers inserted"})
+        
+        # 3. COMMIT ÚNICO para ambas operaciones
+        db.commit()
+        logger.info(f"[OFERTAS] Transaction committed successfully for comparativa_id={comparativa_id}")
+        
     except Exception as e:
-        logger.error(f"Error persistiendo comparativa: {e}")
-        # No fallar si falla la auditoría, pero loggear
-
-    _persist_results(db, factura.id, offers, comparativa_id=comparativa_id)
+        db.rollback()
+        logger.error(
+            f"[OFERTAS] ROLLBACK - Error persisting comparativa+offers for factura_id={factura.id}: {e}",
+            exc_info=True
+        )
+        # Marcar comparativa como error si se creó pero falló
+        if comparativa_id:
+            try:
+                db.execute(
+                    text("UPDATE comparativas SET status='error', error_json=:err WHERE id=:cid"),
+                    {"err": json.dumps({"error": str(e)}), "cid": comparativa_id}
+                )
+                db.commit()
+            except:
+                pass
 
     return {
         "factura_id": factura.id,
