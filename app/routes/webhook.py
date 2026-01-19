@@ -10,6 +10,9 @@ import logging
 import inspect
 
 
+# Logger para el módulo
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/webhook", tags=["webhook"])
 
 
