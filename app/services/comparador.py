@@ -272,10 +272,10 @@ def _insert_ofertas(db, factura_id: int, comparativa_id: int, offers) -> bool:
         
         logger.info(f"[OFERTAS] _insert_ofertas ENTER: comparativa_id={comparativa_id}, received {len(offers)} offers")
         
-        for offer in offers:
+        for idx, offer in enumerate(offers):
             tid = offer.get("tarifa_id")
             if tid is None:
-                logger.warning(f"Skipping offer persistence: missing tarifa_id. Plan: {offer.get('plan_name')}")
+                logger.warning(f"[OFERTAS] Skipping offer {idx+1} (no tarifa_id): {offer.get('plan_name', 'unknown')}")
                 continue
                 
             payload = {
@@ -286,6 +286,8 @@ def _insert_ofertas(db, factura_id: int, comparativa_id: int, offers) -> bool:
                 "ahorro_anual": offer.get("ahorro_anual_equiv"),
                 "detalle_json": json.dumps(offer, ensure_ascii=False)
             }
+            
+            logger.info(f"[OFERTAS] Inserting offer {idx+1}/{len(offers)}: tarifa_id={tid}, coste={payload['coste_estimado']}")
             
             # SQL explícito con CAST para JSONB en Postgres
             if is_postgres:
@@ -303,8 +305,16 @@ def _insert_ofertas(db, factura_id: int, comparativa_id: int, offers) -> bool:
                     (:comparativa_id, :tarifa_id, :coste_estimado, :ahorro_mensual, :ahorro_anual, :detalle_json)
                 """)
                 
-            db.execute(stmt, payload)
-            count += 1
+            try:
+                db.execute(stmt, payload)
+                count += 1
+                logger.info(f"[OFERTAS] ✅ Offer {idx+1} inserted successfully")
+            except Exception as insert_error:
+                logger.error(
+                    f"[OFERTAS] ❌ FAILED inserting offer {idx+1}: {insert_error}\nPayload: {payload}",
+                    exc_info=True
+                )
+                raise
             
         logger.info(f"Inserted {count} offers for comparativa_id={comparativa_id}")
         return count > 0
@@ -621,21 +631,24 @@ def compare_factura(factura, db) -> Dict[str, Any]:
         logger.info(f"[OFERTAS] Transaction committed successfully for comparativa_id={comparativa_id}")
         
     except Exception as e:
-        db.rollback()
+        db.rollback()  # ⭐ ROLLBACK INMEDIATO
         logger.error(
             f"[OFERTAS] ROLLBACK - Error persisting comparativa+offers for factura_id={factura.id}: {e}",
             exc_info=True
         )
-        # Marcar comparativa como error si se creó pero falló
+        
+        # ⭐ FIX BUG 2: Actualizar comparativa en NUEVA transacción
         if comparativa_id:
             try:
-                db.execute(
-                    text("UPDATE comparativas SET status='error', error_json=:err WHERE id=:cid"),
-                    {"err": json.dumps({"error": str(e)}), "cid": comparativa_id}
-                )
-                db.commit()
-            except:
-                pass
+                # Usar ORM en vez de text() después de rollback
+                comp = db.query(Comparativa).filter(Comparativa.id == comparativa_id).first()
+                if comp:
+                    comp.status = "error"
+                    comp.error_json = json.dumps({"error": str(e)})
+                    db.commit()
+            except Exception as update_error:
+                logger.warning(f"[OFERTAS] Could not update comparativa status: {update_error}")
+                db.rollback()
 
     return {
         "factura_id": factura.id,
