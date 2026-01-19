@@ -270,6 +270,8 @@ def _insert_ofertas(db, factura_id: int, comparativa_id: int, offers) -> bool:
         count = 0
         is_postgres = db.get_bind().dialect.name == "postgresql"
         
+        logger.info(f"[OFERTAS] _insert_ofertas ENTER: comparativa_id={comparativa_id}, received {len(offers)} offers")
+        
         for offer in offers:
             tid = offer.get("tarifa_id")
             if tid is None:
@@ -605,6 +607,8 @@ def compare_factura(factura, db) -> Dict[str, Any]:
         logger.info(f"[OFERTAS] Comparativa created with id={comparativa_id}")
         
         # 2. Insertar ofertas_calculadas (dentro de la MISMA transacción)
+        logger.info(f"[OFERTAS] comparativa_id={comparativa_id} offers_count={len(offers)}")
+        logger.info(f"[OFERTAS] tarifa_ids={[o.get('tarifa_id') for o in offers][:20]}")
         inserted = _insert_ofertas(db, factura.id, comparativa_id, offers)
         
         if not inserted:
