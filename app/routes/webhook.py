@@ -323,6 +323,9 @@ async def process_factura(file: UploadFile, db: Session = Depends(get_db)):
         alquiler_contador=ocr_data.get("alquiler_contador"),
         impuesto_electrico=ocr_data.get("impuesto_electrico"),
         iva=ocr_data.get("iva"),
+        
+        # ⭐ FIX P0-1: Mapear periodo_dias desde dias_facturados
+        periodo_dias=ocr_data.get("dias_facturados"),
     )
 
     es_valida, errors = validate_factura_completitud(nueva_factura)

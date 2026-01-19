@@ -307,7 +307,11 @@ def _insert_ofertas(db, factura_id: int, comparativa_id: int, offers) -> bool:
         return count > 0
         
     except Exception as e:
-        logger.error(f"Error persisting offers: {e}")
+        # ⭐ FIX P2-1: Logging mejorado con traceback completo
+        logger.error(
+            f"Error persisting offers (Comparativa {comparativa_id}, Factura {factura_id}): {e}",
+            exc_info=True  # Incluye traceback completo en logs
+        )
         # No re-raise para no romper el flujo principal del comparador
         return False
 

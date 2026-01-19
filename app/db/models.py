@@ -100,3 +100,21 @@ class Comparativa(Base):
     error_json = Column(Text, nullable=True)
     
     factura = relationship("Factura", back_populates="comparativas")
+    ofertas = relationship("OfertaCalculada", back_populates="comparativa", cascade="all, delete-orphan")
+
+
+class OfertaCalculada(Base):
+    """⭐ FIX P0-2: Ofertas persistidas generadas por el comparador"""
+    __tablename__ = "ofertas_calculadas"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    comparativa_id = Column(Integer, ForeignKey("comparativas.id"), nullable=False)
+    tarifa_id = Column(Integer, nullable=False)
+    coste_estimado = Column(Float, nullable=True)
+    ahorro_mensual = Column(Float, nullable=True)
+    ahorro_anual = Column(Float, nullable=True)
+    detalle_json = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Relación: Una oferta pertenece a una comparativa
+    comparativa = relationship("Comparativa", back_populates="ofertas")

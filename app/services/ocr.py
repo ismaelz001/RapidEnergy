@@ -677,6 +677,22 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
     result["iva"] = _extract_number([r"\biva\b[^0-9]{0,10}([\d.,]+)"])
     detected["iva"] = result["iva"] is not None
 
+    # ⭐ FIX P1-1: Extracción del porcentaje de IVA (21%, 10%, 4%)
+    iva_pct_patterns = [
+        r"IVA\s+(21|10|4)\s*%",  # "IVA 21%"
+        r"IVA\s+\(\s*(21|10|4)\s*%\s*\)",  # "IVA (21%)"
+        r"tipo\s+(?:de\s+)?IVA[:\s]+(21|10|4)\s*%",  # "Tipo de IVA: 21%"
+    ]
+    for pattern in iva_pct_patterns:
+        iva_pct_match = re.search(pattern, full_text, re.IGNORECASE)
+        if iva_pct_match:
+            result["iva_porcentaje"] = float(iva_pct_match.group(1))
+            detected["iva_porcentaje"] = True
+            break
+    
+    if "iva_porcentaje" not in detected:
+        detected["iva_porcentaje"] = False
+
     # Total Factura Final Consolidation
     if result["total_factura"] is None and structured.get("importe_factura") is not None:
          result["total_factura"] = structured.get("importe_factura")

@@ -1,0 +1,76 @@
+
+[
+  {
+    "nombre": "2.0TD Plan Estable",
+    "comercializadora": "Iberdrola",
+    "atr": "2.0TD",
+    "energia_p1": 0.174875,
+    "energia_p2": 0.174875,
+    "energia_p3": 0.174875,
+    "potencia_p1_dia": 0.108192,
+    "potencia_p2_dia": 0.046548,
+    "origen": "Imagen 1 (Fila 9)"
+  },
+  {
+    "nombre": "2.0TD Plan Especial Plus 15%",
+    "comercializadora": "Iberdrola",
+    "atr": "2.0TD",
+    "energia_p1": 0.148750,
+    "energia_p2": 0.148750,
+    "energia_p3": 0.148750,
+    "potencia_p1_dia": 0.108192,
+    "potencia_p2_dia": 0.046548,
+    "origen": "Imagen 1 (Fila 6)"
+  },
+  {
+    "nombre": "2.0TD Plan Solar",
+    "comercializadora": "Iberdrola",
+    "atr": "2.0TD",
+    "energia_p1": 0.203000,
+    "energia_p2": 0.123000,
+    "energia_p3": 0.079000,
+    "potencia_p1_dia": 0.086301,
+    "potencia_p2_dia": 0.042466,
+    "origen": "Imagen 1 (Fila 7)"
+  },
+  {
+    "nombre": "3.0TD Impulsa 24h",
+    "comercializadora": "Iberdrola",
+    "atr": "3.0TD",
+    "energia_p1": 0.184,
+    "energia_p2": 0.184,
+    "energia_p3": 0.184,
+    "energia_p4": 0.184,
+    "energia_p5": 0.184,
+    "energia_p6": 0.184,
+    "potencia_anual": [21.60, 11.67, 6.95, 5.40, 3.26, 2.76],
+    "origen": "Imagen 3 (Fila 1)"
+  },
+  {
+    "nombre": "3.0TD Impulsa Negocio",
+    "comercializadora": "Iberdrola",
+    "atr": "3.0TD",
+    "energia_p1": 0.269,
+    "energia_p2": 0.269,
+    "energia_p3": 0.269,
+    "energia_p4": 0.166,
+    "energia_p5": 0.166,
+    "energia_p6": 0.166,
+    "nota": "P1-P3 Punta? P4-P6 Valle? Asumido distribucion estandar",
+    "potencia_anual": [21.60, 11.67, 6.95, 5.40, 3.26, 2.76],
+    "origen": "Imagen 3 (Fila 4)"
+  },
+  {
+    "nombre": "3.0TD Impulsa Estable",
+    "comercializadora": "Iberdrola",
+    "atr": "3.0TD",
+    "energia_p1": 0.199,
+    "energia_p2": 0.199,
+    "energia_p3": 0.199,
+    "energia_p4": 0.199,
+    "energia_p5": 0.199,
+    "energia_p6": 0.199,
+    "potencia_anual": [8.75, 8.75, 8.75, 8.75, 8.75, 8.75],
+    "origen": "Imagen 3 (Fila 6)"
+  }
+]
