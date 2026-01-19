@@ -295,7 +295,7 @@ def _insert_ofertas(db, factura_id: int, comparativa_id: int, offers) -> bool:
                     INSERT INTO ofertas_calculadas 
                     (comparativa_id, tarifa_id, coste_estimado, ahorro_mensual, ahorro_anual, detalle_json)
                     VALUES 
-                    (:comparativa_id, :tarifa_id, :coste_estimado, :ahorro_mensual, :ahorro_anual, :detalle_json::jsonb)
+                    (:comparativa_id, :tarifa_id, :coste_estimado, :ahorro_mensual, :ahorro_anual, CAST(:detalle_json AS jsonb))
                 """)
             else:
                 stmt = text("""
