@@ -304,6 +304,7 @@ def _insert_ofertas(db, factura_id: int, comparativa_id: int, offers) -> bool:
             db.execute(stmt, payload)
             count += 1
             
+        logger.info(f"Inserted {count} offers for comparativa_id={comparativa_id}")
         return count > 0
         
     except Exception as e:
