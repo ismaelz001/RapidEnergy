@@ -210,8 +210,10 @@ async def process_factura(file: UploadFile, db: Session = Depends(get_db)):
     cliente_db = None
 
     if cups_extraido:
-        # Buscar cliente existente por CUPS (YA NORMALIZADO)
+        # ⭐ BLOQUE 1 CRM: Buscar cliente existente por CUPS (YA NORMALIZADO)
         cliente_db = db.query(Cliente).filter(Cliente.cups == cups_extraido).first()
+        if cliente_db:
+            logger.info(f"[DEDUPE] Cliente encontrado por CUPS={cups_extraido}, cliente_id={cliente_db.id}")
         if not cliente_db:
             # Crear nuevo cliente si no existe, rellenando datos OCR
             cliente_db = Cliente(
@@ -224,19 +226,28 @@ async def process_factura(file: UploadFile, db: Session = Depends(get_db)):
                 telefono=telefono_ocr,
                 origen="factura_upload",
                 estado="lead",
+                comercial_id=None  # ⭐ BLOQUE 1 CRM: Asignar cuando haya auth
             )
             db.add(cliente_db)
             db.commit()
             db.refresh(cliente_db)
+            logger.info(f"[DEDUPE] Cliente nuevo creado: cliente_id={cliente_db.id}, CUPS={cups_extraido}")
+            
+            # TODO: BLOQUE 1 CRM - DEDUPE SECUNDARIA (FASE 2)
+            # Buscar clientes similares por nombre/dirección con ILIKE:
+            # similar = db.query(Cliente).filter(Cliente.nombre.ilike(f"%{nombre_ocr}%")).first()
+            # Si hay match, devolver suggested_cliente en response para que frontend decida
     else:
         # Caso sin CUPS: Crear cliente 'lead' sin CUPS
         cliente_db = Cliente(
             origen="factura_upload_no_cups",
             estado="lead",
+            comercial_id=None  # ⭐ BLOQUE 1 CRM: Sin comercial
         )
         db.add(cliente_db)
         db.commit()
         db.refresh(cliente_db)
+        logger.info(f"[DEDUPE] Cliente sin CUPS creado: cliente_id={cliente_db.id}")
         
     if cliente_db and cups_extraido:
         # Actualizar datos del cliente si faltan en BD y vienen del OCR
@@ -519,8 +530,43 @@ def guardar_seleccion_oferta(factura_id: int, offer: OfferSelection, db: Session
     
     # Convertir oferta a JSON y guardar
     offer_dict = offer.dict()
-    factura.selected_offer_json = json.dumps(offer_dict, ensure_ascii=False)
+    factura.selected_offer_json = json.dumps(offer_dict, ensure_ascii=False)  # Mantener backward compat
     factura.estado_factura = "oferta_seleccionada"
+    
+    # ⭐ BLOQUE 1 CRM: Persistir selección con FK
+    # Buscar el ID real en ofertas_calculadas (no confundir con tarifa_id)
+    from app.db.models import OfertaCalculada, Comparativa
+    
+    tarifa_id_seleccionada = offer_dict.get("tarifa_id")
+    
+    # Obtener la última comparativa de esta factura
+    ultima_comparativa = (
+        db.query(Comparativa)
+        .filter(Comparativa.factura_id == factura_id)
+        .order_by(Comparativa.created_at.desc())
+        .first()
+    )
+    
+    if ultima_comparativa and tarifa_id_seleccionada:
+        # Buscar la oferta calculada correspondiente
+        oferta_calculada = (
+            db.query(OfertaCalculada)
+            .filter(OfertaCalculada.comparativa_id == ultima_comparativa.id)
+            .filter(OfertaCalculada.tarifa_id == tarifa_id_seleccionada)
+            .first()
+        )
+        
+        if oferta_calculada:
+            factura.selected_oferta_id = oferta_calculada.id  # ID real de ofertas_calculadas
+            logger.info(f"[SELECT] Factura {factura_id} → oferta_calculada.id={oferta_calculada.id} (tarifa_id={tarifa_id_seleccionada})")
+        else:
+            logger.warning(f"[SELECT] No se encontró oferta_calculada para tarifa_id={tarifa_id_seleccionada}")
+            factura.selected_oferta_id = None
+    else:
+        factura.selected_oferta_id = None
+    
+    factura.selected_at = func.now()
+    factura.selected_by_user_id = None  # TODO: Asignar current_user.id cuando haya auth
     
     db.commit()
     db.refresh(factura)
