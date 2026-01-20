@@ -3,9 +3,9 @@ Tariff comparison service for 2.0TD (MVP).
 """
 
 from datetime import date, datetime
+from decimal import Decimal
 import json
 import logging
-import re
 from typing import Dict, Any, Optional
 
 from sqlalchemy import inspect, text
@@ -272,11 +272,93 @@ def _insert_ofertas(db, factura_id: int, comparativa_id: int, offers) -> bool:
         
         logger.info(f"[OFERTAS] _insert_ofertas ENTER: comparativa_id={comparativa_id}, received {len(offers)} offers")
         
+        # ⭐ PREFETCH: Obtener cliente_id y todas las comisiones (evita N+1 queries)
+        factura_row = db.execute(
+            text("SELECT cliente_id FROM facturas WHERE id = :fid"),
+            {"fid": factura_id}
+        ).fetchone()
+        cliente_id = factura_row[0] if factura_row else None
+        
+        # Extraer todos los tarifa_id de las ofertas
+        tarifa_ids = [o.get("tarifa_id") for o in offers if o.get("tarifa_id") is not None]
+        
+        # Prefetch comisiones_cliente (selecciona MÁS RECIENTE por vigente_desde DESC, created_at DESC)
+        comisiones_cliente_map = {}
+        if cliente_id and tarifa_ids:
+            rows = db.execute(
+                text("""
+                    WITH ranked AS (
+                        SELECT 
+                            tarifa_id,
+                            comision_eur,
+                            ROW_NUMBER() OVER (
+                                PARTITION BY tarifa_id 
+                                ORDER BY 
+                                    COALESCE(vigente_desde, '1900-01-01') DESC,
+                                    COALESCE(created_at, '1900-01-01 00:00:00') DESC
+                            ) as rn
+                        FROM comisiones_cliente
+                        WHERE cliente_id = :cid AND tarifa_id = ANY(:tids)
+                    )
+                    SELECT tarifa_id, comision_eur
+                    FROM ranked
+                    WHERE rn = 1
+                """),
+                {"cid": cliente_id, "tids": tarifa_ids}
+            ).fetchall()
+            comisiones_cliente_map = {row[0]: Decimal(str(row[1])) for row in rows}
+        
+        # Prefetch comisiones_tarifa activas (selecciona MÁS RECIENTE vigente)
+        comisiones_tarifa_map = {}
+        if tarifa_ids:
+            rows = db.execute(
+                text("""
+                    WITH ranked AS (
+                        SELECT 
+                            tarifa_id,
+                            comision_eur,
+                            ROW_NUMBER() OVER (
+                                PARTITION BY tarifa_id 
+                                ORDER BY vigente_desde DESC, created_at DESC
+                            ) as rn
+                        FROM comisiones_tarifa
+                        WHERE tarifa_id = ANY(:tids) AND vigente_hasta IS NULL
+                    )
+                    SELECT tarifa_id, comision_eur
+                    FROM ranked
+                    WHERE rn = 1
+                """),
+                {"tids": tarifa_ids}
+            ).fetchall()
+            comisiones_tarifa_map = {row[0]: Decimal(str(row[1])) for row in rows}
+        
+        logger.info(f"[COMISION] Prefetch: cliente_id={cliente_id}, {len(comisiones_cliente_map)} cliente, {len(comisiones_tarifa_map)} tarifa")
+        
         for idx, offer in enumerate(offers):
             tid = offer.get("tarifa_id")
             if tid is None:
                 logger.warning(f"[OFERTAS] Skipping offer {idx+1} (no tarifa_id): {offer.get('plan_name', 'unknown')}")
                 continue
+            
+            # ⭐ RESOLUCIÓN DE COMISIÓN (usando diccionarios prefetcheados)
+            comision_eur = Decimal("0.00")
+            comision_source = "manual"
+            
+            # Prioridad 1: Comisión por cliente específico
+            if tid in comisiones_cliente_map:
+                comision_eur = comisiones_cliente_map[tid]
+                comision_source = "cliente"
+            # Prioridad 2: Comisión por tarifa activa
+            elif tid in comisiones_tarifa_map:
+                comision_eur = comisiones_tarifa_map[tid]
+                comision_source = "tarifa"
+            # Prioridad 3: Manual (0.0) - ya es el default
+            
+            logger.debug(f"[COMISION] factura_id={factura_id} tarifa_id={tid} comision={comision_eur:.2f} source={comision_source}")  # DEBUG no INFO
+            
+            # Agregar comisión al offer JSON
+            offer["comision_eur"] = str(comision_eur)  # JSON exacto, sin artefactos
+            offer["comision_source"] = comision_source
                 
             payload = {
                 "comparativa_id": comparativa_id,
@@ -284,31 +366,33 @@ def _insert_ofertas(db, factura_id: int, comparativa_id: int, offers) -> bool:
                 "coste_estimado": offer.get("estimated_total_periodo"),
                 "ahorro_mensual": offer.get("ahorro_mensual_equiv"),
                 "ahorro_anual": offer.get("ahorro_anual_equiv"),
+                "comision_eur": comision_eur,  # Decimal directo para DB
+                "comision_source": comision_source,
                 "detalle_json": json.dumps(offer, ensure_ascii=False)
             }
             
-            logger.info(f"[OFERTAS] Inserting offer {idx+1}/{len(offers)}: tarifa_id={tid}, coste={payload['coste_estimado']}")
+            logger.debug(f"[OFERTAS] Inserting offer {idx+1}/{len(offers)}: tarifa_id={tid}, coste={payload['coste_estimado']}, comision={comision_eur:.2f}")  # DEBUG
             
             # SQL explícito con CAST para JSONB en Postgres
             if is_postgres:
                 stmt = text("""
                     INSERT INTO ofertas_calculadas 
-                    (comparativa_id, tarifa_id, coste_estimado, ahorro_mensual, ahorro_anual, detalle_json)
+                    (comparativa_id, tarifa_id, coste_estimado, ahorro_mensual, ahorro_anual, comision_eur, comision_source, detalle_json)
                     VALUES 
-                    (:comparativa_id, :tarifa_id, :coste_estimado, :ahorro_mensual, :ahorro_anual, CAST(:detalle_json AS jsonb))
+                    (:comparativa_id, :tarifa_id, :coste_estimado, :ahorro_mensual, :ahorro_anual, :comision_eur, :comision_source, CAST(:detalle_json AS jsonb))
                 """)
             else:
                 stmt = text("""
                     INSERT INTO ofertas_calculadas 
-                    (comparativa_id, tarifa_id, coste_estimado, ahorro_mensual, ahorro_anual, detalle_json)
+                    (comparativa_id, tarifa_id, coste_estimado, ahorro_mensual, ahorro_anual, comision_eur, comision_source, detalle_json)
                     VALUES 
-                    (:comparativa_id, :tarifa_id, :coste_estimado, :ahorro_mensual, :ahorro_anual, :detalle_json)
+                    (:comparativa_id, :tarifa_id, :coste_estimado, :ahorro_mensual, :ahorro_anual, :comision_eur, :comision_source, :detalle_json)
                 """)
                 
             try:
                 db.execute(stmt, payload)
                 count += 1
-                logger.info(f"[OFERTAS] ✅ Offer {idx+1} inserted successfully")
+                logger.debug(f"[OFERTAS] ✅ Offer {idx+1} inserted successfully")  # DEBUG
             except Exception as insert_error:
                 logger.error(
                     f"[OFERTAS] ❌ FAILED inserting offer {idx+1}: {insert_error}\nPayload: {payload}",
@@ -340,31 +424,46 @@ def compare_factura(factura, db) -> Dict[str, Any]:
     if current_total is None or current_total <= 0:
         raise DomainError("TOTAL_INVALID", "La factura no tiene un total válido para comparar")
 
-    # DETECCIÓN AUTOMÁTICA DE ATR (2.0TD vs 3.0TD)
-    # Leer potencia P1 primero para determinar el tipo de tarifa
-    potencia_p1 = _to_float(getattr(factura, "potencia_p1_kw", None)) or 0.0
+    # ⭐ CAMBIO 1: DETERMINACIÓN DE ATR (PRIORIDAD AL OCR)
+    # 1) Si factura.atr viene del OCR, usarlo TAL CUAL
+    # 2) SOLO si factura.atr es NULL/vacío, inferir por potencia
     
-    if potencia_p1 >= 15:
-        atr = "3.0TD"
-        num_periodos_energia = 6
-        num_periodos_potencia = 6
+    atr_from_ocr = getattr(factura, "atr", None)
+    if atr_from_ocr and atr_from_ocr.strip():
+        # Prioridad 1: ATR detectado por OCR
+        atr = atr_from_ocr.strip().upper()
+        logger.info(f"[3.0TD] ATR tomado de OCR: {atr} (factura_id={factura.id})")
     else:
-        atr = "2.0TD"
+        # Prioridad 2: Inferir por potencia (heurística)
+        potencia_p1 = _to_float(getattr(factura, "potencia_p1_kw", None)) or 0.0
+        if potencia_p1 >= 15:
+            atr = "3.0TD"
+            logger.info(f"[3.0TD] ATR inferido por potencia (P1={potencia_p1}): {atr} (factura_id={factura.id})")
+        else:
+            atr = "2.0TD"
+            logger.info(f"[3.0TD] ATR inferido por potencia (P1={potencia_p1}): {atr} (factura_id={factura.id})")
+    
+    # Configurar periodos según ATR
+    if atr == "3.0TD":
+        num_periodos_energia = 6
+        num_periodos_potencia = 2  # ⭐ CAMBIO 2: Solo P1/P2 en factura
+    else:  # 2.0TD
         num_periodos_energia = 3
         num_periodos_potencia = 2
     
-    # VALIDACIÓN DE CAMPOS SEGÚN ATR
+    # ⭐ CAMBIO 2: VALIDACIÓN DE CAMPOS SEGÚN ATR
     if atr == "2.0TD":
         required_fields = [
             "consumo_p1_kwh", "consumo_p2_kwh", "consumo_p3_kwh",
             "potencia_p1_kw", "potencia_p2_kw",
         ]
     else:  # 3.0TD
+        # ⭐ SOLO consumos P1-P6 + potencias P1-P2
+        # NO exigimos potencias P3-P6 (no existen en tabla facturas)
         required_fields = [
             "consumo_p1_kwh", "consumo_p2_kwh", "consumo_p3_kwh",
             "consumo_p4_kwh", "consumo_p5_kwh", "consumo_p6_kwh",
-            "potencia_p1_kw", "potencia_p2_kw", "potencia_p3_kw",
-            "potencia_p4_kw", "potencia_p5_kw", "potencia_p6_kw",
+            "potencia_p1_kw", "potencia_p2_kw",  # ⭐ Solo P1/P2
         ]
     
     missing = [
@@ -400,9 +499,19 @@ def compare_factura(factura, db) -> Dict[str, Any]:
     for i in range(1, num_periodos_energia + 1):
         consumos.append(_to_float(getattr(factura, f"consumo_p{i}_kwh", None)) or 0.0)
     
+    # ⭐ CAMBIO 4: POTENCIAS EN 3.0TD
     potencias = []
-    for i in range(1, num_periodos_potencia + 1):
-        potencias.append(_to_float(getattr(factura, f"potencia_p{i}_kw", None)) or 0.0)
+    if atr == "3.0TD":
+        # En 3.0TD: solo tenemos potencia_p1 y potencia_p2 en la factura
+        # Replicamos P2 para P3-P6 internamente (solo para cálculos)
+        p1 = _to_float(getattr(factura, "potencia_p1_kw", None)) or 0.0
+        p2 = _to_float(getattr(factura, "potencia_p2_kw", None)) or 0.0
+        potencias = [p1, p2, p2, p2, p2, p2]  # P1, P2, P3=P2, P4=P2, P5=P2, P6=P2
+        logger.info(f"[3.0TD] Potencias replicadas: P1={p1}, P2-P6={p2} (factura_id={factura.id})")
+    else:
+        # En 2.0TD: leemos P1 y P2 normalmente
+        for i in range(1, num_periodos_potencia + 1):
+            potencias.append(_to_float(getattr(factura, f"potencia_p{i}_kw", None)) or 0.0)
 
     result = db.execute(
         text("SELECT * FROM tarifas WHERE atr = :atr"),
