@@ -1,4 +1,5 @@
 from fastapi import APIRouter, UploadFile, Depends, HTTPException
+from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 from app.db.conn import get_db
 from app.db.models import Factura, Cliente, Comparativa
