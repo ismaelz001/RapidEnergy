@@ -1,7 +1,40 @@
-from sqlalchemy import Column, Integer, String, Float, Text, ForeignKey, DateTime, Boolean
+from sqlalchemy import Column, Integer, String, Float, Text, ForeignKey, DateTime, Boolean, BigInteger
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.db.conn import Base
+
+
+# ⭐ BLOQUE 1 MVP CRM: Companies y Users
+class Company(Base):
+    """Empresas (multi-tenant)"""
+    __tablename__ = "companies"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False, unique=True)
+    nif = Column(String, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Relación: Una company tiene muchos usuarios
+    users = relationship("User", back_populates="company")
+
+
+class User(Base):
+    """Usuarios del sistema (dev, ceo, comercial)"""
+    __tablename__ = "users"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    email = Column(String, nullable=False, unique=True, index=True)
+    name = Column(String, nullable=False)
+    role = Column(String, nullable=False)  # dev, ceo, comercial
+    company_id = Column(Integer, ForeignKey("companies.id"), nullable=True)  # NULL para dev
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Relación: Un usuario pertenece a una company
+    company = relationship("Company", back_populates="users")
+    # Relación: Un comercial tiene muchos clientes
+    clientes = relationship("Cliente", back_populates="comercial", foreign_keys="Cliente.comercial_id")
+
 
 class Cliente(Base):
     __tablename__ = "clientes"
@@ -17,11 +50,16 @@ class Cliente(Base):
     estado = Column(String, default="lead")
     origen = Column(String, default="factura_upload")
     
+    # ⭐ BLOQUE 1 MVP CRM: Asignación de comercial
+    comercial_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
     # Relación: Un cliente tiene muchas facturas
     facturas = relationship("Factura", back_populates="cliente", cascade="all, delete-orphan")
+    # Relación: Un cliente pertenece a un comercial (User)
+    comercial = relationship("User", back_populates="clientes", foreign_keys=[comercial_id])
 
 class Factura(Base):
     __tablename__ = "facturas"
@@ -71,8 +109,11 @@ class Factura(Base):
     # Estado
     estado_factura = Column(String, default="pendiente_datos")
     
-    # Oferta seleccionada (Persistencia para MVP)
-    selected_offer_json = Column(Text, nullable=True)
+    # ⭐ BLOQUE 1 MVP CRM: Selección de oferta (FK en vez de JSON)
+    selected_offer_json = Column(Text, nullable=True)  # Deprecated, usar selected_oferta_id
+    selected_oferta_id = Column(BigInteger, ForeignKey("ofertas_calculadas.id"), nullable=True)
+    selected_at = Column(DateTime(timezone=True), nullable=True)
+    selected_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     
     cliente_id = Column(Integer, ForeignKey("clientes.id"), nullable=True)
     
