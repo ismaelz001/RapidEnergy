@@ -64,15 +64,19 @@ export default function OfferCard({
 
       {/* Ahorro mensual */}
       <div className="mb-2">
-        <div className="text-verde-ahorro font-semibold">
-          -{offer.saving_amount?.toFixed(2)}€ ({offer.saving_percent}%)
+        <div className={`font-semibold ${
+          (offer.saving_amount || 0) >= 0 ? 'text-[#16A34A]' : 'text-[#EF4444]'
+        }`}>
+          {(offer.saving_amount || 0) >= 0 ? '-' : '+'}{Math.abs(offer.saving_amount || 0).toFixed(2)}€ ({offer.saving_percent}%)
         </div>
       </div>
 
       {/* Ahorro anual */}
       <div className="mb-4">
-        <div className="text-xl font-bold text-verde-ahorro">
-          {(offer.saving_amount * 12).toFixed(0)}€/año
+        <div className={`text-xl font-bold ${
+          (offer.saving_amount || 0) >= 0 ? 'text-[#16A34A]' : 'text-[#EF4444]'
+        }`}>
+          {((offer.saving_amount || 0) * 12).toFixed(0)}€/año
         </div>
       </div>
 
