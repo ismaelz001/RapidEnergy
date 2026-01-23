@@ -742,20 +742,31 @@ def compare_factura(factura, db) -> Dict[str, Any]:
             impuesto_electrico_pct=0.0511269632
         )
         
-        # Cálculo Ahorro
         # ⭐ MÉTODO PO: Comparar reconstrucción actual vs reconstrucción oferta
+        # Calculamos el ahorro ESTRUCTURAL (Sin impuestos ni alquileres)
+        subtotal_actual = subtotal_si_actual if baseline_method != "fallback_current_total" else (current_total / 1.25) # estimacion si falla
+        ahorro_estructural = subtotal_actual - subtotal_sin_impuestos_oferta
+        
+        # Ahorro con impuestos (para el total de la factura)
         if baseline_method == "fallback_current_total":
             ahorro_periodo = current_total - estimated_total_periodo
         else:
             ahorro_periodo = total_actual_reconstruido - estimated_total_periodo
         
-        # Proyecciones
+        # Proyecciones y porcentajes
         ahorro_mensual_equiv = ahorro_periodo * (30.437 / periodo_dias)
         ahorro_anual_equiv = ahorro_periodo * (365 / periodo_dias)
         
-        saving_percent = (
-            (ahorro_periodo / (total_actual_reconstruido if baseline_method != "fallback_current_total" else current_total)) * 100 if (total_actual_reconstruido if baseline_method != "fallback_current_total" else current_total) > 0 else 0.0
-        )
+        # El porcentaje de ahorro se calcula sobre el total reconstruido
+        total_referencia = total_actual_reconstruido if baseline_method != "fallback_current_total" else current_total
+        saving_percent = (ahorro_periodo / total_referencia * 100) if total_referencia > 0 else 0.0
+        
+        # PRECIO MEDIO ESTRUCTURAL (E+P / kWh)
+        total_kwh = sum(consumos)
+        precio_medio_estructural = (subtotal_sin_impuestos_oferta / total_kwh) if total_kwh > 0 else 0.0
+        
+        # COSTE DIARIO TOTAL ESTRUCTURAL (E+P / días)
+        coste_diario_estructural = (subtotal_sin_impuestos_oferta / periodo_dias) if periodo_dias > 0 else 0.0
 
         # Mapeo de nombres
         tarifa_id = tarifa.get("id") or tarifa.get("tarifa_id")

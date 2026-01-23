@@ -720,12 +720,15 @@ def generar_presupuesto_pdf(factura_id: int, db: Session = Depends(get_db)):
         ahorro_anual_calc = 0.0
     
     # Tabla de Oferta (Compacta)
+    ahorro_estructural = selected_offer.get('ahorro_estructural', 0.0)
+    precio_medio = selected_offer.get('precio_medio_estructural', 0.0)
+    
     oferta_data = [
         ["Comercializadora:", selected_offer.get('provider', 'N/A')],
         ["Tarifa:", selected_offer.get('plan_name', 'N/A')],
+        ["Precio medio estructural:", f"{precio_medio:.4f} €/kWh"],  # Según tabla PO
         ["Total estimado:", f"{total_estimado_calc:.2f} € (periodo: {periodo_dias_calc} días)"],
-        ["Ahorro periodo:", f"{ahorro_periodo_calc:.2f} €"],
-        ["Ahorro mensual equiv.:", f"{ahorro_mensual_calc:.2f} €/mes"],
+        ["Ahorro estructural:", f"{ahorro_estructural:.2f} €"],       # Según tabla PO
         ["Ahorro anual estimado:", f"{ahorro_anual_calc:.2f} €/año"],
     ]
     oferta_table = Table(oferta_data, colWidths=[8*cm, 8*cm])
@@ -831,11 +834,12 @@ def generar_presupuesto_pdf(factura_id: int, db: Session = Depends(get_db)):
     
     tabla_b_data = [
         ["Concepto", "Valor estimado (€)"],
-        ["Energía estimada", to_money(oferta_energia)],
-        ["Potencia estimada", to_money(oferta_potencia)],
+        ["Energía (E)", to_money(oferta_energia)],
+        ["Potencia (P)", to_money(oferta_potencia)],
+        ["SUBTOTAL ESTRUCTURAL (E+P)", to_money(oferta_energia + oferta_potencia)], # El motor ya lo da en subtotal_estructural
         ["Impuestos (IEE + IVA)", to_money(oferta_impuestos)],
         ["Alquiler contador", to_money(oferta_alquiler)],
-        ["TOTAL ESTIMADO", to_money(oferta_total)],
+        ["TOTAL ESTIMADO CON IMPUESTOS", to_money(oferta_total)],
     ]
     tabla_b = Table(tabla_b_data, colWidths=[10*cm, 6*cm])
     tabla_b.setStyle(TableStyle([
@@ -861,11 +865,16 @@ def generar_presupuesto_pdf(factura_id: int, db: Session = Depends(get_db)):
     # Ya calculamos: ahorro_periodo_calc, ahorro_mensual_calc, ahorro_anual_calc
     alerta_mensaje = None if ahorro_periodo_calc > 0 else "⚠️ No se detecta ahorro con esta oferta. La oferta no mejora la factura analizada."
     
+    # Cálculo de ahorro según tabla PO
+    ahorro_estructural_val = selected_offer.get('ahorro_estructural', ahorro_periodo_calc / 1.25) # fallback si no existe
+    coste_diario_est = selected_offer.get('coste_diario_estructural', (oferta_energia + oferta_potencia) / periodo_dias_calc if periodo_dias_calc > 0 else 0)
+
     tabla_c_data = [
-        ["Paso", "Fórmula", "Resultado"],
-        ["1) Ahorro periodo", f"{to_money(total_factura_calc)} - {to_money(total_estimado_calc)}", to_money(ahorro_periodo_calc)],
-        ["2) Ahorro mensual", f"{to_money(ahorro_periodo_calc)} / ({periodo_dias_calc}/30)", to_money(ahorro_mensual_calc)],
-        ["3) Ahorro anual", f"{to_money(ahorro_mensual_calc)} × 12", to_money(ahorro_anual_calc)],
+        ["Concepto / Paso", "Fórmula", "Resultado"],
+        ["1) Ahorro estructural", "(E+P) actual - (E+P) nueva", to_money(ahorro_estructural_val)],
+        ["2) Precio medio est.", "(Energía + Potencia) / kWh", f"{precio_medio:.4f} €/kWh"],
+        ["3) Coste diario est.", "(Energía + Potencia) / días", to_money(coste_diario_est)],
+        ["4) Ahorro anual total", "Factura actual - Estimación", to_money(ahorro_anual_calc)],
     ]
     tabla_c = Table(tabla_c_data, colWidths=[4*cm, 7*cm, 5*cm])
     tabla_c.setStyle(TableStyle([
