@@ -56,6 +56,7 @@ export default function Step2ValidarPage({ params }) {
           cups: data.cups || '',
           atr: data.atr || '',
           total_factura: data.total_factura || data.importe || 0,
+          periodo_dias: data.periodo_dias ?? '',  // ⭐ IMPORTANTE: persistir periodo
           cliente: data.cliente?.nombre || data.titular || '',
           consumo_total: data.consumo_kwh || 0,
           potencia_p1: data.potencia_p1_kw || 0,
@@ -66,9 +67,10 @@ export default function Step2ValidarPage({ params }) {
           consumo_p4: data.consumo_p4_kwh || 0,
           consumo_p5: data.consumo_p5_kwh || 0,
           consumo_p6: data.consumo_p6_kwh || 0,
-          iva: data.iva || 0,
-          iva_porcentaje: data.iva_porcentaje || 21,  // Default 21%
-          impuesto_electrico: data.impuesto_electrico || 0
+          iva: data.iva ?? '',  // ⚠️ NO default 0 (evitar confusión con porcentaje)
+          iva_porcentaje: data.iva_porcentaje ?? 21,  // Default 21%
+          impuesto_electrico: data.impuesto_electrico ?? '',  // ⚠️ NO default 0
+          alquiler_contador: data.alquiler_contador ?? ''  // ⭐ Para backsolve
         };
 
         // Auditoría de datos en consola
@@ -107,7 +109,9 @@ export default function Step2ValidarPage({ params }) {
     'consumo_p6',
     'iva',
     'iva_porcentaje',
-    'impuesto_electrico'
+    'impuesto_electrico',
+    'alquiler_contador'  // ⭐ Para backsolve
+    // ⚠️ NO incluir periodo_dias aquí; handleChange pasa string y buildPayload hace parseInt
   ]);
   const is3TD = form.atr === '3.0TD';
   const requiredFields = [
@@ -233,7 +237,9 @@ export default function Step2ValidarPage({ params }) {
     impuesto_electrico: parseNumberInput(data.impuesto_electrico),
     alquiler_contador: parseNumberInput(data.alquiler_contador),  // ⭐ Para backsolve
     total_factura: parseNumberInput(data.total_factura),
-    periodo_dias: parseInt(data.periodo_dias) || null,  // ⭐ OBLIGATORIO para comparador
+    periodo_dias: Number.isFinite(parseInt(data.periodo_dias, 10))
+    ? parseInt(data.periodo_dias, 10)
+    : null, // ⭐ OBLIGATORIO para comparador
   });
 
   const allFields = Object.keys(form);
@@ -385,7 +391,7 @@ export default function Step2ValidarPage({ params }) {
               />
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4 border-t border-[rgba(255,255,255,0.05)]">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-4 border-t border-[rgba(255,255,255,0.05)]">
               <div>
                 <label htmlFor="atr" className="label text-white">
                   ATR <span className="text-xs text-blue-400 ml-1">*</span>
@@ -419,6 +425,27 @@ export default function Step2ValidarPage({ params }) {
                   onChange={handleChange}
                   validated={isValid(form.total_factura)}
                   placeholder="---"
+                />
+              </div>
+
+              {/* ⭐ CRÍTICO: Campo visible para periodo_dias */}
+              <div>
+                <label htmlFor="periodo_dias" className="label text-white">
+                  Periodo (días) <span className="text-xs text-blue-400 ml-1">*</span>
+                </label>
+                <Input
+                  id="periodo_dias"
+                  name="periodo_dias"
+                  type="number"
+                  step="1"
+                  min="1"
+                  max="366"
+                  value={form.periodo_dias || ''}
+                  onChange={handleChange}
+                  validated={isValid(form.periodo_dias)}
+                  error={!isValid(form.periodo_dias)}
+                  errorMessage="Periodo es obligatorio"
+                  placeholder="30"
                 />
               </div>
             </div>
@@ -534,7 +561,7 @@ export default function Step2ValidarPage({ params }) {
                       name="iva"
                       type="number"
                       step="0.01"
-                      value={form.iva}
+                      value={form.iva || ''}
                       onChange={handleChange}
                       validated={isValid(form.iva)}
                       error={!isValid(form.iva)}
@@ -571,10 +598,27 @@ export default function Step2ValidarPage({ params }) {
                     name="impuesto_electrico"
                     type="number"
                     step="0.01"
-                    value={form.impuesto_electrico}
+                    value={form.impuesto_electrico || ''}
                     onChange={handleChange}
                     validated={isValid(form.impuesto_electrico)}
                     placeholder="5.12"
+                  />
+                </div>
+
+                {/* ⭐ Alquiler contador (para backsolve) */}
+                <div>
+                  <label htmlFor="alquiler_contador" className="label text-[#F1F5F9]">
+                    Alquiler contador (€)
+                  </label>
+                  <Input
+                    id="alquiler_contador"
+                    name="alquiler_contador"
+                    type="number"
+                    step="0.01"
+                    value={form.alquiler_contador || ''}
+                    onChange={handleChange}
+                    validated={isValid(form.alquiler_contador)}
+                    placeholder="0.74"
                   />
                 </div>
               </div>
