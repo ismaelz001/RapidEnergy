@@ -154,9 +154,13 @@ export default function Step3ComparerPage({ params }) {
       await saveOffer(params.id, {
         provider: selectedOffer.provider,
         plan_name: selectedOffer.plan_name,
+        tarifa_id: selectedOffer.tarifa_id,
         estimated_total: selectedOffer.estimated_total,
         saving_amount: selectedOffer.saving_amount,
         saving_percent: selectedOffer.saving_percent,
+        ahorro_estructural: selectedOffer.ahorro_estructural,
+        precio_medio_estructural: selectedOffer.precio_medio_estructural,
+        coste_diario_estructural: selectedOffer.coste_diario_estructural,
         commission: selectedOffer.commission || 0,
         tag: selectedOffer.tag,
         breakdown: selectedOffer.breakdown

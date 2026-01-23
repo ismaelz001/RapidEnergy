@@ -906,6 +906,8 @@ def compare_factura(factura, db) -> Dict[str, Any]:
         "current_total": round(ui_current_total, 2),  # ← Baseline alineado para la UI
         "total_actual_reconstruido": round(total_actual_reconstruido, 2) if baseline_method != "fallback_current_total" else None,
         "subtotal_si_actual": round(subtotal_si_actual, 2) if baseline_method != "fallback_current_total" else None,
+        "coste_energia_actual": getattr(factura, 'coste_energia_actual', None),
+        "coste_potencia_actual": getattr(factura, 'coste_potencia_actual', None),
         "baseline_method": baseline_method,
         "metodo_calculo": "PO/NodoAmbar" if baseline_method == "backsolve_subtotal_si" else "Fallback",
         "diff_vs_current_total": round(abs(total_actual_reconstruido - current_total), 2) if baseline_method != "fallback_current_total" else 0.0,

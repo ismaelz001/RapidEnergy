@@ -103,6 +103,10 @@ class Factura(Base):
     iva_porcentaje = Column(Float, nullable=True)  # Porcentaje IVA (21, 10, 4)
     total_factura = Column(Float, nullable=True)
     
+    # ⭐ MÉTODO PO: Desglose estructural de la factura ACTUAL (Línea base)
+    coste_energia_actual = Column(Float, nullable=True)   # E_actual
+    coste_potencia_actual = Column(Float, nullable=True)  # P_actual
+    
     # P1: Periodo de facturación (obligatorio para comparar)
     periodo_dias = Column(Integer, nullable=True)
 

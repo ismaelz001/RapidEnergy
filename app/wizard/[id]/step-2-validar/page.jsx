@@ -70,7 +70,9 @@ export default function Step2ValidarPage({ params }) {
           iva: data.iva ?? '',  // ⚠️ NO default 0 (evitar confusión con porcentaje)
           iva_porcentaje: data.iva_porcentaje ?? 21,  // Default 21%
           impuesto_electrico: data.impuesto_electrico ?? '',  // ⚠️ NO default 0
-          alquiler_contador: data.alquiler_contador ?? ''  // ⭐ Para backsolve
+          alquiler_contador: data.alquiler_contador ?? '',  // ⭐ Para backsolve
+          coste_energia_actual: data.coste_energia_actual ?? '',
+          coste_potencia_actual: data.coste_potencia_actual ?? ''
         };
 
         // Auditoría de datos en consola (QA)
@@ -138,7 +140,9 @@ export default function Step2ValidarPage({ params }) {
     'iva',
     'iva_porcentaje',
     'impuesto_electrico',
-    'alquiler_contador'  // ⭐ Para backsolve
+    'alquiler_contador',
+    'coste_energia_actual',
+    'coste_potencia_actual'
     // ⚠️ NO incluir periodo_dias aquí; handleChange pasa string y buildPayload hace parseInt
   ]);
   const is3TD = form.atr === '3.0TD';
@@ -269,8 +273,10 @@ export default function Step2ValidarPage({ params }) {
     iva: parseNumberInput(data.iva),
     iva_porcentaje: parseNumberInput(data.iva_porcentaje),
     impuesto_electrico: parseNumberInput(data.impuesto_electrico),
-    alquiler_contador: parseNumberInput(data.alquiler_contador),  // ⭐ Para backsolve
+    alquiler_contador: parseNumberInput(data.alquiler_contador),
     total_factura: parseNumberInput(data.total_factura),
+    coste_energia_actual: parseNumberInput(data.coste_energia_actual),
+    coste_potencia_actual: parseNumberInput(data.coste_potencia_actual),
     periodo_dias: Number.isFinite(parseInt(data.periodo_dias, 10))
     ? parseInt(data.periodo_dias, 10)
     : null, // ⭐ OBLIGATORIO para comparador
@@ -577,6 +583,49 @@ export default function Step2ValidarPage({ params }) {
                     />
                   </div>
                 ))}
+              </div>
+            </div>
+
+            {/* Desglose Baseline (E+P) */}
+            <div className="bg-[#0F172A] border border-white/8 rounded-[12px] p-5">
+              <div className="flex items-center gap-2 mb-4">
+                <span className="text-lg">📊</span>
+                <h4 className="text-lg font-semibold text-[#F1F5F9]">Desglose Línea Base (E+P)</h4>
+              </div>
+              <p className="text-xs text-gris-secundario mb-4">
+                Estos valores se usan para el "Ahorro Estructural" en el PDF. Si están vacíos, el sistema los estimará proporcionalmente.
+              </p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label htmlFor="coste_energia_actual" className="label text-[#F1F5F9]">
+                    Coste Energía Actual (€)
+                  </label>
+                  <Input
+                    id="coste_energia_actual"
+                    name="coste_energia_actual"
+                    type="number"
+                    step="0.01"
+                    value={form.coste_energia_actual || ''}
+                    onChange={handleChange}
+                    validated={isValid(form.coste_energia_actual)}
+                    placeholder="13.14"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="coste_potencia_actual" className="label text-[#F1F5F9]">
+                    Coste Potencia Actual (€)
+                  </label>
+                  <Input
+                    id="coste_potencia_actual"
+                    name="coste_potencia_actual"
+                    type="number"
+                    step="0.01"
+                    value={form.coste_potencia_actual || ''}
+                    onChange={handleChange}
+                    validated={isValid(form.coste_potencia_actual)}
+                    placeholder="18.38"
+                  />
+                </div>
               </div>
             </div>
 

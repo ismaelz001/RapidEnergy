@@ -34,6 +34,8 @@ class FacturaUpdate(BaseModel):
     iva: Optional[float] = None
     iva_porcentaje: Optional[float] = None
     total_factura: Optional[float] = None
+    coste_energia_actual: Optional[float] = None
+    coste_potencia_actual: Optional[float] = None
     estado_factura: Optional[str] = None
     cups: Optional[str] = None
     numero_factura: Optional[str] = None
@@ -43,9 +45,13 @@ class OfferSelection(BaseModel):
     """Modelo para recibir la oferta seleccionada por el usuario."""
     provider: str
     plan_name: str
+    tarifa_id: Optional[int] = None
     estimated_total: float
     saving_amount: float
     saving_percent: float
+    ahorro_estructural: Optional[float] = None
+    precio_medio_estructural: Optional[float] = None
+    coste_diario_estructural: Optional[float] = None
     commission: Optional[float] = None
     tag: Optional[str] = None
     breakdown: Optional[dict] = None
@@ -786,22 +792,27 @@ def generar_presupuesto_pdf(factura_id: int, db: Session = Depends(get_db)):
     story.append(Paragraph("A) Detalle de la factura analizada (línea base)", subtitle_style))
     story.append(Spacer(1, 0.2*cm))
     
-    # Intentar obtener desglose real de factura (si existe)
-    factura_coste_energia = getattr(factura, 'coste_energia', None) or 0.0
-    factura_coste_potencia = getattr(factura, 'coste_potencia', None) or 0.0
-    factura_impuesto_elec = getattr(factura, 'impuesto_electrico', None) or 0.0
-    factura_alquiler = getattr(factura, 'alquiler_contador', None) or 0.0
-    factura_iva = getattr(factura, 'iva', None) or 0.0
-    factura_total = factura.total_factura or 0.0
+    # ⭐ MÉTODO PO: Recuperar Baseline Estructural para Tabla A
+    # Prioridad 1: Valores explícitos en la factura (validados por usuario en Paso 2)
+    b_e = getattr(factura, 'coste_energia_actual', None)
+    b_p = getattr(factura, 'coste_potencia_actual', None)
     
+    # Prioridad 2: Si no existen, reconstruir usando el ratio de Antonio Ruiz (41.7% E / 58.3% P)
+    # como mejor aproximación para el subtotal recuperado
+    if b_e is None or b_p is None:
+        oferta_subtotal = breakdown.get('subtotal_estructural', oferta_energia + oferta_potencia)
+        factura_subtotal_estructural = oferta_subtotal + ahorro_estructural
+        b_e = factura_subtotal_estructural * 0.417
+        b_p = factura_subtotal_estructural - b_e
+
     tabla_a_data = [
         ["Concepto", "Valor (€)"],
-        ["Coste energía", to_money(factura_coste_energia)],
-        ["Coste potencia", to_money(factura_coste_potencia)],
+        ["Coste energía (E)", to_money(b_e)],
+        ["Coste potencia (P)", to_money(b_p)],
         ["Impuesto eléctrico", to_money(factura_impuesto_elec)],
         ["Alquiler contador", to_money(factura_alquiler)],
         ["IVA", to_money(factura_iva)],
-        ["TOTAL FACTURA", to_money(factura_total)],
+        ["TOTAL FACTURA ACTUAL", to_money(factura_total)],
     ]
     tabla_a = Table(tabla_a_data, colWidths=[10*cm, 6*cm])
     tabla_a.setStyle(TableStyle([
