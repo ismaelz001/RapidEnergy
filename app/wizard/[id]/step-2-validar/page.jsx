@@ -114,6 +114,7 @@ export default function Step2ValidarPage({ params }) {
     'cups', 
     'atr',
     'total_factura',
+    'periodo_dias',  // ⭐ OBLIGATORIO para el comparador
     'potencia_p1',
     'potencia_p2',
     'consumo_p1',
@@ -127,6 +128,7 @@ export default function Step2ValidarPage({ params }) {
     cups: 'CUPS',
     atr: 'ATR',
     total_factura: 'Total factura',
+    periodo_dias: 'Periodo (días)',  // ⭐ LABEL
     potencia_p1: 'Potencia P1',
     potencia_p2: 'Potencia P2',
     potencia_p3: 'Potencia P3',
@@ -229,7 +231,9 @@ export default function Step2ValidarPage({ params }) {
     iva: parseNumberInput(data.iva),
     iva_porcentaje: parseNumberInput(data.iva_porcentaje),
     impuesto_electrico: parseNumberInput(data.impuesto_electrico),
+    alquiler_contador: parseNumberInput(data.alquiler_contador),  // ⭐ Para backsolve
     total_factura: parseNumberInput(data.total_factura),
+    periodo_dias: parseInt(data.periodo_dias) || null,  // ⭐ OBLIGATORIO para comparador
   });
 
   const allFields = Object.keys(form);
