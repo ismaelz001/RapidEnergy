@@ -53,7 +53,9 @@ export default function Step3ComparerPage({ params }) {
         const payload = {
           cups: d.cups || null,
           atr: d.atr || null,
-          periodo_dias: parseInt(d.periodo_dias) || null,
+          periodo_dias: Number.isFinite(parseInt(d.periodo_dias, 10))
+            ? parseInt(d.periodo_dias, 10)
+            : null,
           consumo_kwh: consumoFinal,
           potencia_p1_kw: parseFloat(d.potencia_p1 || 0),
           potencia_p2_kw: parseFloat(d.potencia_p2 || 0),
