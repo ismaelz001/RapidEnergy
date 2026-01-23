@@ -415,6 +415,76 @@ def _insert_ofertas(db, factura_id: int, comparativa_id: int, offers) -> bool:
 # ⭐ _persist_results ELIMINADA - ahora todo se hace en una sola transacción en compare_factura
 
 
+def _reconstruir_factura(
+    consumos: list,
+    potencias: list,
+    precios_energia: list,
+    precios_potencia: list,
+    periodo_dias: int,
+    alquiler_diario: float,
+    iva_pct: float,
+) -> float:
+    """
+    Reconstruye el total de una factura siguiendo EXACTAMENTE el método PO/NodoÁmbar.
+    
+    ESQUEMA OBLIGATORIO (8 PASOS):
+    1. Energía (sin impuestos)
+    2. Potencia (sin impuestos)
+    3. Subtotal sin impuestos
+    4. Impuesto eléctrico (5.11269632%)
+    5. Alquiler contador
+    6. Base IVA
+    7. IVA
+    8. TOTAL FACTURA
+    
+    Args:
+        consumos: Lista de consumos kWh por periodo
+        potencias: Lista de potencias kW por periodo
+        precios_energia: Lista de precios €/kWh por periodo
+        precios_potencia: Lista de precios €/kW/día por periodo
+        periodo_dias: Días del periodo de facturación
+        alquiler_diario: Alquiler contador €/día (0 si no aplica)
+        iva_pct: Porcentaje IVA (ej: 0.21 para 21%)
+    
+    Returns:
+        Total factura reconstruida
+    """
+    
+    # 1️⃣ ENERGÍA (SIN IMPUESTOS)
+    energia = sum(
+        consumos[i] * precios_energia[i]
+        for i in range(len(consumos))
+        if i < len(precios_energia) and precios_energia[i] is not None
+    )
+    
+    # 2️⃣ POTENCIA (SIN IMPUESTOS)
+    potencia = sum(
+        potencias[i] * precios_potencia[i] * periodo_dias
+        for i in range(len(potencias))
+        if i < len(precios_potencia) and precios_potencia[i] is not None
+    )
+    
+    # 3️⃣ SUBTOTAL SIN IMPUESTOS
+    subtotal_sin_impuestos = energia + potencia
+    
+    # 4️⃣ IMPUESTO ELÉCTRICO (5.11269632%)
+    impuesto_electrico = subtotal_sin_impuestos * 0.0511269632
+    
+    # 5️⃣ ALQUILER CONTADOR
+    alquiler = alquiler_diario * periodo_dias
+    
+    # 6️⃣ BASE IVA
+    base_iva = subtotal_sin_impuestos + impuesto_electrico + alquiler
+    
+    # 7️⃣ IVA
+    iva = base_iva * iva_pct
+    
+    # 8️⃣ TOTAL FACTURA RECONSTRUIDA
+    total_factura = base_iva + iva
+    
+    return total_factura
+
+
 def compare_factura(factura, db) -> Dict[str, Any]:
     """
     P1 PRODUCCIÓN: Compara ofertas usando el periodo REAL de la factura.
@@ -513,6 +583,7 @@ def compare_factura(factura, db) -> Dict[str, Any]:
         for i in range(1, num_periodos_potencia + 1):
             potencias.append(_to_float(getattr(factura, f"potencia_p{i}_kw", None)) or 0.0)
 
+
     result = db.execute(
         text("SELECT * FROM tarifas WHERE atr = :atr"),
         {"atr": atr},  # Usa el ATR detectado automáticamente (2.0TD o 3.0TD)
@@ -521,6 +592,49 @@ def compare_factura(factura, db) -> Dict[str, Any]:
         tarifas = result.mappings().all()
     except AttributeError:
         tarifas = [row._mapping for row in result.fetchall()]
+
+    # ⭐ CAMBIO CRÍTICO: RECONSTRUIR TARIFA ACTUAL (Método PO/NodoÁmbar)
+    # En lugar de usar current_total como baseline, reconstruimos la factura actual
+    # usando precios PVPC/BOE regulados como referencia estándar
+    
+    # Determinar IVA para reconstrucción
+    if hasattr(factura, 'iva_porcentaje') and factura.iva_porcentaje is not None:
+        iva_pct_reconstruccion = float(factura.iva_porcentaje) / 100.0
+    else:
+        iva_pct_reconstruccion = 0.21  # 21% por defecto
+    
+    # Determinar alquiler contador
+    if hasattr(factura, 'alquiler_contador') and factura.alquiler_contador is not None:
+        alquiler_diario = float(factura.alquiler_contador) / periodo_dias if periodo_dias > 0 else 0.0
+    else:
+        alquiler_diario = 0.0
+    
+    # Precios PVPC/BOE 2025 para tarifa actual (referencia estándar)
+    if atr == "2.0TD":
+        # Precios PVPC 2.0TD (aproximados, el usuario puede tener otros)
+        # Usamos precios medios del mercado regulado 2025
+        precios_energia_actual = [0.15, 0.15, 0.15]  # Precio medio ~0.15 €/kWh
+        precios_potencia_actual = [0.073777, 0.001911]  # BOE 2025
+    else:  # 3.0TD
+        # Para 3.0TD, precios medios de mercado
+        precios_energia_actual = [0.18] * 6  # Precio medio ~0.18 €/kWh
+        precios_potencia_actual = [0.05, 0.03]  # Precios medios potencia
+    
+    # Reconstruir factura actual
+    total_actual_reconstruido = _reconstruir_factura(
+        consumos=consumos,
+        potencias=potencias,
+        precios_energia=precios_energia_actual,
+        precios_potencia=precios_potencia_actual,
+        periodo_dias=periodo_dias,
+        alquiler_diario=alquiler_diario,
+        iva_pct=iva_pct_reconstruccion
+    )
+    
+    logger.info(
+        f"[PO] Factura actual reconstruida: {total_actual_reconstruido:.2f}€ "
+        f"(vs total_factura original: {current_total:.2f}€, diff: {abs(total_actual_reconstruido - current_total):.2f}€)"
+    )
 
     offers = []
     for tarifa in tarifas:
@@ -622,15 +736,16 @@ def compare_factura(factura, db) -> Dict[str, Any]:
         
         estimated_total_periodo = base_imponible + iva_importe
         
-        # Cálculo Ahorro
-        ahorro_periodo = current_total - estimated_total_periodo
+        # ⭐ CAMBIO CRÍTICO (Método PO/NodoÁmbar): 
+        # Comparar contra FACTURA ACTUAL RECONSTRUIDA, no contra total original
+        ahorro_periodo = total_actual_reconstruido - estimated_total_periodo
         
         # Proyecciones
         ahorro_mensual_equiv = ahorro_periodo * (30.437 / periodo_dias)
         ahorro_anual_equiv = ahorro_periodo * (365 / periodo_dias)
         
         saving_percent = (
-            (ahorro_periodo / current_total) * 100 if current_total > 0 else 0.0
+            (ahorro_periodo / total_actual_reconstruido) * 100 if total_actual_reconstruido > 0 else 0.0
         )
 
         # Mapeo de nombres
@@ -715,6 +830,7 @@ def compare_factura(factura, db) -> Dict[str, Any]:
             factura_id=factura.id,
             periodo_dias=periodo_dias,
             current_total=current_total,
+            total_actual_reconstruido=total_actual_reconstruido,
             inputs_json=json.dumps(inputs_snapshot),
             offers_json=json.dumps(offers),
             status="ok"
@@ -764,5 +880,7 @@ def compare_factura(factura, db) -> Dict[str, Any]:
         "comparativa_id": comparativa_id,
         "periodo_dias": periodo_dias,
         "current_total": round(current_total, 2),
+        "total_actual_reconstruido": round(total_actual_reconstruido, 2),
+        "metodo_calculo": "PO/NodoAmbar - Ambas facturas reconstruidas",
         "offers": offers,
     }

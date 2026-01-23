@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.routes.webhook import router as webhook_router
 from app.routes.clientes import router as clientes_router
 from app.routes.debug import router as debug_router
+from app.routes.comisiones import router as comisiones_router  # ⭐ Carga masiva de comisiones
 
 from app.db.conn import Base, engine
 from app.db import models
@@ -81,4 +82,5 @@ def debug_gemini():
 app.include_router(webhook_router)
 app.include_router(clientes_router)
 app.include_router(debug_router)
+app.include_router(comisiones_router)  # ⭐ Comisiones
 
