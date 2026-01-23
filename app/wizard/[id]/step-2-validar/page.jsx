@@ -102,7 +102,17 @@ export default function Step2ValidarPage({ params }) {
           }
         });
 
-        updateFormData(mappedData);
+        // ⭐ FIX P0: Merge defensivo para no pisar cambios del usuario
+        // Si el usuario ya ha escrito algo, lo respetamos frente al vacío del servidor
+        updateFormData({
+          ...mappedData,
+          periodo_dias: (formData.periodo_dias !== '' && formData.periodo_dias != null) 
+            ? formData.periodo_dias 
+            : mappedData.periodo_dias,
+          alquiler_contador: (formData.alquiler_contador !== '' && formData.alquiler_contador != null) 
+            ? formData.alquiler_contador 
+            : mappedData.alquiler_contador,
+        });
       } catch (err) {
         console.error("Error loading factura:", err);
         setError("Error al cargar los datos del servidor");
@@ -219,6 +229,12 @@ export default function Step2ValidarPage({ params }) {
   const handleChange = (e) => {
     const { name, value } = e.target;
     const nextValue = numberFieldKeys.has(name) ? value.replace(',', '.') : value;
+    
+    // ⭐ LOGGING DE TRAZABILIDAD (P0)
+    if (name === 'periodo_dias' || name === 'alquiler_contador') {
+      console.log(`%c [STEP2] change ${name} => "${nextValue}" `, 'background: #0ea5e9; color: #fff; padding: 2px 5px; border-radius: 3px;');
+    }
+
     updateFormData({ [name]: nextValue });
   };
 
