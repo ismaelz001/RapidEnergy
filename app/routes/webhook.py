@@ -1057,12 +1057,15 @@ def generar_presupuesto_pdf(factura_id: int, db: Session = Depends(get_db)):
     doc.build(story)
     buffer.seek(0)
     
-    # Devolver como respuesta
+    # Devolver como respuesta con headers CORS explícitos
     return StreamingResponse(
         buffer,
         media_type="application/pdf",
         headers={
-            "Content-Disposition": f"attachment; filename=presupuesto_factura_{factura_id}.pdf"
+            "Content-Disposition": f"attachment; filename=presupuesto_factura_{factura_id}.pdf",
+            "Access-Control-Allow-Origin": "https://energy.rodorte.com",  # ⭐ FIX CORS para descarga PDF
+            "Access-Control-Allow-Methods": "GET, OPTIONS",
+            "Access-Control-Allow-Headers": "*",
         }
     )
 
