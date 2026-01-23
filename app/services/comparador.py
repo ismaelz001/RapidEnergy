@@ -894,11 +894,16 @@ def compare_factura(factura, db) -> Dict[str, Any]:
                 logger.warning(f"[OFERTAS] Could not update comparativa status: {update_error}")
                 db.rollback()
 
+    # DETERMINAR EL "BASELINE" REAL PARA LA UI
+    # Si hemos reconstruido la factura (IVA 21%), ese debe ser el baseline visual
+    # para que la resta (Baseline - Oferta) coincida con lo que el usuario ve.
+    ui_current_total = total_actual_reconstruido if baseline_method == "backsolve_subtotal_si" else current_total
+
     return {
         "factura_id": factura.id,
         "comparativa_id": comparativa_id,
         "periodo_dias": periodo_dias,
-        "current_total": round(current_total, 2),
+        "current_total": round(ui_current_total, 2),  # ← Baseline alineado para la UI
         "total_actual_reconstruido": round(total_actual_reconstruido, 2) if baseline_method != "fallback_current_total" else None,
         "subtotal_si_actual": round(subtotal_si_actual, 2) if baseline_method != "fallback_current_total" else None,
         "baseline_method": baseline_method,
