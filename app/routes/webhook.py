@@ -666,7 +666,7 @@ def generar_presupuesto_pdf(factura_id: int, db: Session = Depends(get_db)):
     from reportlab.lib.units import cm
     from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-    from reportlab.lib.enums import TA_CENTER, TA_RIGHT
+    from reportlab.lib.enums import TA_CENTER, TA_RIGHT, TA_LEFT
     from datetime import datetime
     import os
     
