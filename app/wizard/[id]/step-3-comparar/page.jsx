@@ -35,8 +35,64 @@ export default function Step3ComparerPage({ params }) {
       
       try {
         setLoading(true);
-        const result = await compareFactura(params.id);
-        // El backend devuelve { factura_id, current_total, offers: [...] }
+
+        // --- B) CONSTRUIR PAYLOAD DESDE EL ESTADO DEL WIZARD (FORM DATA) ---
+        const d = formData;
+        
+        // D) Fallback consumo_total: si es 0/null pero hay consumos por periodo, sumar
+        let consumoFinal = parseFloat(d.consumo_total || 0);
+        if (consumoFinal === 0) {
+          const sumP = [d.consumo_p1, d.consumo_p2, d.consumo_p3, d.consumo_p4, d.consumo_p5, d.consumo_p6]
+            .reduce((acc, val) => acc + parseFloat(val || 0), 0);
+          if (sumP > 0) {
+            console.warn(`[STEP3] Consumo total era 0, recalculando como suma de periodos: ${sumP}`);
+            consumoFinal = sumP;
+          }
+        }
+
+        const payload = {
+          cups: d.cups || null,
+          atr: d.atr || null,
+          periodo_dias: parseInt(d.periodo_dias) || null,
+          consumo_kwh: consumoFinal,
+          potencia_p1_kw: parseFloat(d.potencia_p1 || 0),
+          potencia_p2_kw: parseFloat(d.potencia_p2 || 0),
+          potencia_p3_kw: parseFloat(d.potencia_p3 || 0),
+          potencia_p4_kw: parseFloat(d.potencia_p4 || 0),
+          potencia_p5_kw: parseFloat(d.potencia_p5 || 0),
+          potencia_p6_kw: parseFloat(d.potencia_p6 || 0),
+          consumo_p1_kwh: parseFloat(d.consumo_p1 || 0),
+          consumo_p2_kwh: parseFloat(d.consumo_p2 || 0),
+          consumo_p3_kwh: parseFloat(d.consumo_p3 || 0),
+          consumo_p4_kwh: parseFloat(d.consumo_p4 || 0),
+          consumo_p5_kwh: parseFloat(d.consumo_p5 || 0),
+          consumo_p6_kwh: parseFloat(d.consumo_p6 || 0),
+          iva_porcentaje: parseFloat(d.iva_porcentaje || 21),
+          impuesto_electrico: parseFloat(d.impuesto_electrico || 0),
+          total_factura: parseFloat(d.total_factura || 0)
+        };
+
+        // A) LOG ANTES DEL POST (QA)
+        console.log(`%c [STEP3-PRE-POST] Factura #${params.id} `, 'background: #7c3aed; color: #fff; font-weight: bold;');
+        console.table({
+          cups: payload.cups,
+          atr: payload.atr,
+          periodo: payload.periodo_dias,
+          consumo_total: payload.consumo_kwh,
+          total_factura: payload.total_factura
+        });
+
+        // C) VALIDACIÓN PREVIA (Evitar reventar el backend)
+        if (!payload.atr) {
+          throw new Error("El campo ATR es obligatorio para comparar.");
+        }
+        if (!payload.periodo_dias || payload.periodo_dias <= 0) {
+          throw new Error("El periodo (días) es obligatorio y debe ser mayor a 0.");
+        }
+
+        // Llamada al backend pasando el payload actualizado
+        const result = await compareFactura(params.id, payload);
+        
         const normalizedOffers = (result.offers || []).map((offer) => {
           const id = offer.tarifa_id ?? offer.id ?? offer.provider;
           return {
@@ -53,7 +109,7 @@ export default function Step3ComparerPage({ params }) {
         );
       } catch (err) {
         console.error("Error fetching offers:", err);
-        setError("No se pudieron generar ofertas para esta factura. Asegúrate de que los datos en el Paso 2 sean correctos.");
+        setError(err.message || "No se pudieron generar ofertas. Verifica los datos del Paso 2.");
       } finally {
         setLoading(false);
       }
