@@ -73,12 +73,30 @@ export default function Step2ValidarPage({ params }) {
           alquiler_contador: data.alquiler_contador ?? ''  // ⭐ Para backsolve
         };
 
-        // Auditoría de datos en consola
+        // Auditoría de datos en consola (QA)
+        const auditKeysMap = {
+          cups: 'cups',
+          atr: 'atr',
+          total_factura: 'total_factura',
+          periodo_dias: 'periodo_dias',
+          cliente: 'cliente',
+          consumo_total: 'consumo_kwh',
+          potencia_p1: 'potencia_p1_kw',
+          potencia_p2: 'potencia_p2_kw',
+          consumo_p1: 'consumo_p1_kwh',
+          consumo_p2: 'consumo_p2_kwh',
+          consumo_p3: 'consumo_p3_kwh',
+          iva: 'iva',
+          impuesto_electrico: 'impuesto_electrico'
+        };
+
         Object.keys(mappedData).forEach(key => {
           const value = mappedData[key];
-          const fromOCR = data[key] || (key === 'cliente' && data.titular);
+          const backendKey = auditKeysMap[key] || key;
+          const fromOCR = data[backendKey] || (key === 'cliente' && data.titular);
+          
           if (fromOCR) {
-            console.log(`✅ ${key}: "${value}" (desde OCR)`);
+            console.log(`✅ ${key}: "${value}" (desde OCR: ${backendKey})`);
           } else {
             console.log(`⚠️ ${key}: "${value}" (valor por defecto/vacío)`);
           }
