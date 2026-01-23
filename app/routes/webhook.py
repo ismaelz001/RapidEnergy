@@ -17,6 +17,69 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/webhook", tags=["webhook"])
 
 
+# ════════════════════════════════════════════════════════════
+# HELPERS SEGUROS PARA PDF
+# ════════════════════════════════════════════════════════════
+
+def fmt_num(value, decimals=2, suffix="", fallback="—"):
+    """
+    Formatea números de forma segura para el PDF.
+    Si value es None/NaN, devuelve fallback.
+    """
+    try:
+        if value is None:
+            return fallback
+        num = float(value)
+        if num != num:  # NaN
+            return fallback
+        s = f"{num:.{decimals}f}"
+        return f"{s} {suffix}".strip() if suffix else s
+    except (ValueError, TypeError):
+        return fallback
+
+
+def calcular_precio_medio_estructural(factura):
+    """
+    Calcula precio medio estructural SOLO con datos reales.
+    
+    Fórmula: (E_actual + P_actual) / kWh_total
+    
+    Si falta CUALQUIER dato, devuelve None.
+    NO inventa, NO estima, NO reconstruye.
+    
+    Returns:
+        float | None
+    """
+    # 1. Obtener E_actual y P_actual (solo si existen)
+    e_actual = getattr(factura, 'coste_energia_actual', None)
+    p_actual = getattr(factura, 'coste_potencia_actual', None)
+    
+    if e_actual is None or p_actual is None:
+        return None  # Faltan datos baseline, no inventar
+    
+    # 2. Obtener kWh totales
+    kwh_total = getattr(factura, 'consumo_kwh', None)
+    
+    if not kwh_total or kwh_total <= 0:
+        # Fallback: sumar periodos
+        consumos = [
+            getattr(factura, f'consumo_p{i}_kwh', 0) or 0 
+            for i in range(1, 7)
+        ]
+        kwh_total = sum(consumos)
+    
+    # 3. Validar divisor
+    if not kwh_total or kwh_total <= 0:
+        return None  # No hay consumo válido
+    
+    # 4. Calcular de forma segura
+    try:
+        precio = (float(e_actual) + float(p_actual)) / float(kwh_total)
+        return precio
+    except (ValueError, TypeError, ZeroDivisionError):
+        return None
+
+
 class FacturaUpdate(BaseModel):
     atr: Optional[str] = None
     potencia_p1_kw: Optional[float] = None
@@ -725,17 +788,19 @@ def generar_presupuesto_pdf(factura_id: int, db: Session = Depends(get_db)):
         ahorro_mensual_calc = 0.0
         ahorro_anual_calc = 0.0
     
-    # Tabla de Oferta (Compacta)
+    # ⭐ Tabla de Oferta (Compacta) - CON FORMATEO SEGURO
     ahorro_estructural = selected_offer.get('ahorro_estructural', 0.0)
-    precio_medio = selected_offer.get('precio_medio_estructural', 0.0)
+    
+    # Calcular precio medio SOLO con datos reales (sin inventar)
+    precio_medio = calcular_precio_medio_estructural(factura)
     
     oferta_data = [
         ["Comercializadora:", selected_offer.get('provider', 'N/A')],
         ["Tarifa:", selected_offer.get('plan_name', 'N/A')],
-        ["Precio medio estructural:", f"{precio_medio:.4f} €/kWh"],  # Según tabla PO
-        ["Total estimado:", f"{total_estimado_calc:.2f} € (periodo: {periodo_dias_calc} días)"],
-        ["Ahorro estructural:", f"{ahorro_estructural:.2f} €"],       # Según tabla PO
-        ["Ahorro anual estimado:", f"{ahorro_anual_calc:.2f} €/año"],
+        ["Precio medio estructural:", fmt_num(precio_medio, decimals=4, suffix="€/kWh")],
+        ["Total estimado:", fmt_num(total_estimado_calc, decimals=2, suffix=f"€ (periodo: {periodo_dias_calc} días)")],
+        ["Ahorro estructural:", fmt_num(ahorro_estructural, decimals=2, suffix="€")],
+        ["Ahorro anual estimado:", fmt_num(ahorro_anual_calc, decimals=2, suffix="€/año")],
     ]
     oferta_table = Table(oferta_data, colWidths=[8*cm, 8*cm])
     oferta_table.setStyle(TableStyle([
@@ -749,7 +814,22 @@ def generar_presupuesto_pdf(factura_id: int, db: Session = Depends(get_db)):
         ('GRID', (0, 0), (-1, -1), 0.5, colors.grey)
     ]))
     story.append(oferta_table)
-    story.append(Spacer(1, 0.7*cm))
+    
+    # ⭐ Nota técnica explicativa
+    nota_tecnica_style = ParagraphStyle(
+        'NotaTecnica',
+        parent=styles['Normal'],
+        fontSize=7,
+        textColor=colors.HexColor('#64748B'),
+        alignment=TA_LEFT,
+        leftIndent=0.5*cm
+    )
+    story.append(Spacer(1, 0.2*cm))
+    story.append(Paragraph(
+        "*Precio medio estructural: (Energía + Potencia) / kWh total. Excluye impuestos y alquileres.",
+        nota_tecnica_style
+    ))
+    story.append(Spacer(1, 0.5*cm))
     
     # ⭐ DESGLOSE TÉCNICO (3 TABLAS)
     def to_money(value):
@@ -792,27 +872,23 @@ def generar_presupuesto_pdf(factura_id: int, db: Session = Depends(get_db)):
     story.append(Paragraph("A) Detalle de la factura analizada (línea base)", subtitle_style))
     story.append(Spacer(1, 0.2*cm))
     
-    # ⭐ MÉTODO PO: Recuperar Baseline Estructural para Tabla A
-    # Prioridad 1: Valores explícitos en la factura (validados por usuario en Paso 2)
+    # ⭐ MÉTODO PO: Baseline Estructural - SOLO DATOS REALES
+    factura_impuesto_elec = getattr(factura, 'impuesto_electrico', None) or 0.0
+    factura_alquiler = getattr(factura, 'alquiler_contador', None) or 0.0
+    factura_iva = getattr(factura, 'iva', None) or 0.0
+    factura_total = factura.total_factura or 0.0
+    
     b_e = getattr(factura, 'coste_energia_actual', None)
     b_p = getattr(factura, 'coste_potencia_actual', None)
-    
-    # Prioridad 2: Si no existen, reconstruir usando el ratio de Antonio Ruiz (41.7% E / 58.3% P)
-    # como mejor aproximación para el subtotal recuperado
-    if b_e is None or b_p is None:
-        oferta_subtotal = breakdown.get('subtotal_estructural', oferta_energia + oferta_potencia)
-        factura_subtotal_estructural = oferta_subtotal + ahorro_estructural
-        b_e = factura_subtotal_estructural * 0.417
-        b_p = factura_subtotal_estructural - b_e
 
     tabla_a_data = [
         ["Concepto", "Valor (€)"],
-        ["Coste energía (E)", to_money(b_e)],
-        ["Coste potencia (P)", to_money(b_p)],
-        ["Impuesto eléctrico", to_money(factura_impuesto_elec)],
-        ["Alquiler contador", to_money(factura_alquiler)],
-        ["IVA", to_money(factura_iva)],
-        ["TOTAL FACTURA ACTUAL", to_money(factura_total)],
+        ["Coste energía (E)", fmt_num(b_e, decimals=2, suffix="€")],
+        ["Coste potencia (P)", fmt_num(b_p, decimals=2, suffix="€")],
+        ["Impuesto eléctrico", fmt_num(factura_impuesto_elec, decimals=2, suffix="€")],
+        ["Alquiler contador", fmt_num(factura_alquiler, decimals=2, suffix="€")],
+        ["IVA", fmt_num(factura_iva, decimals=2, suffix="€")],
+        ["TOTAL FACTURA ACTUAL", fmt_num(factura_total, decimals=2, suffix="€")],
     ]
     tabla_a = Table(tabla_a_data, colWidths=[10*cm, 6*cm])
     tabla_a.setStyle(TableStyle([
@@ -845,12 +921,12 @@ def generar_presupuesto_pdf(factura_id: int, db: Session = Depends(get_db)):
     
     tabla_b_data = [
         ["Concepto", "Valor estimado (€)"],
-        ["Energía (E)", to_money(oferta_energia)],
-        ["Potencia (P)", to_money(oferta_potencia)],
-        ["SUBTOTAL ESTRUCTURAL (E+P)", to_money(oferta_energia + oferta_potencia)], # El motor ya lo da en subtotal_estructural
-        ["Impuestos (IEE + IVA)", to_money(oferta_impuestos)],
-        ["Alquiler contador", to_money(oferta_alquiler)],
-        ["TOTAL ESTIMADO CON IMPUESTOS", to_money(oferta_total)],
+        ["Energía (E)", fmt_num(oferta_energia, decimals=2, suffix="€")],
+        ["Potencia (P)", fmt_num(oferta_potencia, decimals=2, suffix="€")],
+        ["SUBTOTAL ESTRUCTURAL (E+P)", fmt_num(oferta_energia + oferta_potencia, decimals=2, suffix="€")],
+        ["Impuestos (IEE + IVA)", fmt_num(oferta_impuestos, decimals=2, suffix="€")],
+        ["Alquiler contador", fmt_num(oferta_alquiler, decimals=2, suffix="€")],
+        ["TOTAL ESTIMADO CON IMPUESTOS", fmt_num(oferta_total, decimals=2, suffix="€")],
     ]
     tabla_b = Table(tabla_b_data, colWidths=[10*cm, 6*cm])
     tabla_b.setStyle(TableStyle([
@@ -877,15 +953,18 @@ def generar_presupuesto_pdf(factura_id: int, db: Session = Depends(get_db)):
     alerta_mensaje = None if ahorro_periodo_calc > 0 else "⚠️ No se detecta ahorro con esta oferta. La oferta no mejora la factura analizada."
     
     # Cálculo de ahorro según tabla PO
-    ahorro_estructural_val = selected_offer.get('ahorro_estructural', ahorro_periodo_calc / 1.25) # fallback si no existe
-    coste_diario_est = selected_offer.get('coste_diario_estructural', (oferta_energia + oferta_potencia) / periodo_dias_calc if periodo_dias_calc > 0 else 0)
+    ahorro_estructural_val = selected_offer.get('ahorro_estructural', 0.0)
+    coste_diario_est = selected_offer.get('coste_diario_estructural', None)
+    
+    if coste_diario_est is None and periodo_dias_calc > 0:
+        coste_diario_est = (oferta_energia + oferta_potencia) / periodo_dias_calc
 
     tabla_c_data = [
         ["Concepto / Paso", "Fórmula", "Resultado"],
-        ["1) Ahorro estructural", "(E+P) actual - (E+P) nueva", to_money(ahorro_estructural_val)],
-        ["2) Precio medio est.", "(Energía + Potencia) / kWh", f"{precio_medio:.4f} €/kWh"],
-        ["3) Coste diario est.", "(Energía + Potencia) / días", to_money(coste_diario_est)],
-        ["4) Ahorro anual total", "Factura actual - Estimación", to_money(ahorro_anual_calc)],
+        ["1) Ahorro estructural", "(E+P) actual - (E+P) nueva", fmt_num(ahorro_estructural_val, decimals=2, suffix="€")],
+        ["2) Precio medio est.", "(Energía + Potencia) / kWh", fmt_num(precio_medio, decimals=4, suffix="€/kWh")],
+        ["3) Coste diario est.", "(Energía + Potencia) / días", fmt_num(coste_diario_est, decimals=2, suffix="€/día")],
+        ["4) Ahorro anual total", "Factura actual - Estimación", fmt_num(ahorro_anual_calc, decimals=2, suffix="€/año")],
     ]
     tabla_c = Table(tabla_c_data, colWidths=[4*cm, 7*cm, 5*cm])
     tabla_c.setStyle(TableStyle([
