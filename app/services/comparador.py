@@ -251,33 +251,6 @@ def _insert_comparativa(db, factura_id: int) -> Optional[int]:
     return comparativa_id
 
 
-def _column_exists(db, table_name: str, column_name: str) -> bool:
-    """
-    Verifica si una columna existe en una tabla (compatible Postgres + SQLite).
-    """
-    dialect = db.get_bind().dialect.name
-    
-    try:
-        if dialect == "postgresql":
-            result = db.execute(
-                text("""
-                    SELECT COUNT(*) FROM information_schema.columns 
-                    WHERE table_name = :table AND column_name = :column
-                """),
-                {"table": table_name, "column": column_name}
-            ).scalar()
-            return result > 0
-        elif dialect == "sqlite":
-            result = db.execute(text(f"PRAGMA table_info({table_name})")).fetchall()
-            return any(row[1] == column_name for row in result)
-        else:
-            logger.warning(f"[COLUMN_CHECK] Dialect {dialect} no soportado, asumiendo columna NO existe")
-            return False
-    except Exception as e:
-        logger.warning(f"[COLUMN_CHECK] Error verificando {table_name}.{column_name}: {e}")
-        return False
-
-
 def _insert_ofertas(db, factura_id: int, comparativa_id: int, offers) -> bool:
     """
     Persiste ofertas en 'ofertas_calculadas' siguiendo esquema estricto Neon.
@@ -309,27 +282,19 @@ def _insert_ofertas(db, factura_id: int, comparativa_id: int, offers) -> bool:
         # Extraer todos los tarifa_id de las ofertas
         tarifa_ids = [o.get("tarifa_id") for o in offers if o.get("tarifa_id") is not None]
         
-        # Prefetch comisiones_cliente (ORDER BY según existencia de vigente_desde)
+        # Prefetch comisiones_cliente (ORDER BY determinista)
+        # ESQUEMA REAL: NO tiene vigente_desde, solo created_at + id
         comisiones_cliente_map = {}
         if cliente_id and tarifa_ids:
-            # 🔧 FIX: Detectar si vigente_desde existe
-            has_vigente_desde_cliente = _column_exists(db, "comisiones_cliente", "vigente_desde")
-            
-            if has_vigente_desde_cliente:
-                order_clause_cliente = "COALESCE(vigente_desde, '1900-01-01') DESC, COALESCE(created_at, '1900-01-01 00:00:00') DESC"
-            else:
-                order_clause_cliente = "COALESCE(created_at, '1900-01-01 00:00:00') DESC"
-                logger.info("[COMISION] vigente_desde NO existe en comisiones_cliente, usando solo created_at")
-            
             rows = db.execute(
-                text(f"""
+                text("""
                     WITH ranked AS (
                         SELECT 
                             tarifa_id,
                             comision_eur,
                             ROW_NUMBER() OVER (
                                 PARTITION BY tarifa_id 
-                                ORDER BY {order_clause_cliente}
+                                ORDER BY created_at DESC, id DESC
                             ) as rn
                         FROM comisiones_cliente
                         WHERE cliente_id = :cid AND tarifa_id = ANY(:tids)
@@ -342,33 +307,22 @@ def _insert_ofertas(db, factura_id: int, comparativa_id: int, offers) -> bool:
             ).fetchall()
             comisiones_cliente_map = {row[0]: Decimal(str(row[1])) for row in rows}
         
-        # Prefetch comisiones_tarifa activas (ORDER BY según existencia de vigente_desde)
+        # Prefetch comisiones_tarifa activas (ORDER BY determinista)
+        # ESQUEMA REAL: SÍ tiene vigente_desde/vigente_hasta
         comisiones_tarifa_map = {}
         if tarifa_ids:
-            # 🔧 FIX: Detectar si vigente_desde existe en comisiones_tarifa
-            has_vigente_desde_tarifa = _column_exists(db, "comisiones_tarifa", "vigente_desde")
-            
-            if has_vigente_desde_tarifa:
-                order_clause_tarifa = "vigente_desde DESC, created_at DESC"
-                where_clause = "WHERE tarifa_id = ANY(:tids) AND vigente_hasta IS NULL"
-            else:
-                order_clause_tarifa = "created_at DESC"
-                # Si no hay vigente_desde/vigente_hasta, usar solo la más reciente por created_at
-                where_clause = "WHERE tarifa_id = ANY(:tids)"
-                logger.info("[COMISION] vigente_desde NO existe en comisiones_tarifa, usando solo created_at")
-            
             rows = db.execute(
-                text(f"""
+                text("""
                     WITH ranked AS (
                         SELECT 
                             tarifa_id,
                             comision_eur,
                             ROW_NUMBER() OVER (
                                 PARTITION BY tarifa_id 
-                                ORDER BY {order_clause_tarifa}
+                                ORDER BY vigente_desde DESC, created_at DESC, id DESC
                             ) as rn
                         FROM comisiones_tarifa
-                        {where_clause}
+                        WHERE tarifa_id = ANY(:tids) AND vigente_hasta IS NULL
                     )
                     SELECT tarifa_id, comision_eur
                     FROM ranked
@@ -954,11 +908,15 @@ def compare_factura(factura, db) -> Dict[str, Any]:
                 logger.warning(f"[OFERTAS] Could not update comparativa status: {update_error}")
                 db.rollback()
             
-            # 🔧 FIX QUIRÚRGICO: Lanzar error para que el frontend sepa que falló
-            raise DomainError(
-                "ZERO_OFFERS",
-                "No se pudieron generar ofertas. Posible problema con comisiones o tarifas."
-            )
+            # 🔧 AJUSTE P0: Devolver 200 OK con ok:false (no 422)
+            # El frontend todavía no maneja 422, así que usamos response estructurado
+            return {
+                "ok": False,
+                "error_code": "ZERO_OFFERS",
+                "message": "No se pudieron generar ofertas. Posible problema con comisiones o tarifas.",
+                "factura_id": factura.id,
+                "comparativa_id": comparativa_id,
+            }
         else:
             # 3. COMMIT ÚNICO para ambas operaciones (solo si hubo inserción exitosa)
             db.commit()
