@@ -867,12 +867,23 @@ def compare_factura(factura, db) -> Dict[str, Any]:
         
         if not inserted:
             logger.error(f"[OFERTAS] ZERO offers inserted for comparativa_id={comparativa_id}")
-            comparativa.status = "error"
-            comparativa.error_json = json.dumps({"error": "No offers inserted"})
-        
-        # 3. COMMIT ÚNICO para ambas operaciones
-        db.commit()
-        logger.info(f"[OFERTAS] Transaction committed successfully for comparativa_id={comparativa_id}")
+            # ⭐ FIX: Rollback de la transacción fallida ANTES de intentar actualizar
+            db.rollback()
+            # Crear nueva transacción limpia para guardar el estado de error
+            try:
+                comp = db.query(Comparativa).filter(Comparativa.id == comparativa_id).first()
+                if comp:
+                    comp.status = "error"
+                    comp.error_json = json.dumps({"error": "No offers inserted"})
+                    db.commit()
+                    logger.info(f"[OFERTAS] Error status saved for comparativa_id={comparativa_id}")
+            except Exception as update_error:
+                logger.warning(f"[OFERTAS] Could not update comparativa status: {update_error}")
+                db.rollback()
+        else:
+            # 3. COMMIT ÚNICO para ambas operaciones (solo si hubo inserción exitosa)
+            db.commit()
+            logger.info(f"[OFERTAS] Transaction committed successfully for comparativa_id={comparativa_id}")
         
     except Exception as e:
         db.rollback()  # ⭐ ROLLBACK INMEDIATO
