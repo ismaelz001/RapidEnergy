@@ -28,20 +28,39 @@ def parse_es_number(value: str):
     if cleaned in ("", "-", ".", ","):
         return None
 
-    last_dot = cleaned.rfind(".")
-    last_comma = cleaned.rfind(",")
-    if last_dot != -1 and last_comma != -1:
-        if last_comma > last_dot:
-            cleaned = cleaned.replace(".", "")
+    try:
+        # SI el número tiene un punto pero NO coma, y tiene exactamente 3 dígitos tras el punto, 
+        # es PROBABLEMENTE un separador de miles en España (ej: 15.974 para lecturas).
+        # PERO si el número es pequeño (ej: 1.52 kWh), el punto es decimal.
+        # Heurística: si el valor tras el punto tiene 3 dígitos y el total > 100, es miles.
+        
+        last_dot = cleaned.rfind(".")
+        last_comma = cleaned.rfind(",")
+        
+        if last_dot != -1 and last_comma == -1:
+            # Caso: 15.974 o 1.52
+            parts = cleaned.split(".")
+            if len(parts[-1]) == 3 and len(parts[0]) >= 1:
+                val_temp = cleaned.replace(".", "")
+                if float(val_temp) > 100: # Heurística de escala para España
+                     cleaned = val_temp
+        
+        # Lógica estándar para el resto
+        last_dot = cleaned.rfind(".")
+        last_comma = cleaned.rfind(",")
+        if last_dot != -1 and last_comma != -1:
+            if last_comma > last_dot:
+                cleaned = cleaned.replace(".", "")
+                cleaned = cleaned.replace(",", ".")
+            else:
+                cleaned = cleaned.replace(",", "")
+        elif last_comma != -1:
             cleaned = cleaned.replace(",", ".")
         else:
-            cleaned = cleaned.replace(",", "")
-    elif last_comma != -1:
-        cleaned = cleaned.replace(",", ".")
-    else:
-        cleaned = cleaned.replace(",", "")
+            # Solo queda el dot si existía, lo tratamos como decimal por defecto 
+            # (a menos que lo hayamos limpiado arriba en la heurística)
+            pass
 
-    try:
         return float(cleaned)
     except Exception:
         return None
@@ -326,8 +345,10 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
         # Allow extra spaces or chars between words
         dias_match = re.search(r"(?:dias|días|periodo)[^0-9\n]{0,30}facturad[oa]s?[^0-9\n]{0,10}[:]\s*(\d+)", raw_text, re.IGNORECASE)
         if not dias_match:
-             # Very simple fallback: "DIAS FACTURADOS: 30"
-             dias_match = re.search(r"DIAS\s+FACTURADOS\s*[:]\s*(\d+)", raw_text, re.IGNORECASE)
+             # Fallback more aggressive: "30 días", "periodo de 30", etc.
+             dias_match = re.search(r"(\d+)\s*(?:dias|días)\s+facturad[oa]s?", raw_text, re.IGNORECASE)
+        if not dias_match:
+             dias_match = re.search(r"PERIODO[:\s]*(\d+)\s*D[IÍ]AS", raw_text, re.IGNORECASE)
 
         if dias_match:
             try:
@@ -767,7 +788,7 @@ def extract_data_with_gemini(file_bytes: bytes, is_pdf: bool = True) -> dict:
 
     try:
         genai.configure(api_key=api_key)
-        model = genai.GenerativeModel("gemini-1.5-flash")  # Re-verify name
+        model = genai.GenerativeModel("gemini-2.0-flash")  # Upgraded to 2.0 Flash
 
         # Preparar el archivo para Gemini
         mime_type = "application/pdf" if is_pdf else "image/jpeg"
