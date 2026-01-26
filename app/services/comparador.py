@@ -828,8 +828,9 @@ def compare_factura(factura, db) -> Dict[str, Any]:
     completas = [item for item in offers if item["breakdown"]["modo_potencia"] == "tarifa"]
     parciales = [item for item in offers if item["breakdown"]["modo_potencia"] != "tarifa"]
 
-    completas.sort(key=lambda item: item["estimated_total_periodo"])
-    parciales.sort(key=lambda item: item["estimated_total_periodo"])
+    # Ordenar por precio total estimado
+    completas.sort(key=lambda item: item["estimated_total"])
+    parciales.sort(key=lambda item: item["estimated_total"])
 
     for item in parciales:
         item["tag"] = "partial"
