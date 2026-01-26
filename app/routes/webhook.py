@@ -131,6 +131,7 @@ REQUIRED_FACTURA_FIELDS = [
     "potencia_p1_kw",
     "potencia_p2_kw",
     "total_factura",
+    "periodo_dias",
 ]
 
 
@@ -162,6 +163,29 @@ def validate_factura_completitud(factura: Factura):
 
 
 from app.utils.cups import normalize_cups, is_valid_cups
+
+
+def _normalize_iva_porcentaje(value):
+    if value is None:
+        return None
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    if parsed <= 0:
+        return None
+    # Normalizar a decimal (ej: 0.21) por consistencia interna
+    return parsed / 100 if parsed > 1 else parsed
+
+
+def _normalize_periodo_dias(value):
+    if value is None:
+        return None
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed > 0 else None
 
 
 @router.post("/upload_v2")
@@ -466,6 +490,15 @@ def update_factura(factura_id: int, factura_update: FacturaUpdate, db: Session =
         raise HTTPException(status_code=404, detail="Factura no encontrada")
 
     update_data = factura_update.dict(exclude_unset=True)
+    logger.info(
+        "🔍 [AUDIT STEP2] Payload recibido factura_id=%s: periodo_dias=%s, iva_porc=%s, iva_eur=%s, iee_eur=%s, alquiler=%s",
+        factura_id,
+        update_data.get("periodo_dias"),
+        update_data.get("iva_porcentaje"),
+        update_data.get("iva"),
+        update_data.get("impuesto_electrico"),
+        update_data.get("alquiler_contador")
+    )
     for key, value in update_data.items():
         if key == 'cups' and value:
             norm = normalize_cups(value)
@@ -481,6 +514,10 @@ def update_factura(factura_id: int, factura_update: FacturaUpdate, db: Session =
             from app.services.ocr import extract_atr
             normalized_atr = extract_atr(str(value))
             value = normalized_atr or str(value).strip().upper()
+        if key == "iva_porcentaje":
+            value = _normalize_iva_porcentaje(value)
+        if key == "periodo_dias":
+            value = _normalize_periodo_dias(value)
         setattr(factura, key, value)
 
     # Validacion de completitud
@@ -505,6 +542,16 @@ def update_factura(factura_id: int, factura_update: FacturaUpdate, db: Session =
 
     db.commit()
     db.refresh(factura)
+
+    logger.info(
+        "✅ [AUDIT STEP2] Guardado final factura_id=%s: periodo_dias=%s, iva_porc=%s, iva_eur=%s, iee_eur=%s, estado=%s",
+        factura.id,
+        factura.periodo_dias,
+        factura.iva_porcentaje,
+        factura.iva,
+        factura.impuesto_electrico,
+        factura.estado_factura
+    )
 
     return {
         "factura": factura,

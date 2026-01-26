@@ -12,21 +12,37 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.enums import TA_CENTER, TA_RIGHT, TA_LEFT
 from pypdf import PdfReader, PdfWriter
 from datetime import datetime
+import logging
 import glob
 import os
 
+logger = logging.getLogger(__name__)
 
-def fmt_num(value, decimals=2, suffix=""):
-    """Formatear números con manejo de None/NaN"""
+
+def fmt_num(value, decimals=2, suffix="", fallback="0.00"):
+    """Formatear n?meros con manejo de None/NaN"""
     try:
         if value is None:
-            return f"0.00 {suffix}".strip()
+            return fallback
         num = float(value)
         if num != num:  # NaN check
-            return f"0.00 {suffix}".strip()
-        return f"{num:.{decimals}f} {suffix}".strip()
+            return fallback
+        formatted = f"{num:.{decimals}f} {suffix}".strip()
+        return formatted
     except (ValueError, TypeError):
-        return f"0.00 {suffix}".strip()
+        return fallback
+
+
+def normalize_pct(value):
+    if value is None:
+        return None
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    if parsed <= 0:
+        return None
+    return parsed / 100 if parsed > 1 else parsed
 
 
 def generar_pdf_presupuesto(factura, selected_offer, db):
@@ -145,20 +161,62 @@ def generar_pdf_presupuesto(factura, selected_offer, db):
     # --- TABLA A: DETALLE FACTURA ANALIZADA ---
     story.append(Paragraph("A) Detalle de la factura analizada (línea base)", styles['EnergySubheading']))
     
-    # Datos reales de la factura
-    iee_factura = float(getattr(factura, 'impuesto_electrico', 0) or 0)
+    # Datos reales de la factura (solo si se puede calcular sin inventar)
+    iee_pct = 0.0511269632
     alquiler_factura = float(getattr(factura, 'alquiler_contador', 0) or 0)
-    iva_factura = float(getattr(factura, 'iva', 0) or 0)
-    estructural_factura = actual_total - iee_factura - alquiler_factura - iva_factura
+    iva_pct = normalize_pct(getattr(factura, 'iva_porcentaje', None))
+    coste_energia_actual = getattr(factura, 'coste_energia_actual', None)
+    coste_potencia_actual = getattr(factura, 'coste_potencia_actual', None)
+
+    subtotal_sin_impuestos = None
+    if coste_energia_actual is not None and coste_potencia_actual is not None:
+        try:
+            subtotal_sin_impuestos = float(coste_energia_actual) + float(coste_potencia_actual)
+        except (TypeError, ValueError):
+            subtotal_sin_impuestos = None
+
+    iee_factura = None
+    iva_factura = None
+    if subtotal_sin_impuestos is not None and iva_pct is not None:
+        iee_factura = subtotal_sin_impuestos * iee_pct
+        base_iva = subtotal_sin_impuestos + iee_factura + alquiler_factura
+        iva_factura = base_iva * iva_pct
+
+    iva_label = f"IVA ({iva_pct * 100:.0f}%)" if iva_pct is not None else "IVA"
     
-    tabla_a_data = [
-        ["Concepto", "Valor (€)"],
-        ["Detalle Estructural (E+P)", "Incluido en Condiciones Actuales*"],
-        ["Impuesto eléctrico", fmt_num(iee_factura, suffix=" €")],
-        ["Alquiler contador", fmt_num(alquiler_factura, suffix=" €")],
-        ["IVA (21%)", fmt_num(iva_factura, suffix=" €")],
-        ["TOTAL FACTURA ANALIZADA", fmt_num(actual_total, suffix=" €")]
-    ]
+    # Vista simplificada vs Desglosada
+    mostrar_desglose_estructural = subtotal_sin_impuestos is not None and subtotal_sin_impuestos > 0
+
+    logger.info(
+        "[PDF] factura_id=%s subtotal_sin_impuestos=%s iva_pct=%s iee_pct=%s alquiler=%s iee_eur=%s iva_eur=%s",
+        getattr(factura, 'id', None),
+        subtotal_sin_impuestos,
+        iva_pct,
+        iee_pct,
+        alquiler_factura,
+        iee_factura,
+        iva_factura,
+    )
+    
+    if mostrar_desglose_estructural:
+        # Si tenemos los datos, mostramos el desglose real
+        tabla_a_data = [
+            ["Concepto", "Valor (EUR)"],
+            ["Energía (E)", fmt_num(coste_energia_actual, suffix=" EUR")],
+            ["Potencia (P)", fmt_num(coste_potencia_actual, suffix=" EUR")],
+            ["Impuesto eléctrico (IEE)", fmt_num(iee_factura, suffix=" EUR")],
+            ["Alquiler contador", fmt_num(alquiler_factura, suffix=" EUR")],
+            [iva_label, fmt_num(iva_factura, suffix=" EUR")],
+            ["TOTAL FACTURA ANALIZADA", fmt_num(actual_total, suffix=" EUR")],
+        ]
+    else:
+        # Vista simplificada: no inventar 0.00
+        tabla_a_data = [
+            ["Concepto", "Valor (EUR)"],
+            ["Detalle Estructural (E+P)", "Incluido en Condiciones Actuales*"],
+            ["Impuestos y Otros", "Incluidos en total*"],
+            ["TOTAL FACTURA ANALIZADA", fmt_num(actual_total, suffix=" EUR")],
+        ]
     t_a = Table(tabla_a_data, colWidths=[11*cm, 6*cm])
     t_a.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#E2E8F0')),
@@ -183,7 +241,7 @@ def generar_pdf_presupuesto(factura, selected_offer, db):
     impuestos_total = total_est - subtotal_ep - alquiler_oferta
     
     tabla_b_data = [
-        ["Concepto", "Valor estimado (€)"],
+        ["Concepto", "Valor (EUR)"],
         ["Energía (E)", fmt_num(coste_e, suffix=" €")],
         ["Potencia (P)", fmt_num(coste_p, suffix=" €")],
         ["SUBTOTAL ESTRUCTURAL (E+P)", fmt_num(subtotal_ep, suffix=" €")],

@@ -86,7 +86,9 @@ export default function Step2ValidarPage({ params }) {
           consumo_p5: data.consumo_p5_kwh || 0,
           consumo_p6: data.consumo_p6_kwh || 0,
           iva: data.iva ?? '',  // ⚠️ NO default 0 (evitar confusión con porcentaje)
-          iva_porcentaje: data.iva_porcentaje ?? 21,  // Default 21%
+          iva_porcentaje: data.iva_porcentaje != null
+            ? (Number(data.iva_porcentaje) <= 1 ? Number(data.iva_porcentaje) * 100 : data.iva_porcentaje)
+            : 21,  // Default 21%
           impuesto_electrico: data.impuesto_electrico ?? '',  // ⚠️ NO default 0
           alquiler_contador: data.alquiler_contador ?? '',  // ⭐ Para backsolve
           coste_energia_actual: data.coste_energia_actual ?? '',
@@ -210,6 +212,26 @@ export default function Step2ValidarPage({ params }) {
     return Number.isNaN(parsed) ? null : parsed;
   };
 
+  const normalizeIvaPct = (value) => {
+    const parsed = parseNumberInput(value);
+    if (parsed === null) return null;
+    return parsed > 1 ? parsed / 100 : parsed;
+  };
+
+  const IEE_PCT = 0.0511269632;
+  const costeEnergia = parseNumberInput(form.coste_energia_actual);
+  const costePotencia = parseNumberInput(form.coste_potencia_actual);
+  const subtotalSinImpuestos =
+    costeEnergia !== null && costePotencia !== null ? costeEnergia + costePotencia : null;
+  const alquilerContador = parseNumberInput(form.alquiler_contador) ?? 0;
+  const ivaPct = normalizeIvaPct(form.iva_porcentaje);
+  const ieeEurCalc = subtotalSinImpuestos !== null ? subtotalSinImpuestos * IEE_PCT : null;
+  const baseIvaCalc =
+    subtotalSinImpuestos !== null && ieeEurCalc !== null
+      ? subtotalSinImpuestos + ieeEurCalc + (alquilerContador || 0)
+      : null;
+  const ivaEurCalc = baseIvaCalc !== null && ivaPct !== null ? baseIvaCalc * ivaPct : null;
+
 
   // Auto-save
   useEffect(() => {
@@ -250,11 +272,17 @@ export default function Step2ValidarPage({ params }) {
 
   const handleChange = (e) => {
     const { name, value } = e.target;
-    const nextValue = numberFieldKeys.has(name) ? value.replace(',', '.') : value;
+    let nextValue = numberFieldKeys.has(name) ? value.replace(',', '.') : value;
     
+    // ⭐ TRATAMIENTO ESPECIAL PERIODO (P0)
+    if (name === 'periodo_dias') {
+      const parsed = parseInt(value, 10);
+      nextValue = isNaN(parsed) ? '' : parsed;
+    }
+
     // ⭐ LOGGING DE TRAZABILIDAD (P0)
-    if (name === 'periodo_dias' || name === 'alquiler_contador') {
-      console.log(`%c [STEP2] change ${name} => "${nextValue}" `, 'background: #0ea5e9; color: #fff; padding: 2px 5px; border-radius: 3px;');
+    if (['periodo_dias', 'iva_porcentaje', 'alquiler_contador'].includes(name)) {
+      console.log(`%c [STEP2-INPUT] ${name} => ${nextValue} (type: ${typeof nextValue})`, 'background: #0ea5e9; color: #fff; padding: 2px 5px; border-radius: 3px;');
     }
 
     updateFormData({ [name]: nextValue });
@@ -276,29 +304,34 @@ export default function Step2ValidarPage({ params }) {
     return /^(ES)?[0-9A-Z]{18,22}$/.test(clean);
   };
 
-  const buildPayload = (data) => ({
-    cups: normalizeCUPS(data.cups) || null,
-    atr: normalizeAtr(data.atr) || null,
-    consumo_kwh: parseNumberInput(data.consumo_total),
-    potencia_p1_kw: parseNumberInput(data.potencia_p1),
-    potencia_p2_kw: parseNumberInput(data.potencia_p2),
-    consumo_p1_kwh: parseNumberInput(data.consumo_p1),
-    consumo_p2_kwh: parseNumberInput(data.consumo_p2),
-    consumo_p3_kwh: parseNumberInput(data.consumo_p3),
-    consumo_p4_kwh: parseNumberInput(data.consumo_p4),
-    consumo_p5_kwh: parseNumberInput(data.consumo_p5),
-    consumo_p6_kwh: parseNumberInput(data.consumo_p6),
-    iva: parseNumberInput(data.iva),
-    iva_porcentaje: parseNumberInput(data.iva_porcentaje),
-    impuesto_electrico: parseNumberInput(data.impuesto_electrico),
-    alquiler_contador: parseNumberInput(data.alquiler_contador),
-    total_factura: parseNumberInput(data.total_factura),
-    coste_energia_actual: parseNumberInput(data.coste_energia_actual),
-    coste_potencia_actual: parseNumberInput(data.coste_potencia_actual),
-    periodo_dias: Number.isFinite(parseInt(data.periodo_dias, 10))
-    ? parseInt(data.periodo_dias, 10)
-    : null, // ⭐ OBLIGATORIO para comparador
-  });
+  const buildPayload = (data) => {
+    const payload = {
+      cups: normalizeCUPS(data.cups) || null,
+      atr: normalizeAtr(data.atr) || null,
+      consumo_kwh: parseNumberInput(data.consumo_total),
+      potencia_p1_kw: parseNumberInput(data.potencia_p1),
+      potencia_p2_kw: parseNumberInput(data.potencia_p2),
+      consumo_p1_kwh: parseNumberInput(data.consumo_p1),
+      consumo_p2_kwh: parseNumberInput(data.consumo_p2),
+      consumo_p3_kwh: parseNumberInput(data.consumo_p3),
+      consumo_p4_kwh: parseNumberInput(data.consumo_p4),
+      consumo_p5_kwh: parseNumberInput(data.consumo_p5),
+      consumo_p6_kwh: parseNumberInput(data.consumo_p6),
+      iva: ivaEurCalc !== null ? Number(ivaEurCalc.toFixed(4)) : undefined,
+      iva_porcentaje: parseNumberInput(data.iva_porcentaje),
+      impuesto_electrico: ieeEurCalc !== null ? Number(ieeEurCalc.toFixed(4)) : undefined,
+      alquiler_contador: parseNumberInput(data.alquiler_contador),
+      total_factura: parseNumberInput(data.total_factura),
+      coste_energia_actual: parseNumberInput(data.coste_energia_actual),
+      coste_potencia_actual: parseNumberInput(data.coste_potencia_actual),
+      periodo_dias: Number.isFinite(parseInt(data.periodo_dias, 10))
+        ? parseInt(data.periodo_dias, 10)
+        : null,
+    };
+    
+    console.log("%c [STEP2-PAYLOAD] ", "background: #10b981; color: #fff;", payload);
+    return payload;
+  };
 
   const allFields = Object.keys(form);
   const completedFields = allFields.filter(key => isValid(form[key])).length;
@@ -503,7 +536,7 @@ export default function Step2ValidarPage({ params }) {
                   validated={isValid(form.periodo_dias)}
                   error={!isValid(form.periodo_dias)}
                   errorMessage="Periodo es obligatorio"
-                  placeholder="30"
+                  placeholder="Ej: 30"
                 />
               </div>
             </div>
@@ -655,19 +688,18 @@ export default function Step2ValidarPage({ params }) {
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label htmlFor="iva" className="label text-[#F1F5F9]">
-                      IVA (€) *
+                      IVA (EUR)
+                      <span className="text-xs text-[#94A3B8] ml-2">(se calcula con base imponible)</span>
                     </label>
                     <Input
                       id="iva"
                       name="iva"
                       type="number"
                       step="0.01"
-                      value={form.iva || ''}
-                      onChange={handleChange}
-                      validated={isValid(form.iva)}
-                      error={!isValid(form.iva)}
-                      errorMessage={!isValid(form.iva) ? 'Campo obligatorio' : ''}
-                      placeholder="26.14"
+                      value={ivaEurCalc !== null ? ivaEurCalc.toFixed(2) : ''}
+                      readOnly={true}
+                      validated={ivaEurCalc !== null}
+                      placeholder="Se calcula"
                     />
                   </div>
                   <div>
@@ -699,10 +731,10 @@ export default function Step2ValidarPage({ params }) {
                     name="impuesto_electrico"
                     type="number"
                     step="0.01"
-                    value={form.impuesto_electrico || ''}
-                    onChange={handleChange}
-                    validated={isValid(form.impuesto_electrico)}
-                    placeholder="5.12"
+                    value={ieeEurCalc !== null ? ieeEurCalc.toFixed(2) : ''}
+                    readOnly={true}
+                    validated={ieeEurCalc !== null}
+                    placeholder="Se calcula"
                   />
                 </div>
 

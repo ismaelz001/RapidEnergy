@@ -7,16 +7,30 @@ const WizardContext = createContext();
 export function WizardProvider({ children }) {
   // Estado del formulario (Paso 2)
   const [formData, setFormData] = useState({
-    cups: 'ES0123456789012345AB',
-    total_factura: '124.50',
-    cliente: 'Juan López Martínez',
-    consumo_total: '342', // Campo crítico
-    iva: '26.14', // Campo crítico (si validado)
-    // Otros valores por defecto para pruebas rápidas
-    potencia_p1: '', potencia_p2: '', 
-    consumo_p1: '', consumo_p2: '', consumo_p3: '', 
-    consumo_p4: '', consumo_p5: '', consumo_p6: '',
-    impuesto_electrico: '5.12'
+    cups: '',
+    atr: '',
+    total_factura: '',
+    periodo_dias: '',
+    cliente: '',
+    consumo_total: '',
+    potencia_p1: '',
+    potencia_p2: '',
+    potencia_p3: '',
+    potencia_p4: '',
+    potencia_p5: '',
+    potencia_p6: '',
+    consumo_p1: '',
+    consumo_p2: '',
+    consumo_p3: '',
+    consumo_p4: '',
+    consumo_p5: '',
+    consumo_p6: '',
+    iva: '',
+    iva_porcentaje: '',
+    impuesto_electrico: '',
+    alquiler_contador: '',
+    coste_energia_actual: '',
+    coste_potencia_actual: ''
   });
 
   // Estado de selección (Paso 3)
