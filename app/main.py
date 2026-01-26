@@ -72,7 +72,7 @@ def debug_gemini():
     
     try:
         genai.configure(api_key=key)
-        model = genai.GenerativeModel("gemini-1.5-flash")
+        model = genai.GenerativeModel("gemini-2.0-flash")
         
         # Intentar listar para ver qué hay si falla
         available_models = []
