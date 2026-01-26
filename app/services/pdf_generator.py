@@ -283,19 +283,36 @@ def generar_pdf_presupuesto(factura, selected_offer, db):
 
     # --- RESUMEN FINAL ---
     story.append(Paragraph("RESUMEN", styles['EnergyHeading']))
+    
+    # Ahorro ANUAL (Cifra Reina - Grande y Verde)
+    ahorro_mensual_equiv = ahorro_anual / 12  # Calculamos el equivalente mensual
+    
     t_resumen = Table([
-        ["AHORRO TOTAL ANUAL ESTIMADO:", f"{ahorro_anual:.2f} €/año"]
-    ], colWidths=[11*cm, 6*cm])
+        ["AHORRO TOTAL ANUAL:", f"{ahorro_anual:.2f} €/año"]
+    ], colWidths=[10*cm, 7*cm])
     t_resumen.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#16A34A')), # Verde Energy
+        ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#16A34A')), # Verde intenso
         ('TEXTCOLOR', (0,0), (-1,-1), colors.white),
         ('FONTNAME', (0,0), (-1,-1), 'Helvetica-Bold'),
-        ('FONTSIZE', (0,0), (-1,-1), 14),
+        ('FONTSIZE', (0,0), (-1,-1), 18),  # MÁS GRANDE
         ('ALIGN', (1,0), (1,0), 'RIGHT'),
-        ('BOTTOMPADDING', (0,0), (-1,-1), 15),
-        ('TOPPADDING', (0,0), (-1,-1), 15),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 20),
+        ('TOPPADDING', (0,0), (-1,-1), 20),
     ]))
     story.append(t_resumen)
+    
+    # Ahorro mensual (Secundario - Pequeño y gris)
+    nota_mensual = ParagraphStyle(
+        name='NotaMensual', 
+        fontSize=9, 
+        textColor=colors.HexColor('#64748B'), 
+        alignment=TA_RIGHT,
+        spaceBefore=5
+    )
+    story.append(Paragraph(
+        f"(Equivalente mensual: ~{ahorro_mensual_equiv:.2f} €/mes)", 
+        nota_mensual
+    ))
     story.append(Spacer(1, 1*cm))
 
     # --- FOOTER ---
