@@ -52,11 +52,29 @@ export default function Step2ValidarPage({ params }) {
 
         console.log(`%c QA Audit - Factura #${params.id} `, 'background: #2563eb; color: #fff; font-weight: bold;');
 
+        // ⭐ CALCULAR PERIODO_DIAS si falta
+        let periodo_dias_calculado = data.periodo_dias;
+        
+        if (!periodo_dias_calculado && data.fecha_inicio && data.fecha_fin) {
+          try {
+            const inicio = new Date(data.fecha_inicio);
+            const fin = new Date(data.fecha_fin);
+            const diffMs = fin - inicio;
+            const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+            if (diffDays > 0 && diffDays <= 366) {
+              periodo_dias_calculado = diffDays;
+              console.log(`✅ periodo_dias calculado desde fechas: ${diffDays} días`);
+            }
+          } catch (e) {
+            console.warn('⚠️ Error calculando periodo_dias desde fechas:', e);
+          }
+        }
+        
         const mappedData = {
           cups: data.cups || '',
           atr: data.atr || '',
           total_factura: data.total_factura || data.importe || 0,
-          periodo_dias: data.periodo_dias ?? '',  // ⭐ IMPORTANTE: persistir periodo
+          periodo_dias: periodo_dias_calculado ?? '',  // ⭐ IMPORTANTE: persistir periodo
           cliente: data.cliente?.nombre || data.titular || '',
           consumo_total: data.consumo_kwh || 0,
           potencia_p1: data.potencia_p1_kw || 0,
