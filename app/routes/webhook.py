@@ -777,33 +777,43 @@ def generar_presupuesto_pdf(factura_id: int, db: Session = Depends(get_db)):
     # Oferta propuesta
     story.append(Paragraph("OFERTA PROPUESTA", heading_style))
     
-    # ⭐ Calcular ahorro consistentemente (fuente única de verdad)
-    periodo_dias_calc = getattr(factura, 'periodo_dias', None) or 30
-    total_factura_calc = factura.total_factura or 0.0
-    total_estimado_calc = selected_offer.get('estimated_total_periodo', selected_offer.get('estimated_total', 0.0))
+    # ⭐ Cifra Reina Normalizada (Regla P0: Normalización a 30 días / 12 meses = 360 días)
+    # ahorro_anual = (total_factura - estimated_total) * (360 / periodo_dias)
+    periodo_dias_calc = float(getattr(factura, 'periodo_dias', None) or 30)
+    total_factura_calc = float(factura.total_factura or 0.0)
+    total_estimado_calc = float(selected_offer.get('estimated_total_periodo', selected_offer.get('estimated_total', 0.0)))
     
     ahorro_periodo_calc = total_factura_calc - total_estimado_calc
-    if ahorro_periodo_calc > 0:
-        ahorro_mensual_calc = ahorro_periodo_calc / (periodo_dias_calc / 30.0)
-        ahorro_anual_calc = ahorro_mensual_calc * 12
-    else:
-        ahorro_mensual_calc = 0.0
-        ahorro_anual_calc = 0.0
+    factor_anual = 360.0 / periodo_dias_calc
+    ahorro_anual_calc = ahorro_periodo_calc * factor_anual
     
-    # ⭐ Tabla de Oferta (Compacta) - CON FORMATEO SEGURO
-    ahorro_estructural = selected_offer.get('ahorro_estructural', 0.0)
-    
-    # Calcular precio medio SOLO con datos reales (sin inventar)
+    # Flag de comparabilidad (viene del backend en la oferta seleccionada)
+    is_structural_comparable = selected_offer.get('is_structural_comparable', False)
+    # Por seguridad, re-verificar b_e y b_p
+    b_e = getattr(factura, 'coste_energia_actual', None)
+    b_p = getattr(factura, 'coste_potencia_actual', None)
+    if b_e is None or b_p is None:
+        is_structural_comparable = False
+
+    # ⭐ Tabla de Oferta (Compacta)
     precio_medio = calcular_precio_medio_estructural(factura)
+    ahorro_estructural = selected_offer.get('breakdown', {}).get('ahorro_estructural')
     
     oferta_data = [
         ["Comercializadora:", selected_offer.get('provider', 'N/A')],
         ["Tarifa:", selected_offer.get('plan_name', 'N/A')],
-        ["Precio medio estructural:", fmt_num(precio_medio, decimals=4, suffix="€/kWh", fallback="No disponible*")],
-        ["Total estimado:", fmt_num(total_estimado_calc, decimals=2, suffix=f"€ (periodo: {periodo_dias_calc} días)")],
-        ["Ahorro estructural:", fmt_num(ahorro_estructural, decimals=2, suffix="€", fallback="No comparable*")],
-        ["Ahorro anual estimado:", fmt_num(ahorro_anual_calc, decimals=2, suffix="€/año")],
     ]
+    
+    if is_structural_comparable:
+        oferta_data.append(["Precio medio estructural:", fmt_num(precio_medio, decimals=4, suffix="€/kWh")])
+    
+    oferta_data.append(["Total estimado:", fmt_num(total_estimado_calc, decimals=2, suffix=f"€ (periodo: {int(periodo_dias_calc)} días)")])
+    
+    if is_structural_comparable:
+        oferta_data.append(["Ahorro estructural:", fmt_num(ahorro_estructural, decimals=2, suffix="€")])
+    
+    oferta_data.append(["Ahorro anual estimado (Ahorro Total):", fmt_num(ahorro_anual_calc, decimals=2, suffix="€/año")])
+
     oferta_table = Table(oferta_data, colWidths=[8*cm, 8*cm])
     oferta_table.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#F0FDF4')),
@@ -831,6 +841,26 @@ def generar_presupuesto_pdf(factura_id: int, db: Session = Depends(get_db)):
         "*Precio medio estructural: (Energía + Potencia) / kWh total. Excluye impuestos y alquileres.",
         nota_tecnica_style
     ))
+
+    # ⭐ NOTA SI NO ES COMPARABLE ESTRUCTURALMENTE
+    if not is_structural_comparable:
+        story.append(Spacer(1, 0.3*cm))
+        nota_descuento_style = ParagraphStyle(
+            'NotaDescuento',
+            parent=styles['Normal'],
+            fontSize=8,
+            textColor=colors.HexColor('#3B82F6'),
+            alignment=TA_LEFT,
+            leftIndent=0.5*cm,
+            backColor=colors.HexColor('#EFF6FF'),
+            borderPadding=6,
+        )
+        story.append(Paragraph(
+            "<b>*Nota:</b> La comparación se basa en el coste total final (IVA incl.). Tu tarifa actual incluye descuentos "
+            "o condiciones comerciales especiales que impiden un desglose estructural exacto de energía y potencia. "
+            "El ahorro anual estimado es el valor más preciso disponible.",
+            nota_descuento_style
+        ))
 
     story.append(Spacer(1, 0.5*cm))
     
@@ -881,26 +911,28 @@ def generar_presupuesto_pdf(factura_id: int, db: Session = Depends(get_db)):
     factura_iva = getattr(factura, 'iva', None) or 0.0
     factura_total = factura.total_factura or 0.0
     
-    b_e = getattr(factura, 'coste_energia_actual', None)
-    b_p = getattr(factura, 'coste_potencia_actual', None)
+    tabla_a_data = [["Concepto", "Valor (€)"]]
+    
+    if is_structural_comparable:
+        tabla_a_data.append(["Coste energía (E)", fmt_num(b_e, decimals=2, suffix="€")])
+        tabla_a_data.append(["Coste potencia (P)", fmt_num(b_p, decimals=2, suffix="€")])
+    else:
+        # En diseño simplificado, podemos agrupar o simplemente ocultar
+        tabla_a_data.append(["Detalle Estructural (E+P)", "Incluido en Condiciones Actuales*"])
+        
+    tabla_a_data.append(["Impuesto eléctrico", fmt_num(factura_impuesto_elec, decimals=2, suffix="€")])
+    tabla_a_data.append(["Alquiler contador", fmt_num(factura_alquiler, decimals=2, suffix="€")])
+    tabla_a_data.append(["IVA (21%)", fmt_num(factura_iva, decimals=2, suffix="€")])
+    tabla_a_data.append(["TOTAL FACTURA ANALIZADA", fmt_num(factura_total, decimals=2, suffix="€")])
 
-    tabla_a_data = [
-        ["Concepto", "Valor (€)"],
-        ["Coste energía (E)", fmt_num(b_e, decimals=2, suffix="€", fallback="No comparable*")],
-        ["Coste potencia (P)", fmt_num(b_p, decimals=2, suffix="€", fallback="No comparable*")],
-        ["Impuesto eléctrico", fmt_num(factura_impuesto_elec, decimals=2, suffix="€")],
-        ["Alquiler contador", fmt_num(factura_alquiler, decimals=2, suffix="€")],
-        ["IVA", fmt_num(factura_iva, decimals=2, suffix="€")],
-        ["TOTAL FACTURA ACTUAL", fmt_num(factura_total, decimals=2, suffix="€")],
-    ]
     tabla_a = Table(tabla_a_data, colWidths=[10*cm, 6*cm])
     tabla_a.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#E2E8F0')),
         ('TEXTCOLOR', (0, 0), (-1, -1), colors.black),
         ('ALIGN', (0, 0), (0, -1), 'LEFT'),
         ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
-        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),  # Cabecera en negrita
-        ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),  # Total en negrita
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
         ('FONTSIZE', (0, 0), (-1, -1), 9),
         ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
         ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
@@ -909,7 +941,7 @@ def generar_presupuesto_pdf(factura_id: int, db: Session = Depends(get_db)):
     story.append(tabla_a)
     story.append(Spacer(1, 0.5*cm))
     
-    # TABLA B — Detalle de la oferta recomendada
+    # TABLA B — Detalle de la oferta recomendada (SIEMPRE FULL)
     story.append(Paragraph("B) Detalle de la oferta recomendada", subtitle_style))
     story.append(Spacer(1, 0.2*cm))
     
@@ -919,14 +951,13 @@ def generar_presupuesto_pdf(factura_id: int, db: Session = Depends(get_db)):
     oferta_potencia = breakdown.get('coste_potencia', 0.0)
     oferta_impuestos = breakdown.get('impuestos', 0.0)
     oferta_alquiler = breakdown.get('alquiler_contador', 0.0)
-    oferta_iva = breakdown.get('iva', 0.0)
-    oferta_total = selected_offer.get('estimated_total_periodo', selected_offer.get('estimated_total', 0.0))
+    oferta_total = float(selected_offer.get('estimated_total_periodo', selected_offer.get('estimated_total', 0.0)))
     
     tabla_b_data = [
         ["Concepto", "Valor estimado (€)"],
         ["Energía (E)", fmt_num(oferta_energia, decimals=2, suffix="€")],
         ["Potencia (P)", fmt_num(oferta_potencia, decimals=2, suffix="€")],
-        ["SUBTOTAL ESTRUCTURAL (E+P)", fmt_num(oferta_energia + oferta_potencia, decimals=2, suffix="€")],
+        ["SUBTOTAL ESTRUCTURAL (E+P)", fmt_num(float(oferta_energia) + float(oferta_potencia), decimals=2, suffix="€")],
         ["Impuestos (IEE + IVA)", fmt_num(oferta_impuestos, decimals=2, suffix="€")],
         ["Alquiler contador", fmt_num(oferta_alquiler, decimals=2, suffix="€")],
         ["TOTAL ESTIMADO CON IMPUESTOS", fmt_num(oferta_total, decimals=2, suffix="€")],
@@ -937,8 +968,8 @@ def generar_presupuesto_pdf(factura_id: int, db: Session = Depends(get_db)):
         ('TEXTCOLOR', (0, 0), (-1, -1), colors.black),
         ('ALIGN', (0, 0), (0, -1), 'LEFT'),
         ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
-        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),  # Cabecera en negrita
-        ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),  # Total en negrita
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
         ('FONTSIZE', (0, 0), (-1, -1), 9),
         ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
         ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
@@ -947,76 +978,51 @@ def generar_presupuesto_pdf(factura_id: int, db: Session = Depends(get_db)):
     story.append(tabla_b)
     story.append(Spacer(1, 0.5*cm))
     
-    # ⭐ NOTA SI HAY CAMPOS NO COMPARABLES (añadir DESPUÉS de tablas A y B)
-    if b_e is None or b_p is None or precio_medio is None:
-        nota_descuento_style = ParagraphStyle(
-            'NotaDescuento',
-            parent=styles['Normal'],
-            fontSize=8,
-            textColor=colors.HexColor('#DC2626'),
-            alignment=TA_LEFT,
-            leftIndent=0.5*cm,
-            backColor=colors.HexColor('#FEF2F2'),
-            borderPadding=6,
-        )
-        story.append(Paragraph(
-            "<b>*Nota:</b> Algunos valores no están disponibles porque la tarifa actual incluye descuentos "
-            "comerciales o condiciones especiales que impiden la comparación directa. "
-            "El ahorro total y el precio final sí son comparables y correctos.",
-            nota_descuento_style
-        ))
-        story.append(Spacer(1, 0.3*cm))
-    
     # TABLA C — Cálculo de ahorro
     story.append(Paragraph("C) Cálculo de ahorro", subtitle_style))
     story.append(Spacer(1, 0.2*cm))
     
     # ⭐ Usar MISMOS cálculos que arriba (fuente única)
     # Ya calculamos: ahorro_periodo_calc, ahorro_mensual_calc, ahorro_anual_calc
-    alerta_mensaje = None if ahorro_periodo_calc > 0 else "⚠️ No se detecta ahorro con esta oferta. La oferta no mejora la factura analizada."
-    
-    # Cálculo de ahorro según tabla PO
-    ahorro_estructural_val = selected_offer.get('ahorro_estructural', 0.0)
-    coste_diario_est = selected_offer.get('coste_diario_estructural', None)
-    
-    if coste_diario_est is None and periodo_dias_calc > 0:
-        coste_diario_est = (oferta_energia + oferta_potencia) / periodo_dias_calc
+    ahorro_estructural_val = breakdown.get('ahorro_estructural')
+    coste_diario_est = (float(oferta_energia) + float(oferta_potencia)) / periodo_dias_calc if periodo_dias_calc > 0 else 0.0
 
     tabla_c_data = [
         ["Concepto / Paso", "Fórmula", "Resultado"],
-        ["1) Ahorro estructural", "(E+P) actual - (E+P) nueva", fmt_num(ahorro_estructural_val, decimals=2, suffix="€", fallback="No comparable*")],
-        ["2) Precio medio est.", "(Energía + Potencia) / kWh", fmt_num(precio_medio, decimals=4, suffix="€/kWh", fallback="No disponible*")],
-        ["3) Coste diario est.", "(Energía + Potencia) / días", fmt_num(coste_diario_est, decimals=2, suffix="€/día")],
-        ["4) Ahorro anual total", "Factura actual - Estimación", fmt_num(ahorro_anual_calc, decimals=2, suffix="€/año")],
     ]
+    
+    if is_structural_comparable:
+        tabla_c_data.append(["1) Ahorro estructural", "(E+P) actual - (E+P) nueva", fmt_num(ahorro_estructural_val, decimals=2, suffix="€")])
+        tabla_c_data.append(["2) Precio medio est.", "(Energía + Potencia) / kWh", fmt_num(precio_medio, decimals=4, suffix="€/kWh")])
+
+    tabla_c_data.append(["3) Coste diario est.", "(E+P nueva) / días", fmt_num(coste_diario_est, decimals=2, suffix="€/día")])
+    tabla_c_data.append(["4) Ahorro ANUAL TOTAL", "Ahorro periodo × (360 / días)", fmt_num(ahorro_anual_calc, decimals=2, suffix="€/año")])
+
     tabla_c = Table(tabla_c_data, colWidths=[4*cm, 7*cm, 5*cm])
     tabla_c.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#E2E8F0')),
         ('TEXTCOLOR', (0, 0), (-1, -1), colors.black),
         ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
         ('ALIGN', (2, 0), (2, -1), 'RIGHT'),
-        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),  # Cabecera en negrita
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
         ('FONTSIZE', (0, 0), (-1, -1), 8),
         ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
         ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
     ]))
     story.append(tabla_c)
-    
+    story.append(Spacer(1, 0.2*cm))
+
     # Alerta si no hay ahorro
-    if alerta_mensaje:
-        story.append(Spacer(1, 0.2*cm))
+    if ahorro_anual_calc <= 0:
         alerta_style = ParagraphStyle(
-            'Alerta',
+            'AlertaNoAhorro',
             parent=styles['Normal'],
             fontSize=9,
             textColor=colors.HexColor('#DC2626'),
-            alignment=TA_CENTER,
-            backColor=colors.HexColor('#FEE2E2'),
-            borderColor=colors.HexColor('#DC2626'),
-            borderWidth=1,
-            borderPadding=8,
+            alignment=TA_LEFT,
+            fontName='Helvetica-Bold'
         )
-        story.append(Paragraph(alerta_mensaje, alerta_style))
+        story.append(Paragraph("LA OFERTA ANALIZADA NO MEJORA EL PRECIO DE TU TARIFA ACTUAL.", alerta_style))
     
     story.append(Spacer(1, 0.5*cm))
     

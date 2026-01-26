@@ -1,18 +1,64 @@
 "use client";
 
 /**
- * OfferCard - Tarjeta de oferta con estados UX honestos
+ * OfferCard - Tarjeta de oferta con estados UX honestos (Nivel 2)
  * 
- * Estados:
- * 1. Mejor significativo (ahorro >= 60€/año)
- * 2. Mejor mínimo (0 < ahorro < 60€/año)  
- * 3. Similar (-10€ <= ahorro <= 0€)
- * 4. Peor (ahorro < -10€)
+ * Reglas de umbrales (Ahorro Anual Normalizado):
+ * - < 5€ => state="similar" (gris) "Condiciones similares a tu actual"
+ * - 5€ a 30€ => state="optimizado" (gris) "Tu tarifa actual es competitiva"
+ * - 30€ a 80€ => state="marginal" (azul) "Ahorro marginal detectado"
+ * - >= 80€ => state="recomendado" (verde) "¡Ahorro claro detectado!"
  */
 
-// Umbral de ahorro significativo (configurable)
-const UMBRAL_AHORRO_SIGNIFICATIVO = 60; // €/año
-const UMBRAL_SIMILAR = 10; // €/año de margen
+export const getUiState = (ahorroAnual) => {
+  if (ahorroAnual < 5 && ahorroAnual >= -5) {
+    return {
+      state: 'similar',
+      colorTexto: 'text-[#94A3B8]',
+      mensaje: 'Condiciones similares a tu actual',
+      icono: '≈',
+      badgeColor: 'bg-gray-500',
+      canBeRecommended: false
+    };
+  } else if (ahorroAnual >= 5 && ahorroAnual < 30) {
+    return {
+      state: 'optimizado',
+      colorTexto: 'text-[#94A3B8]',
+      mensaje: 'Tu tarifa actual es competitiva',
+      icono: '↓',
+      badgeColor: 'bg-gray-500',
+      canBeRecommended: false
+    };
+  } else if (ahorroAnual >= 30 && ahorroAnual < 80) {
+    return {
+      state: 'marginal',
+      colorTexto: 'text-[#3B82F6]',
+      mensaje: 'Ahorro marginal detectado',
+      icono: '↓',
+      badgeColor: 'bg-[#3B82F6]',
+      canBeRecommended: true
+    };
+  } else if (ahorroAnual >= 80) {
+    return {
+      state: 'recomendado',
+      colorTexto: 'text-[#16A34A]',
+      mensaje: '¡Ahorro claro detectado!',
+      icono: '⬇',
+      badgeColor: 'bg-[#16A34A]',
+      canBeRecommended: true
+    };
+  } else {
+    // Más costosa
+    return {
+      state: 'peor',
+      colorTexto: 'text-[#F43F5E]',
+      mensaje: 'Más costosa que tu tarifa actual',
+      icono: '⬆',
+      badgeColor: 'bg-red-500',
+      canBeRecommended: false
+    };
+  }
+};
 
 export default function OfferCard({ 
   offer, 
@@ -29,66 +75,21 @@ export default function OfferCard({
     onSelect();
   };
 
-  // Cálculos
-  const ahorroMensual = offer.saving_amount || 0;
-  const ahorroAnual = ahorroMensual * 12;
+  // Cifra reina: Ahorro anual normalizado (viene del backend)
+  const ahorroAnual = offer.saving_amount_annual || 0;
+  const ahorroMensual = offer.saving_amount_monthly || 0;
   const precioMensual = offer.estimated_total || 0;
 
-  // Determinar estado UX
-  let estado = 'similar';
-  let colorTexto = 'text-[#64748B]'; // Gris neutral
-  let colorFondo = 'bg-[#0F172A]';
-  let mensaje = '';
-  let icono = '≈';
-  let showBadge = false;
-  let badgeText = '';
-  let badgeColor = '';
-
-  if (ahorroAnual >= UMBRAL_AHORRO_SIGNIFICATIVO) {
-    // Estado 1: Ahorro significativo
-    estado = 'mejor_significativo';
-    colorTexto = 'text-[#16A34A]';
-    colorFondo = 'bg-[#0F172A]';
-    mensaje = 'Más barata que tu tarifa actual';
-    icono = '⬇';
-    showBadge = isRecommended;
-    badgeText = 'RECOMENDADO';
-    badgeColor = 'bg-[#16A34A]';
-  } else if (ahorroAnual > 0 && ahorroAnual < UMBRAL_AHORRO_SIGNIFICATIVO) {
-    // Estado 2: Ahorro mínimo
-    estado = 'mejor_minimo';
-    colorTexto = 'text-[#3B82F6]';
-    colorFondo = 'bg-[#0F172A]';
-    mensaje = 'Ahorro mínimo detectado';
-    icono = '↓';
-    showBadge = false; //  No mostrar "RECOMENDADO" si ahorro es bajo
-  } else if (ahorroAnual >= -UMBRAL_SIMILAR && ahorroAnual <= 0) {
-    // Estado 3: Similar
-    estado = 'similar';
-    colorTexto = 'text-[#64748B]';
-    colorFondo = 'bg-[#0F172A]';
-    mensaje = `Similar a tu tarifa actual`;
-    icono = '≈';
-    showBadge = false;
-  } else {
-    // Estado 4: Peor
-    estado = 'peor';
-    colorTexto = 'text-[#94A3B8]';
-    colorFondo = 'bg-[#0F172A]';
-    mensaje = 'Más cara que tu tarifa';
-    icono = '⬆';
-    showBadge = false;
-  }
-
-  // Formatear diferencia para mostrar
-  const diferenciaMostrar = Math.abs(ahorroAnual) < UMBRAL_SIMILAR 
-    ? `${Math.abs(ahorroMensual).toFixed(2)}€/mes`
-    : `${Math.abs(ahorroAnual).toFixed(0)}€/año`;
+  // Obtener estado UI
+  const ui = getUiState(ahorroAnual);
+  
+  // Badge solo si es recomendado por sistema Y el ahorro >= 30€
+  const showBadge = isRecommended && ui.canBeRecommended;
 
   return (
     <div
       className={`
-        relative rounded-xl p-6 transition-all cursor-pointer
+        relative rounded-xl p-6 transition-all cursor-pointer h-full flex flex-col
         ${
           isSelected
             ? 'border-4 border-azul-control bg-azul-control/5 shadow-lg'
@@ -100,73 +101,76 @@ export default function OfferCard({
     >
       {/* Badge condicional */}
       {showBadge && (
-        <div className={`absolute -top-2 -right-2 ${badgeColor} text-white text-xs font-bold px-3 py-1 rounded-full shadow-lg`}>
-          🏆 {badgeText}
+        <div className={`absolute -top-2 -right-2 ${ui.badgeColor} text-white text-xs font-bold px-3 py-1 rounded-full shadow-lg z-10 animate-fade-in`}>
+          🏆 RECOMENDADO
         </div>
       )}
 
       {/* Proveedor y plan */}
       <div className="mb-4">
-        <h4 className="text-lg font-bold text-gris-texto">{offer.provider}</h4>
+        <h4 className="text-lg font-bold text-gris-texto leading-tight">{offer.provider}</h4>
         <p className="text-sm text-gris-secundario">{offer.plan_name}</p>
+        
         {isPartial && (
-          <>
-            <p className="text-xs text-ambar-alerta mt-2 font-semibold">
-              Estimación parcial (sin potencia)
+          <div className="mt-2 p-2 bg-ambar-alerta/10 rounded border border-ambar-alerta/20">
+            <p className="text-[10px] text-ambar-alerta font-semibold uppercase tracking-wider">
+              Estimación parcial
             </p>
-            <p className="text-[11px] text-gris-secundario mt-1">
-              Falta precio de potencia en la tarifa. No se puede comparar total correctamente.
+            <p className="text-[10px] text-gris-secundario mt-0.5">
+              Sin precios de potencia en tarifa.
             </p>
-          </>
+          </div>
         )}
       </div>
 
-      {/* Precio mensual (grande y claro) */}
-      <div className="mb-4">
+      {/* Precio mensual */}
+      <div className="mb-4 mt-auto">
         <div className="text-3xl font-black text-azul-control">
           {precioMensual.toFixed(2)}€
         </div>
-        <div className="text-xs text-gris-secundario">/mes</div>
+        <div className="text-xs text-gris-secundario">/mes (IVA incl.)</div>
       </div>
 
       {/* Divider */}
-      <div className="border-t border-gris-secundario/20 my-4" />
+      <div className="border-t border-white/5 my-4" />
 
-      {/* Mensaje principal según estado */}
-      <div className="mb-2">
-        <div className={`font-semibold ${colorTexto} flex items-center gap-1`}>
-          <span>{icono}</span>
-          <span>{mensaje}</span>
+      {/* Mensaje de ahorro */}
+      <div className="mt-auto">
+        <div className={`font-semibold ${ui.colorTexto} flex items-center gap-1 text-sm mb-1`}>
+          <span className="text-base">{ui.icono}</span>
+          <span>{ui.mensaje}</span>
         </div>
-      </div>
 
-      {/* Diferencia económica */}
-      <div className="mb-4">
-        <div className={`text-lg font-bold ${colorTexto}`}>
-          {estado === 'peor' ? '+' : estado === 'similar' ? '±' : ''}
-          {diferenciaMostrar}
+        <div className={`text-xl font-bold ${ui.state === 'peor' ? 'text-gris-secundario opacity-60' : ui.colorTexto}`}>
+          {ahorroAnual >= 0 ? '+' : ''}
+          {ahorroAnual >= 5 || ahorroAnual <= -5 
+            ? `${Math.abs(ahorroAnual).toFixed(0)}€/año`
+            : `${Math.abs(ahorroMensual).toFixed(2)}€/mes`
+          }
         </div>
       </div>
 
       {/* Botón de selección */}
-      <button
-        className={`
-          w-full py-2 rounded-lg font-semibold transition text-sm
-          ${
-            isSelected
-              ? 'bg-azul-control text-white'
-              : 'bg-transparent border border-white/10 text-[#F1F5F9] hover:bg-white/5'
-          }
-          ${isPartial ? 'opacity-50 cursor-not-allowed hover:bg-transparent' : ''}
-        `}
-        onClick={(e) => {
-          e.stopPropagation();
-          handleSelect(e);
-        }}
-        disabled={isPartial}
-      >
-        {isPartial ? 'NO DISPONIBLE' : isSelected ? '✓ SELECCIONADA' : 'SELECCIONAR'}
-      </button>
+      <div className="mt-6">
+        <button
+          className={`
+            w-full py-2.5 rounded-lg font-bold transition-all text-sm
+            ${
+              isSelected
+                ? 'bg-azul-control text-white shadow-md shadow-azul-control/20'
+                : 'bg-white/5 border border-white/10 text-gris-texto hover:bg-white/10'
+            }
+            ${isPartial ? 'opacity-50 cursor-not-allowed' : ''}
+          `}
+          onClick={(e) => {
+            e.stopPropagation();
+            handleSelect(e);
+          }}
+          disabled={isPartial}
+        >
+          {isPartial ? 'NO DISPONIBLE' : isSelected ? '✓ SELECCIONADA' : 'SELECCIONAR'}
+        </button>
+      </div>
     </div>
   );
 }

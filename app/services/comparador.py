@@ -759,20 +759,24 @@ def compare_factura(factura, db) -> Dict[str, Any]:
         else:
             ahorro_periodo = total_actual_reconstruido - estimated_total_periodo
         
-        # Proyecciones y porcentajes
-        ahorro_mensual_equiv = ahorro_periodo * (30.437 / periodo_dias)
-        ahorro_anual_equiv = ahorro_periodo * (365 / periodo_dias)
+        # ⭐ CÁLCULOS NORMALIZADOS (Regla P0: Normalización a 30 días)
+        # total_30 = total_periodo * (30 / dias)
+        # ahorro_anual = (total_30_actual - total_30_oferta) * 12
+        factor_normalizacion = 30.0 / float(periodo_dias)
         
-        # El porcentaje de ahorro se calcula sobre el total reconstruido
-        total_referencia = total_actual_reconstruido if baseline_method != "fallback_current_total" else current_total
-        saving_percent = (ahorro_periodo / total_referencia * 100) if total_referencia > 0 else 0.0
+        # Cifra reina: Ahorro anual normalizado (360 días)
+        ahorro_anual_norm = ahorro_periodo * factor_normalizacion * 12.0
+        ahorro_mensual_norm = ahorro_periodo * factor_normalizacion
         
+        # Flag de comparabilidad estructural
+        # Se considera comparable si existen coste_energia_actual y coste_potencia_actual
+        b_e = getattr(factura, 'coste_energia_actual', None)
+        b_p = getattr(factura, 'coste_potencia_actual', None)
+        is_structural_comparable = (b_e is not None and b_p is not None)
+
         # PRECIO MEDIO ESTRUCTURAL (E+P / kWh)
         total_kwh = sum(consumos)
         precio_medio_estructural = (subtotal_sin_impuestos_oferta / total_kwh) if total_kwh > 0 else 0.0
-        
-        # COSTE DIARIO TOTAL ESTRUCTURAL (E+P / días)
-        coste_diario_estructural = (subtotal_sin_impuestos_oferta / periodo_dias) if periodo_dias > 0 else 0.0
 
         # Mapeo de nombres
         tarifa_id = tarifa.get("id") or tarifa.get("tarifa_id")
@@ -787,26 +791,17 @@ def compare_factura(factura, db) -> Dict[str, Any]:
             "Tarifa 2.0TD",
         )
 
-        # 🔍 LOG TEMPORAL - AUDITORÍA DE IMPUESTOS
-        logger.info(
-            f"[PDF-BREAKDOWN] tarifa_id={tarifa_id} | "
-            f"E={coste_energia:.2f} P={coste_potencia:.2f} subtotal_si={subtotal_sin_impuestos_oferta:.2f} | "
-            f"IEE={iee_oferta:.2f} alq={alquiler_equipo:.2f} base_iva={base_iva_oferta:.2f} IVA={iva_oferta:.2f} | "
-            f"impuestos_mostrados={impuestos_oferta:.2f} total={estimated_total_periodo:.2f}"
-        )
-
         offer = {
             "tarifa_id": tarifa_id,
             "provider": provider,
             "plan_name": plan_name,
-            "estimated_total": round(estimated_total_periodo, 2),  # Frontend expects this
-            "saving_amount": round(ahorro_periodo, 2),  # Frontend expects this
-            "estimated_total_periodo": round(estimated_total_periodo, 2),
-            "ahorro_periodo": round(ahorro_periodo, 2),
-            "ahorro_mensual_equiv": round(ahorro_mensual_equiv, 2),
-            "ahorro_anual_equiv": round(ahorro_anual_equiv, 2),
+            "estimated_total": round(estimated_total_periodo, 2),
+            "saving_amount": round(ahorro_periodo, 2),  # ahorro en el periodo factura
+            "saving_amount_annual": round(ahorro_anual_norm, 2), # CIFRA REINA
+            "saving_amount_monthly": round(ahorro_mensual_norm, 2),
+            "is_structural_comparable": is_structural_comparable,
             "saving_percent": round(saving_percent, 2),
-            "commission": 0,  # TODO: Add commission logic if needed
+            "commission": 0,
             "tag": "balanced",
             "breakdown": {
                 "periodo_dias": int(periodo_dias),
@@ -816,9 +811,9 @@ def compare_factura(factura, db) -> Dict[str, Any]:
                 "alquiler_contador": round(alquiler_equipo, 2),
                 "modo_energia": modo_energia,
                 "modo_potencia": modo_potencia,
-                "modo_iee": modo_iee,
-                "modo_iva": modo_iva,
-                "modo_alquiler": modo_alquiler,
+                "is_structural_comparable": is_structural_comparable,
+                "precio_medio_estructural": round(precio_medio_estructural, 4) if is_structural_comparable else None,
+                "ahorro_estructural": round(ahorro_estructural, 2) if is_structural_comparable else None,
             },
         }
 
