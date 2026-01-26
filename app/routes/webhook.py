@@ -21,10 +21,12 @@ router = APIRouter(prefix="/webhook", tags=["webhook"])
 # HELPERS SEGUROS PARA PDF
 # ════════════════════════════════════════════════════════════
 
-def fmt_num(value, decimals=2, suffix="", fallback="—"):
+def fmt_num(value, decimals=2, suffix="", fallback="No disponible"):
     """
     Formatea números de forma segura para el PDF.
     Si value es None/NaN, devuelve fallback.
+    
+    IMPORTANTE: Nunca devolver "—", siempre mensaje explicativo.
     """
     try:
         if value is None:
@@ -797,9 +799,9 @@ def generar_presupuesto_pdf(factura_id: int, db: Session = Depends(get_db)):
     oferta_data = [
         ["Comercializadora:", selected_offer.get('provider', 'N/A')],
         ["Tarifa:", selected_offer.get('plan_name', 'N/A')],
-        ["Precio medio estructural:", fmt_num(precio_medio, decimals=4, suffix="€/kWh")],
+        ["Precio medio estructural:", fmt_num(precio_medio, decimals=4, suffix="€/kWh", fallback="No disponible*")],
         ["Total estimado:", fmt_num(total_estimado_calc, decimals=2, suffix=f"€ (periodo: {periodo_dias_calc} días)")],
-        ["Ahorro estructural:", fmt_num(ahorro_estructural, decimals=2, suffix="€")],
+        ["Ahorro estructural:", fmt_num(ahorro_estructural, decimals=2, suffix="€", fallback="No comparable*")],
         ["Ahorro anual estimado:", fmt_num(ahorro_anual_calc, decimals=2, suffix="€/año")],
     ]
     oferta_table = Table(oferta_data, colWidths=[8*cm, 8*cm])
@@ -829,6 +831,27 @@ def generar_presupuesto_pdf(factura_id: int, db: Session = Depends(get_db)):
         "*Precio medio estructural: (Energía + Potencia) / kWh total. Excluye impuestos y alquileres.",
         nota_tecnica_style
     ))
+
+    # ⭐ NOTA SI HAY CAMPOS NO COMPARABLES
+    if b_e is None or b_p is None or precio_medio is None:
+        story.append(Spacer(1, 0.3*cm))
+        nota_descuento_style = ParagraphStyle(
+            'NotaDescuento',
+            parent=styles['Normal'],
+            fontSize=8,
+            textColor=colors.HexColor('#DC2626'),
+            alignment=TA_LEFT,
+            leftIndent=0.5*cm,
+            backColor=colors.HexColor('#FEF2F2'),
+            borderPadding=6,
+        )
+        story.append(Paragraph(
+            "<b>*Nota:</b> Algunos valores no están disponibles porque la tarifa actual incluye descuentos "
+            "comerciales o condiciones especiales que impiden la comparación directa. "
+            "El ahorro total y el precio final sí son comparables y correctos.",
+            nota_descuento_style
+        ))
+
     story.append(Spacer(1, 0.5*cm))
     
     # ⭐ DESGLOSE TÉCNICO (3 TABLAS)
@@ -883,8 +906,8 @@ def generar_presupuesto_pdf(factura_id: int, db: Session = Depends(get_db)):
 
     tabla_a_data = [
         ["Concepto", "Valor (€)"],
-        ["Coste energía (E)", fmt_num(b_e, decimals=2, suffix="€")],
-        ["Coste potencia (P)", fmt_num(b_p, decimals=2, suffix="€")],
+        ["Coste energía (E)", fmt_num(b_e, decimals=2, suffix="€", fallback="No comparable*")],
+        ["Coste potencia (P)", fmt_num(b_p, decimals=2, suffix="€", fallback="No comparable*")],
         ["Impuesto eléctrico", fmt_num(factura_impuesto_elec, decimals=2, suffix="€")],
         ["Alquiler contador", fmt_num(factura_alquiler, decimals=2, suffix="€")],
         ["IVA", fmt_num(factura_iva, decimals=2, suffix="€")],
@@ -961,8 +984,8 @@ def generar_presupuesto_pdf(factura_id: int, db: Session = Depends(get_db)):
 
     tabla_c_data = [
         ["Concepto / Paso", "Fórmula", "Resultado"],
-        ["1) Ahorro estructural", "(E+P) actual - (E+P) nueva", fmt_num(ahorro_estructural_val, decimals=2, suffix="€")],
-        ["2) Precio medio est.", "(Energía + Potencia) / kWh", fmt_num(precio_medio, decimals=4, suffix="€/kWh")],
+        ["1) Ahorro estructural", "(E+P) actual - (E+P) nueva", fmt_num(ahorro_estructural_val, decimals=2, suffix="€", fallback="No comparable*")],
+        ["2) Precio medio est.", "(Energía + Potencia) / kWh", fmt_num(precio_medio, decimals=4, suffix="€/kWh", fallback="No disponible*")],
         ["3) Coste diario est.", "(Energía + Potencia) / días", fmt_num(coste_diario_est, decimals=2, suffix="€/día")],
         ["4) Ahorro anual total", "Factura actual - Estimación", fmt_num(ahorro_anual_calc, decimals=2, suffix="€/año")],
     ]
