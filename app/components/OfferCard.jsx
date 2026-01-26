@@ -1,5 +1,19 @@
 "use client";
 
+/**
+ * OfferCard - Tarjeta de oferta con estados UX honestos
+ * 
+ * Estados:
+ * 1. Mejor significativo (ahorro >= 60€/año)
+ * 2. Mejor mínimo (0 < ahorro < 60€/año)  
+ * 3. Similar (-10€ <= ahorro <= 0€)
+ * 4. Peor (ahorro < -10€)
+ */
+
+// Umbral de ahorro significativo (configurable)
+const UMBRAL_AHORRO_SIGNIFICATIVO = 60; // €/año
+const UMBRAL_SIMILAR = 10; // €/año de margen
+
 export default function OfferCard({ 
   offer, 
   isSelected = false, 
@@ -15,6 +29,62 @@ export default function OfferCard({
     onSelect();
   };
 
+  // Cálculos
+  const ahorroMensual = offer.saving_amount || 0;
+  const ahorroAnual = ahorroMensual * 12;
+  const precioMensual = offer.estimated_total || 0;
+
+  // Determinar estado UX
+  let estado = 'similar';
+  let colorTexto = 'text-[#64748B]'; // Gris neutral
+  let colorFondo = 'bg-[#0F172A]';
+  let mensaje = '';
+  let icono = '≈';
+  let showBadge = false;
+  let badgeText = '';
+  let badgeColor = '';
+
+  if (ahorroAnual >= UMBRAL_AHORRO_SIGNIFICATIVO) {
+    // Estado 1: Ahorro significativo
+    estado = 'mejor_significativo';
+    colorTexto = 'text-[#16A34A]';
+    colorFondo = 'bg-[#0F172A]';
+    mensaje = 'Más barata que tu tarifa actual';
+    icono = '⬇';
+    showBadge = isRecommended;
+    badgeText = 'RECOMENDADO';
+    badgeColor = 'bg-[#16A34A]';
+  } else if (ahorroAnual > 0 && ahorroAnual < UMBRAL_AHORRO_SIGNIFICATIVO) {
+    // Estado 2: Ahorro mínimo
+    estado = 'mejor_minimo';
+    colorTexto = 'text-[#3B82F6]';
+    colorFondo = 'bg-[#0F172A]';
+    mensaje = 'Ahorro mínimo detectado';
+    icono = '↓';
+    showBadge = false; //  No mostrar "RECOMENDADO" si ahorro es bajo
+  } else if (ahorroAnual >= -UMBRAL_SIMILAR && ahorroAnual <= 0) {
+    // Estado 3: Similar
+    estado = 'similar';
+    colorTexto = 'text-[#64748B]';
+    colorFondo = 'bg-[#0F172A]';
+    mensaje = `Similar a tu tarifa actual`;
+    icono = '≈';
+    showBadge = false;
+  } else {
+    // Estado 4: Peor
+    estado = 'peor';
+    colorTexto = 'text-[#94A3B8]';
+    colorFondo = 'bg-[#0F172A]';
+    mensaje = 'Más cara que tu tarifa';
+    icono = '⬆';
+    showBadge = false;
+  }
+
+  // Formatear diferencia para mostrar
+  const diferenciaMostrar = Math.abs(ahorroAnual) < UMBRAL_SIMILAR 
+    ? `${Math.abs(ahorroMensual).toFixed(2)}€/mes`
+    : `${Math.abs(ahorroAnual).toFixed(0)}€/año`;
+
   return (
     <div
       className={`
@@ -28,10 +98,10 @@ export default function OfferCard({
       `}
       onClick={handleSelect}
     >
-      {/* Badge recomendado */}
-      {isRecommended && (
-        <div className="absolute -top-2 -right-2 bg-verde-ahorro text-white text-xs font-bold px-3 py-1 rounded-full">
-          🏆 RECOMENDADO
+      {/* Badge condicional */}
+      {showBadge && (
+        <div className={`absolute -top-2 -right-2 ${badgeColor} text-white text-xs font-bold px-3 py-1 rounded-full shadow-lg`}>
+          🏆 {badgeText}
         </div>
       )}
 
@@ -42,7 +112,7 @@ export default function OfferCard({
         {isPartial && (
           <>
             <p className="text-xs text-ambar-alerta mt-2 font-semibold">
-              Estimacion parcial (sin potencia)
+              Estimación parcial (sin potencia)
             </p>
             <p className="text-[11px] text-gris-secundario mt-1">
               Falta precio de potencia en la tarifa. No se puede comparar total correctamente.
@@ -51,10 +121,10 @@ export default function OfferCard({
         )}
       </div>
 
-      {/* Precio nuevo */}
+      {/* Precio mensual (grande y claro) */}
       <div className="mb-4">
         <div className="text-3xl font-black text-azul-control">
-          {offer.estimated_total?.toFixed(2)}€
+          {precioMensual.toFixed(2)}€
         </div>
         <div className="text-xs text-gris-secundario">/mes</div>
       </div>
@@ -62,21 +132,19 @@ export default function OfferCard({
       {/* Divider */}
       <div className="border-t border-gris-secundario/20 my-4" />
 
-      {/* Ahorro mensual */}
+      {/* Mensaje principal según estado */}
       <div className="mb-2">
-        <div className={`font-semibold ${
-          (offer.saving_amount || 0) >= 0 ? 'text-[#16A34A]' : 'text-[#EF4444]'
-        }`}>
-          {(offer.saving_amount || 0) >= 0 ? '-' : '+'}{Math.abs(offer.saving_amount || 0).toFixed(2)}€ ({offer.saving_percent}%)
+        <div className={`font-semibold ${colorTexto} flex items-center gap-1`}>
+          <span>{icono}</span>
+          <span>{mensaje}</span>
         </div>
       </div>
 
-      {/* Ahorro anual */}
+      {/* Diferencia económica */}
       <div className="mb-4">
-        <div className={`text-xl font-bold ${
-          (offer.saving_amount || 0) >= 0 ? 'text-[#16A34A]' : 'text-[#EF4444]'
-        }`}>
-          {((offer.saving_amount || 0) * 12).toFixed(0)}€/año
+        <div className={`text-lg font-bold ${colorTexto}`}>
+          {estado === 'peor' ? '+' : estado === 'similar' ? '±' : ''}
+          {diferenciaMostrar}
         </div>
       </div>
 
