@@ -738,9 +738,15 @@ def compare_factura(factura, db) -> Dict[str, Any]:
         estimated_total_periodo = _reconstruir_factura(
             subtotal_sin_impuestos=subtotal_sin_impuestos_oferta,
             iva_pct=iva_pct,
-            alquiler_total=alquiler_importe,  # Usar mismo alquiler que factura actual
+            alquiler_total=alquiler_equipo,  # Usar mismo alquiler que factura actual
             impuesto_electrico_pct=0.0511269632
         )
+        
+        # ⭐ CALCULAR BREAKDOWN CORRECTO (mismo esquema que _reconstruir_factura)
+        iee_oferta = subtotal_sin_impuestos_oferta * 0.0511269632
+        base_iva_oferta = subtotal_sin_impuestos_oferta + iee_oferta + alquiler_equipo
+        iva_oferta = base_iva_oferta * iva_pct
+        impuestos_oferta = iee_oferta + iva_oferta  # Para breakdown del PDF
         
         # ⭐ MÉTODO PO: Comparar reconstrucción actual vs reconstrucción oferta
         # Calculamos el ahorro ESTRUCTURAL (Sin impuestos ni alquileres)
@@ -781,6 +787,14 @@ def compare_factura(factura, db) -> Dict[str, Any]:
             "Tarifa 2.0TD",
         )
 
+        # 🔍 LOG TEMPORAL - AUDITORÍA DE IMPUESTOS
+        logger.info(
+            f"[PDF-BREAKDOWN] tarifa_id={tarifa_id} | "
+            f"E={coste_energia:.2f} P={coste_potencia:.2f} subtotal_si={subtotal_sin_impuestos_oferta:.2f} | "
+            f"IEE={iee_oferta:.2f} alq={alquiler_equipo:.2f} base_iva={base_iva_oferta:.2f} IVA={iva_oferta:.2f} | "
+            f"impuestos_mostrados={impuestos_oferta:.2f} total={estimated_total_periodo:.2f}"
+        )
+
         offer = {
             "tarifa_id": tarifa_id,
             "provider": provider,
@@ -798,7 +812,7 @@ def compare_factura(factura, db) -> Dict[str, Any]:
                 "periodo_dias": int(periodo_dias),
                 "coste_energia": round(coste_energia, 2),
                 "coste_potencia": round(coste_potencia, 2),
-                "impuestos": round(impuesto_electrico + iva_importe, 2),
+                "impuestos": round(impuestos_oferta, 2),
                 "alquiler_contador": round(alquiler_equipo, 2),
                 "modo_energia": modo_energia,
                 "modo_potencia": modo_potencia,
