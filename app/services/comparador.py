@@ -774,6 +774,10 @@ def compare_factura(factura, db) -> Dict[str, Any]:
         b_p = getattr(factura, 'coste_potencia_actual', None)
         is_structural_comparable = (b_e is not None and b_p is not None)
 
+        # El porcentaje de ahorro se calcula sobre el total de referencia
+        total_referencia = total_actual_reconstruido if baseline_method != "fallback_current_total" else current_total
+        saving_percent = (ahorro_periodo / total_referencia * 100) if total_referencia > 0 else 0.0
+
         # PRECIO MEDIO ESTRUCTURAL (E+P / kWh)
         total_kwh = sum(consumos)
         precio_medio_estructural = (subtotal_sin_impuestos_oferta / total_kwh) if total_kwh > 0 else 0.0
