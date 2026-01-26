@@ -800,7 +800,9 @@ def compare_factura(factura, db) -> Dict[str, Any]:
             "provider": provider,
             "plan_name": plan_name,
             "estimated_total": round(estimated_total_periodo, 2),
+            "estimated_total_periodo": round(estimated_total_periodo, 2), # Requerido para sorting
             "saving_amount": round(ahorro_periodo, 2),  # ahorro en el periodo factura
+            "ahorro_periodo": round(ahorro_periodo, 2), # Requerido para tags
             "saving_amount_annual": round(ahorro_anual_norm, 2), # CIFRA REINA
             "saving_amount_monthly": round(ahorro_mensual_norm, 2),
             "is_structural_comparable": is_structural_comparable,
