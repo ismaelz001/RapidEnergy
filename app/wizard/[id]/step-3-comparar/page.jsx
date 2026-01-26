@@ -142,7 +142,6 @@ export default function Step3ComparerPage({ params }) {
   let heroMensaje = '';
   let heroColor = '';
   let heroBgColor = '';
-  let showCTAs = false;
 
   if (totalAnnualSaving >= UMBRAL_AHORRO_SIGNIFICATIVO) {
     // Estado 1: Ahorro significativo
@@ -151,7 +150,6 @@ export default function Step3ComparerPage({ params }) {
     heroMensaje = '';
     heroColor = 'text-[#16A34A]';
     heroBgColor = 'bg-gradient-to-r from-[#14532D]/30 to-[#16A34A]/5 border-[#16A34A]/30';
-    showCTAs = false;
   } else if (totalAnnualSaving > 0 && totalAnnualSaving < UMBRAL_AHORRO_SIGNIFICATIVO) {
     // Estado 2: Ahorro bajo
     heroEstado = 'ahorro_bajo';
@@ -159,7 +157,6 @@ export default function Step3ComparerPage({ params }) {
     heroMensaje = 'La diferencia de precio es muy pequeña. No recomendamos cambiar de tarifa en este momento.';
     heroColor = 'text-[#3B82F6]';
     heroBgColor = 'bg-gradient-to-r from-[#1E3A8A]/20 to-[#3B82F6]/5 border-[#3B82F6]/30';
-    showCTAs = false;
   } else {
     // Estado 3: Sin mejora
     heroEstado = 'sin_mejora';
@@ -167,7 +164,6 @@ export default function Step3ComparerPage({ params }) {
     heroMensaje = 'No hemos encontrado ninguna tarifa más barata para tu consumo actual. Tu coste ya está bien optimizado.';
     heroColor = 'text-[#64748B]';
     heroBgColor = 'bg-gradient-to-r from-[#334155]/20 to-[#64748B]/5 border-[#64748B]/30';
-    showCTAs = true;
   }
   
   const isPartialOffer = (offer) => (
@@ -336,24 +332,9 @@ export default function Step3ComparerPage({ params }) {
                 )}
 
                 {heroEstado === 'sin_mejora' && (
-                  <>
-                    <p className="text-gris-secundario mt-4 mb-6 max-w-2xl mx-auto">
-                      {heroMensaje}
-                    </p>
-                    {showCTAs && (
-                      <div className="flex flex-wrap justify-center gap-3 mt-6">
-                        <button className="px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-sm text-gris-texto transition">
-                          📅 Revisar en 3 meses
-                        </button>
-                        <button className="px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-sm text-gris-texto transition">
-                          🔄 Simular cambio de hábitos
-                        </button>
-                        <button className="px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-sm text-gris-texto transition">
-                          ⏰ Ver discriminación horaria
-                        </button>
-                      </div>
-                    )}
-                  </>
+                  <p className="text-gris-secundario mt-4 max-w-2xl mx-auto">
+                    {heroMensaje}
+                  </p>
                 )}
               </div>
 
