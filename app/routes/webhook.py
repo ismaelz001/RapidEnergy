@@ -832,26 +832,6 @@ def generar_presupuesto_pdf(factura_id: int, db: Session = Depends(get_db)):
         nota_tecnica_style
     ))
 
-    # ⭐ NOTA SI HAY CAMPOS NO COMPARABLES
-    if b_e is None or b_p is None or precio_medio is None:
-        story.append(Spacer(1, 0.3*cm))
-        nota_descuento_style = ParagraphStyle(
-            'NotaDescuento',
-            parent=styles['Normal'],
-            fontSize=8,
-            textColor=colors.HexColor('#DC2626'),
-            alignment=TA_LEFT,
-            leftIndent=0.5*cm,
-            backColor=colors.HexColor('#FEF2F2'),
-            borderPadding=6,
-        )
-        story.append(Paragraph(
-            "<b>*Nota:</b> Algunos valores no están disponibles porque la tarifa actual incluye descuentos "
-            "comerciales o condiciones especiales que impiden la comparación directa. "
-            "El ahorro total y el precio final sí son comparables y correctos.",
-            nota_descuento_style
-        ))
-
     story.append(Spacer(1, 0.5*cm))
     
     # ⭐ DESGLOSE TÉCNICO (3 TABLAS)
@@ -966,6 +946,26 @@ def generar_presupuesto_pdf(factura_id: int, db: Session = Depends(get_db)):
     ]))
     story.append(tabla_b)
     story.append(Spacer(1, 0.5*cm))
+    
+    # ⭐ NOTA SI HAY CAMPOS NO COMPARABLES (añadir DESPUÉS de tablas A y B)
+    if b_e is None or b_p is None or precio_medio is None:
+        nota_descuento_style = ParagraphStyle(
+            'NotaDescuento',
+            parent=styles['Normal'],
+            fontSize=8,
+            textColor=colors.HexColor('#DC2626'),
+            alignment=TA_LEFT,
+            leftIndent=0.5*cm,
+            backColor=colors.HexColor('#FEF2F2'),
+            borderPadding=6,
+        )
+        story.append(Paragraph(
+            "<b>*Nota:</b> Algunos valores no están disponibles porque la tarifa actual incluye descuentos "
+            "comerciales o condiciones especiales que impiden la comparación directa. "
+            "El ahorro total y el precio final sí son comparables y correctos.",
+            nota_descuento_style
+        ))
+        story.append(Spacer(1, 0.3*cm))
     
     # TABLA C — Cálculo de ahorro
     story.append(Paragraph("C) Cálculo de ahorro", subtitle_style))
