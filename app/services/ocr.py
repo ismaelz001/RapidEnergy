@@ -372,13 +372,27 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
         # P1 = Punta, P2 = Llano, P3 = Valle (Generic approach)
         
         # Note: Added 'punta', 'llano', 'valle' keywords
+        # PRIORIDAD: Buscar específicamente el término "consumo" antes del periodo
+        # EVITAR: Palabras como "lectura", "actual", "anterior" que indican acumulados
         consume_patterns = {
-            "p1": [r"consumo\s+en\s+P1\s*[:\-]?\s*([\d.,]+)", r"punta\s*[:\-]?\s*([\d.,]+)\s*kwh"],
-            "p2": [r"consumo\s+en\s+P2\s*[:\-]?\s*([\d.,]+)", r"llano\s*[:\-]?\s*([\d.,]+)\s*kwh"],
-            "p3": [r"consumo\s+en\s+P3\s*[:\-]?\s*([\d.,]+)", r"valle\s*[:\-]?\s*([\d.,]+)\s*kwh"],
-            "p4": [r"consumo\s+en\s+P4\s*[:\-]?\s*([\d.,]+)", r"supervalle\s*[:\-]?\s*([\d.,]+)\s*kwh"], 
-            "p5": [r"consumo\s+en\s+P5\s*[:\-]?\s*([\d.,]+)"],
-            "p6": [r"consumo\s+en\s+P6\s*[:\-]?\s*([\d.,]+)"],
+            "p1": [
+                r"consumo\s+(?:periodo\s+)?(?:en\s+)?P1\s*[:\-]?\s*([\d.,]+)(?!\s*kwh\s*[(\[]?lectura)", 
+                r"(?<!lectura\s)punta\s*[:\-]?\s*([\d.,]+)\s*kwh(?!\s*actual)",
+                r"consumo\s+punta\s*[:\-]?\s*([\d.,]+)"
+            ],
+            "p2": [
+                r"consumo\s+(?:periodo\s+)?(?:en\s+)?P2\s*[:\-]?\s*([\d.,]+)", 
+                r"(?<!lectura\s)llano\s*[:\-]?\s*([\d.,]+)\s*kwh(?!\s*actual)",
+                r"consumo\s+llano\s*[:\-]?\s*([\d.,]+)"
+            ],
+            "p3": [
+                r"consumo\s+(?:periodo\s+)?(?:en\s+)?P3\s*[:\-]?\s*([\d.,]+)", 
+                r"(?<!lectura\s)valle\s*[:\-]?\s*([\d.,]+)\s*kwh(?!\s*actual)",
+                r"consumo\s+valle\s*[:\-]?\s*([\d.,]+)"
+            ],
+            "p4": [r"consumo\s+(?:periodo\s+)?(?:en\s+)?P4\s*[:\-]?\s*([\d.,]+)"], 
+            "p5": [r"consumo\s+(?:periodo\s+)?(?:en\s+)?P5\s*[:\-]?\s*([\d.,]+)"],
+            "p6": [r"consumo\s+(?:periodo\s+)?(?:en\s+)?P6\s*[:\-]?\s*([\d.,]+)"],
         }
         
         for p_key, patterns in consume_patterns.items():
@@ -757,34 +771,30 @@ def extract_data_with_gemini(file_bytes: bytes, is_pdf: bool = True) -> dict:
 
         # Preparar el archivo para Gemini
         mime_type = "application/pdf" if is_pdf else "image/jpeg"
-        # Prompt optimizado para facturas eléctricas españolas
+        # Prompt optimizado para facturas eléctricas españolas (Blindaje de Consumos)
         prompt = """
-        Extrae los siguientes campos de esta factura eléctrica española y devuélvelos en formato JSON estricto.
-        Sé extremadamente preciso con el CUPS, el nombre del titular y el consumo por periodos.
-        Los campos son:
-        - cups: El código CUPS (ES + 18-20 caracteres).
-        - titular: El nombre completo del cliente/titular.
-        - dni: DNI o NIF del titular.
-        - direccion: Dirección completa del suministro.
-        - fecha_inicio_consumo: Fecha de inicio del periodo de facturación (DD/MM/YYYY).
-        - fecha_fin_consumo: Fecha de fin del periodo de facturación (DD/MM/YYYY).
-        - dias_facturados: Número de días del periodo.
-        - importe_factura: Importe total de la factura con IVA (número).
-        - atr: Peaje de acceso o tarifa (ej: 2.0TD).
-        - potencia_p1_kw: Potencia contratada en P1 (punta).
-        - potencia_p2_kw: Potencia contratada en P2 (valle).
-        - consumo_p1_kwh: Consumo real en P1 (punta) en kWh.
-        - consumo_p2_kwh: Consumo real en P2 (llano) en kWh.
-        - consumo_p3_kwh: Consumo real en P3 (valle) en kWh.
-        - bono_social: True/False si tiene bono social.
-        - alquiler_contador: Importe del alquiler del contador.
-        - impuesto_electrico: Importe del impuesto eléctrico.
-        - iva: Importe del IVA.
-
-        IMPORTANTE: Diferencia claramente entre 'Lectura del contador' (que suele ser un número grande acumulado) 
-        y 'Consumo del periodo' (que es lo facturado en este mes). Queremos el CONSUMO DEL PERIODO.
-        Si un campo no se encuentra, pon null.
-        Solo devuelve el JSON, nada de texto adicional.
+        Extrae los siguientes campos de esta factura eléctrica española en formato JSON estricto.
+        
+        REGLA CRÍTICA DE CONSUMO:
+        Diferencia claramente entre 'Lectura del contador' (que suele ser un número grande acumulado > 1000) 
+        y 'Consumo del periodo' (que es lo facturado en este mes, suele ser < 500 para hogares). 
+        Queremos el CONSUMO REAL DEL PERIODO.
+        REGLA: La suma de (consumo_p1 + consumo_p2 + consumo_p3) DEBE aproximarse al consumo total.
+        
+        Campos:
+        - cups: ES + 18-20 caracteres.
+        - titular: Nombre completo.
+        - dni: DNI/NIF.
+        - direccion: Dirección suministro.
+        - fecha_inicio_consumo, fecha_fin_consumo (DD/MM/YYYY)
+        - dias_facturados: (int)
+        - importe_factura: Total con IVA (número)
+        - atr: Peaje (ej: 2.0TD)
+        - potencia_p1_kw, potencia_p2_kw
+        - consumo_p1_kwh, consumo_p2_kwh, consumo_p3_kwh (¡SOLO CONSUMO REAL, NO LECTURAS!)
+        - bono_social, alquiler_contador, impuesto_electrico, iva
+        
+        Si un campo no está, pon null. Solo devuelve el JSON.
         """
 
         response = model.generate_content([

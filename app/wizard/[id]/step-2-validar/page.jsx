@@ -231,6 +231,17 @@ export default function Step2ValidarPage({ params }) {
       ? subtotalSinImpuestos + ieeEurCalc + (alquilerContador || 0)
       : null;
   const ivaEurCalc = baseIvaCalc !== null && ivaPct !== null ? baseIvaCalc * ivaPct : null;
+  
+  // ⭐ VALIDACIÓN DE CONSISTENCIA DE CONSUMOS (Regla para evitar lecturas acumuladas)
+  const sumaConsumos = (parseNumberInput(form.consumo_p1) || 0) + 
+                       (parseNumberInput(form.consumo_p2) || 0) + 
+                       (parseNumberInput(form.consumo_p3) || 0) +
+                       (parseNumberInput(form.consumo_p4) || 0) +
+                       (parseNumberInput(form.consumo_p5) || 0) +
+                       (parseNumberInput(form.consumo_p6) || 0);
+  
+  const consumoTotal = parseNumberInput(form.consumo_total) || 0;
+  const isConsumoInconsistent = consumoTotal > 0 && Math.abs(sumaConsumos - consumoTotal) > (consumoTotal * 0.1); // Margen 10%
 
 
   // Auto-save
@@ -635,6 +646,18 @@ export default function Step2ValidarPage({ params }) {
                   </div>
                 ))}
               </div>
+              {isConsumoInconsistent && (
+                <div className="mt-4 p-3 bg-rojo-error/10 border border-rojo-error/20 rounded-lg flex items-center gap-3">
+                  <span className="text-xl">⚠️</span>
+                  <div>
+                    <p className="text-xs font-bold text-rojo-error uppercase">Aviso de Consistencia</p>
+                    <p className="text-[11px] text-white">
+                      La suma de periodos ({sumaConsumos.toFixed(2)} kWh) no coincide con el total ({consumoTotal.toFixed(2)} kWh). 
+                      Verifica si el OCR ha leído "Lecturas" en lugar de "Consumos".
+                    </p>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Desglose Baseline (E+P) */}
