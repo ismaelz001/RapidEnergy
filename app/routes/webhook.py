@@ -514,6 +514,91 @@ def update_factura(factura_id: int, factura_update: FacturaUpdate, db: Session =
     }
 
 
+@router.put("/facturas/{factura_id}/validar")
+def validar_comercialmente(
+    factura_id: int, 
+    request_body: dict,
+    db: Session = Depends(get_db)
+):
+    """
+    STEP 2: Validación Comercial
+    Aplica ajustes comerciales (Bono Social, descuentos, servicios) antes de comparar.
+    
+    Body:
+    {
+        "ajustes_comerciales": {
+            "bono_social": {"activo": true, "descuento_estimado": 12.50, ...},
+            "descuento_comercial": {"importe": 4.50, "descripcion": "...", ...},
+            ...
+        },
+        "modo": "asesor" | "cliente"
+    }
+    
+    Returns:
+    {
+        "factura_id": int,
+        "base_factura": {...},
+        "ajustes_comerciales": {...},
+        "totales_calculados": {
+            "total_original": float,
+            "total_descuentos_excluidos": float,
+            "total_ajustado_comparable": float
+        },
+        "warnings": [str],
+        "ready_to_compare": bool
+    }
+    """
+    from app.schemas.validacion import ValidacionComercialRequest, AjustesComerciales
+    from app.services.validacion_comercial import validar_factura_comercialmente
+    
+    # Obtener factura
+    factura = db.query(Factura).filter(Factura.id == factura_id).first()
+    if not factura:
+        raise HTTPException(status_code=404, detail="Factura no encontrada")
+    
+    # Parsear request
+    try:
+        # Intentar construir desde el request body
+        if "ajustes_comerciales" in request_body:
+            ajustes = AjustesComerciales(**request_body["ajustes_comerciales"])
+        else:
+            # Si viene vacío, usar defaults
+            ajustes = AjustesComerciales()
+        
+        modo = request_body.get("modo", "asesor")
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Error parseando ajustes: {str(e)}")
+    
+    # Validar comercialmente
+    response, warnings = validar_factura_comercialmente(factura, ajustes, modo)
+    
+    # Persistir en la factura
+    try:
+        factura.ajustes_comerciales_json = response.ajustes_comerciales.model_dump_json()
+        factura.total_ajustado = response.totales_calculados.total_ajustado_comparable
+        factura.validado_step2 = True
+        
+        # Si está ready, actualizar estado
+        if response.ready_to_compare:
+            factura.estado_factura = "lista_para_comparar"
+        
+        db.commit()
+        db.refresh(factura)
+        
+        logger.info(
+            f"[STEP2] Factura {factura_id} validada: "
+            f"total_original={response.totales_calculados.total_original:.2f} → "
+            f"total_ajustado={response.totales_calculados.total_ajustado_comparable:.2f}"
+        )
+        
+    except Exception as e:
+        db.rollback()
+        logger.error(f"[STEP2] Error persistiendo validación: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error guardando validación: {str(e)}")
+    
+    return response.model_dump()
+
+
 @router.post("/comparar/facturas/{factura_id}")
 def comparar_factura(factura_id: int, db: Session = Depends(get_db)):
     factura = db.query(Factura).filter(Factura.id == factura_id).first()

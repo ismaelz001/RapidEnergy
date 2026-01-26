@@ -462,8 +462,19 @@ def compare_factura(factura, db) -> Dict[str, Any]:
     """
     P1 PRODUCCIÓN: Compara ofertas usando el periodo REAL de la factura.
     NO usa fallback a 30 días. Lanza DomainError si falta periodo.
+    
+    ⭐ STEP 2 INTEGRATION: Si la factura pasó por validación comercial,
+    usa total_ajustado en vez de total_factura como línea base.
     """
-    current_total = _to_float(getattr(factura, "total_factura", None))
+    # Prioridad 1: Total ajustado (si pasó por Step 2)
+    # Prioridad 2: Total factura (si no hay Step 2)
+    if getattr(factura, "validado_step2", False) and getattr(factura, "total_ajustado", None):
+        current_total = _to_float(factura.total_ajustado)
+        logger.info(f"[STEP2] Usando total_ajustado={current_total:.2f} como línea base (factura_id={factura.id})")
+    else:
+        current_total = _to_float(getattr(factura, "total_factura", None))
+        logger.info(f"[STEP2] Usando total_factura={current_total:.2f} como línea base (factura_id={factura.id})")
+    
     if current_total is None or current_total <= 0:
         raise DomainError("TOTAL_INVALID", "La factura no tiene un total válido para comparar")
 

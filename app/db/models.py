@@ -113,6 +113,11 @@ class Factura(Base):
     # Estado
     estado_factura = Column(String, default="pendiente_datos")
     
+    # ⭐ STEP 2: Validación Comercial
+    ajustes_comerciales_json = Column(Text, nullable=True)  # JSON de AjustesComerciales
+    total_ajustado = Column(Float, nullable=True)  # Total calculado post-ajustes (cifra reina)
+    validado_step2 = Column(Boolean, default=False)  # Si pasó por Step 2
+    
     # ⭐ BLOQUE 1 MVP CRM: Selección de oferta (FK en vez de JSON)
     selected_offer_json = Column(Text, nullable=True)  # Deprecated, usar selected_oferta_id
     selected_oferta_id = Column(BigInteger, ForeignKey("ofertas_calculadas.id"), nullable=True)
