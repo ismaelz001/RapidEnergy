@@ -373,26 +373,26 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
         
         # Note: Added 'punta', 'llano', 'valle' keywords
         # PRIORIDAD: Buscar específicamente el término "consumo" antes del periodo
-        # EVITAR: Palabras como "lectura", "actual", "anterior" que indican acumulados
+        # EVITAR: Palabras como "lectura", "actual", "anterior", "acumulada"
         consume_patterns = {
             "p1": [
-                r"consumo\s+(?:periodo\s+)?(?:en\s+)?P1\s*[:\-]?\s*([\d.,]+)(?!\s*kwh\s*[(\[]?lectura)", 
-                r"(?<!lectura\s)punta\s*[:\-]?\s*([\d.,]+)\s*kwh(?!\s*actual)",
-                r"consumo\s+punta\s*[:\-]?\s*([\d.,]+)"
+                r"(?i)consumo.*?P1.*?[:\-]?\s*([\d.,]+)", 
+                r"(?i)(?<!lectura\s)punta.*?[:\-]?\s*([\d.,]+)\s*kwh(?!\s*actual)(?!\s*acumulada)",
+                r"(?i)consumo\s+punta.*?[:\-]?\s*([\d.,]+)"
             ],
             "p2": [
-                r"consumo\s+(?:periodo\s+)?(?:en\s+)?P2\s*[:\-]?\s*([\d.,]+)", 
-                r"(?<!lectura\s)llano\s*[:\-]?\s*([\d.,]+)\s*kwh(?!\s*actual)",
-                r"consumo\s+llano\s*[:\-]?\s*([\d.,]+)"
+                r"(?i)consumo.*?P2.*?[:\-]?\s*([\d.,]+)", 
+                r"(?i)(?<!lectura\s)llano.*?[:\-]?\s*([\d.,]+)\s*kwh(?!\s*actual)(?!\s*acumulada)",
+                r"(?i)consumo\s+llano.*?[:\-]?\s*([\d.,]+)"
             ],
             "p3": [
-                r"consumo\s+(?:periodo\s+)?(?:en\s+)?P3\s*[:\-]?\s*([\d.,]+)", 
-                r"(?<!lectura\s)valle\s*[:\-]?\s*([\d.,]+)\s*kwh(?!\s*actual)",
-                r"consumo\s+valle\s*[:\-]?\s*([\d.,]+)"
+                r"(?i)consumo.*?P3.*?[:\-]?\s*([\d.,]+)", 
+                r"(?i)(?<!lectura\s)valle.*?[:\-]?\s*([\d.,]+)\s*kwh(?!\s*actual)(?!\s*acumulada)",
+                r"(?i)consumo\s+valle.*?[:\-]?\s*([\d.,]+)"
             ],
-            "p4": [r"consumo\s+(?:periodo\s+)?(?:en\s+)?P4\s*[:\-]?\s*([\d.,]+)"], 
-            "p5": [r"consumo\s+(?:periodo\s+)?(?:en\s+)?P5\s*[:\-]?\s*([\d.,]+)"],
-            "p6": [r"consumo\s+(?:periodo\s+)?(?:en\s+)?P6\s*[:\-]?\s*([\d.,]+)"],
+            "p4": [r"(?i)consumo.*?P4.*?[:\-]?\s*([\d.,]+)"], 
+            "p5": [r"(?i)consumo.*?P5.*?[:\-]?\s*([\d.,]+)"],
+            "p6": [r"(?i)consumo.*?P6.*?[:\-]?\s*([\d.,]+)"],
         }
         
         for p_key, patterns in consume_patterns.items():
@@ -767,7 +767,7 @@ def extract_data_with_gemini(file_bytes: bytes, is_pdf: bool = True) -> dict:
 
     try:
         genai.configure(api_key=api_key)
-        model = genai.GenerativeModel("gemini-1.5-flash")  # Restored stable model
+        model = genai.GenerativeModel("gemini-1.5-flash")  # Re-verify name
 
         # Preparar el archivo para Gemini
         mime_type = "application/pdf" if is_pdf else "image/jpeg"
