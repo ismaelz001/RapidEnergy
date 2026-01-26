@@ -73,10 +73,28 @@ def debug_gemini():
     try:
         genai.configure(api_key=key)
         model = genai.GenerativeModel("gemini-1.5-flash")
+        
+        # Intentar listar para ver qué hay si falla
+        available_models = []
+        for m in genai.list_models():
+            if 'generateContent' in m.supported_generation_methods:
+                available_models.append(m.name)
+        
         response = model.generate_content("Say 'OK'")
-        return {"status": "SUCCESS", "response": response.text}
+        return {
+            "status": "SUCCESS", 
+            "response": response.text,
+            "available_models": available_models
+        }
     except Exception as e:
-        return {"status": "ERROR", "detail": str(e)}
+        # Intentar listar incluso si falla la generación
+        available = []
+        try:
+            for m in genai.list_models():
+                available.append(m.name)
+        except:
+             pass
+        return {"status": "ERROR", "detail": str(e), "available": available}
 
 # Incluimos las rutas
 app.include_router(webhook_router)
