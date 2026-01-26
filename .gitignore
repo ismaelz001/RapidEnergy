@@ -36,9 +36,8 @@ _secrets_stash/
 *.sqlite3
 local.db
 
-# Archives & Temporary Data
-__archive__/
 facturas/
+
 temp_facturas/
 facturas.zip
 tmp/
@@ -51,3 +50,8 @@ test_facturas_local.py
 verify_local_logic.py
 debug_*.py
 mnonexistent_file_test.py
+
+# Cleanup maintenance
+._*
+*.db-journal
+
