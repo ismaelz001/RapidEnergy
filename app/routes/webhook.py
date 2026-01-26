@@ -104,6 +104,7 @@ class FacturaUpdate(BaseModel):
     estado_factura: Optional[str] = None
     cups: Optional[str] = None
     numero_factura: Optional[str] = None
+    periodo_dias: Optional[int] = None
 
 
 class OfferSelection(BaseModel):
@@ -740,13 +741,10 @@ def guardar_seleccion_oferta(factura_id: int, offer: OfferSelection, db: Session
 @router.get("/facturas/{factura_id}/presupuesto.pdf")
 def generar_presupuesto_pdf(factura_id: int, db: Session = Depends(get_db)):
     """
-    ENTREGABLE 2: Generar PDF real con la oferta seleccionada.
-    - Requiere que exista oferta seleccionada
-    - Genera PDF con datos del cliente, CUPS, factura actual, oferta seleccionada
-    - NO incluye comisión
-    - Devuelve PDF para descarga
+    PDF con estructura EXACTA: Tabla 1, Tabla 2, Tabla 3 + modelo Patricia Vázquez
     """
     from fastapi.responses import StreamingResponse
+    from app.services.pdf_generator import generar_pdf_presupuesto
     from io import BytesIO
     from reportlab.lib.pagesizes import A4
     from reportlab.lib import colors

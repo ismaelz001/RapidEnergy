@@ -1,6 +1,6 @@
 """
 Generador de PDF para presupuestos energéticos.
-Combina páginas del modelo con contenido generado dinámicamente.
+ESTRUCTURA EXACTA según especificación del usuario.
 """
 
 from io import BytesIO
@@ -32,12 +32,12 @@ def fmt_num(value, decimals=2, suffix=""):
 def generar_pdf_presupuesto(factura, selected_offer, db):
     """
     Genera PDF combinando:
-    - Página 1: Portada del modelo
-    - Páginas 2-4: Contenido generado (Tabla1: Factura, Tabla2: Estudio, Tabla3: Ahorro)
-    - Páginas 5-6: Páginas finales del modelo
+    - Página 1: Portada del modelo Patricia Vázquez
+    - Páginas 2-N: Contenido generado (TABLA 1, TABLA 2, TABLA 3)
+    - Páginas finales: Contraportada del modelo
     """
     
-    # 1. Cargar modelo usando glob para evitar problemas con caracteres especiales
+    # 1. Cargar modelo Patricia Vázquez
     modelo_pattern = os.path.join(os.path.dirname(__file__), '..', '..', 'modelosPresuPDF', '*Patricia*.pdf')
     modelo_files = glob.glob(modelo_pattern)
     
@@ -47,7 +47,7 @@ def generar_pdf_presupuesto(factura, selected_offer, db):
     modelo_path = modelo_files[0]
     modelo_reader = PdfReader(modelo_path)
     
-    # 2. Crear PDF temporal con contenido generado
+    # 2. Crear PDF temporal con contenido
     buffer_content = BytesIO()
     doc = SimpleDocTemplate(
         buffer_content, 
@@ -60,7 +60,7 @@ def generar_pdf_presupuesto(factura, selected_offer, db):
     
     styles = getSampleStyleSheet()
     
-    # Estilos personalizados
+    # Estilos
     title_style = ParagraphStyle(
         'CustomTitle',
         parent=styles['Heading1'],
@@ -89,19 +89,16 @@ def generar_pdf_presupuesto(factura, selected_offer, db):
     story.append(Paragraph("ESTUDIO COMPARATIVO DE TARIFAS ELÉCTRICAS", title_style))
     story.append(Spacer(1, 0.5*cm))
     
-    # Fecha
     fecha_actual = datetime.now().strftime("%d/%m/%Y")
     story.append(Paragraph(f"<b>Fecha del estudio:</b> {fecha_actual}", styles['Normal']))
     story.append(Spacer(1, 0.3*cm))
     
-    # Cliente
     cliente_nombre = factura.cliente.nombre if factura.cliente else "Cliente"
     story.append(Paragraph(f"<b>Cliente:</b> {cliente_nombre}", styles['Normal']))
     story.append(Spacer(1, 0.5*cm))
     
     story.append(Paragraph("TABLA 1: Datos de la Factura Analizada", heading_style))
     
-    # Obtener datos de la factura
     atr = getattr(factura, 'atr', '2.0TD') or '2.0TD'
     periodo_dias = getattr(factura, 'periodo_dias', 30) or 30
     
@@ -138,73 +135,6 @@ def generar_pdf_presupuesto(factura, selected_offer, db):
         ('GRID', (0, 0), (-1, -1), 1, colors.grey),
     ]))
     story.append(tabla1)
-    
-    # ============================================================
-    # METODOLOGÍA DE COMPARACIÓN (si hay ajustes Step 2)
-    # ============================================================
-    if getattr(factura, 'validado_step2', False) and getattr(factura, 'ajustes_comerciales_json', None):
-        import json
-        from app.schemas.validacion import AjustesComerciales
-        from app.services.validacion_comercial import generar_notas_pdf
-        
-        try:
-            ajustes_dict = json.loads(factura.ajustes_comerciales_json)
-            ajustes = AjustesComerciales(**ajustes_dict)
-            notas = generar_notas_pdf(ajustes)
-            
-            story.append(Spacer(1, 0.5*cm))
-            story.append(Paragraph("METODOLOGÍA DE COMPARACIÓN", heading_style))
-            story.append(Spacer(1, 0.3*cm))
-            
-            # Texto explicativo
-            metod_style = ParagraphStyle(
-                'Metodologia',
-                parent=styles['Normal'],
-                fontSize=9,
-                spaceAfter=6
-            )
-            
-            intro_text = (
-                "Este estudio compara el coste estructural (energía + potencia) "
-                "de tu factura actual con las mejores ofertas del mercado libre."
-            )
-            story.append(Paragraph(intro_text, metod_style))
-            story.append(Spacer(1, 0.3*cm))
-            
-            # Tabla de totales
-            total_original = float(factura.total_factura or 0.0)
-            total_ajustado = float(factura.total_ajustado or total_original)
-            exclusiones = total_ajustado - total_original
-            
-            totales_metod = [
-                ["Total de tu factura original:", f"{total_original:.2f} €"],
-                ["Ajustes aplicados:", f"{exclusiones:+.2f} €"],
-                ["Total usado para comparar:", f"{total_ajustado:.2f} €"],
-            ]
-            
-            tabla_metod = Table(totales_metod, colWidths=[10*cm, 6*cm])
-            tabla_metod.setStyle(TableStyle([
-                ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#DCFCE7')),
-                ('ALIGN', (0, 0), (0, -1), 'LEFT'),
-                ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
-                ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
-                ('FONTSIZE', (0, 0), (-1, -1), 9),
-                ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
-                ('TOPPADDING', (0, 0), (-1, -1), 6),
-                ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-            ]))
-            story.append(tabla_metod)
-            story.append(Spacer(1, 0.3*cm))
-            
-            # Notas de ajustes
-            if notas["metodologia"]:
-                for line in notas["metodologia"].split('\n'):
-                    story.append(Paragraph(line, metod_style))
-            
-        except Exception as e:
-            # Si falla el parsing, continuar sin metodología
-            pass
-    
     story.append(PageBreak())
     
     # ============================================================
@@ -213,18 +143,32 @@ def generar_pdf_presupuesto(factura, selected_offer, db):
     story.append(Paragraph("TABLA 2: Estudio Comparativo - Oferta Recomendada", heading_style))
     story.append(Spacer(1, 0.3*cm))
     
-    # Info de la tarifa
     provider = selected_offer.get('provider', 'N/A')
     plan_name = selected_offer.get('plan_name', 'N/A')
     story.append(Paragraph(f"<b>Tarifa propuesta:</b> {provider} - {plan_name}", styles['Normal']))
-    story.append(Spacer(1, 0.3*cm))
+    story.append(Paragraph(f"<b>Periodo:</b> {periodo_dias} días", styles['Normal']))
+    story.append(Spacer(1, 0.5*cm))
     
     # Leer breakdown
     breakdown = selected_offer.get('breakdown', {})
     coste_energia = float(breakdown.get('coste_energia', 0.0))
     coste_potencia = float(breakdown.get('coste_potencia', 0.0))
     
-    # Calcular según la estructura EXACTA definida
+    # Obtener potencias y consumos para desglose
+    pot_p1 = float(getattr(factura, 'potencia_p1_kw', 0) or 0)
+    pot_p2 = float(getattr(factura, 'potencia_p2_kw', 0) or 0)
+    cons_p1 = float(getattr(factura, 'consumo_p1_kwh', 0) or 0)
+    cons_p2 = float(getattr(factura, 'consumo_p2_kwh', 0) or 0)
+    cons_p3 = float(getattr(factura, 'consumo_p3_kwh', 0) or 0)
+    
+    # Calcular precios unitarios estimados
+    precio_pot_p1 = (coste_potencia / 2 / pot_p1 / periodo_dias) if pot_p1 > 0 else 0
+    precio_pot_p2 = (coste_potencia / 2 / pot_p2 / periodo_dias) if pot_p2 > 0 else 0
+    
+    total_kwh = cons_p1 + cons_p2 + cons_p3
+    precio_energia = (coste_energia / total_kwh) if total_kwh > 0 else 0
+    
+    # Calcular estructura EXACTA
     subtotal_sin_impuestos = coste_energia + coste_potencia
     iee = subtotal_sin_impuestos * 0.0511269632
     alquiler = float(breakdown.get('alquiler_contador', 0.0))
@@ -232,38 +176,38 @@ def generar_pdf_presupuesto(factura, selected_offer, db):
     
     iva_pct = float(getattr(factura, 'iva_porcentaje', 21)) / 100.0
     iva_importe = base_iva * iva_pct
-    total_factura = base_iva + iva_importe
+    total_factura_nueva = base_iva + iva_importe
     
     tabla2_data = [
         ["Concepto", "Cálculo", "Importe"],
         # POTENCIA
         ["POTENCIA", "", ""],
-        [f"  └ P1 (Punta)", "kW × €/kW/día × días", fmt_num(coste_potencia / 2, suffix="€")],
-        [f"  └ P2 (Valle)", "kW × €/kW/día × días", fmt_num(coste_potencia / 2, suffix="€")],
+        ["  └ P1 (Punta)", f"{pot_p1} kW × {precio_pot_p1:.6f} €/kW/día × {periodo_dias} días", fmt_num(coste_potencia / 2, suffix="€")],
+        ["  └ P2 (Valle)", f"{pot_p2} kW × {precio_pot_p2:.6f} €/kW/día × {periodo_dias} días", fmt_num(coste_potencia / 2, suffix="€")],
         ["Subtotal Potencia", "", fmt_num(coste_potencia, suffix="€")],
         # ENERGÍA
         ["ENERGÍA", "", ""],
-        [f"  └ P1 (Punta)", "kWh × €/kWh", fmt_num(coste_energia / 3, suffix="€")],
-        [f"  └ P2 (Llano)", "kWh × €/kWh", fmt_num(coste_energia / 3, suffix="€")],
-        [f"  └ P3 (Valle)", "kWh × €/kWh", fmt_num(coste_energia / 3, suffix="€")],
+        ["  └ P1 (Punta)", f"{cons_p1} kWh × {precio_energia:.6f} €/kWh", fmt_num(cons_p1 * precio_energia, suffix="€")],
+        ["  └ P2 (Llano)", f"{cons_p2} kWh × {precio_energia:.6f} €/kWh", fmt_num(cons_p2 * precio_energia, suffix="€")],
+        ["  └ P3 (Valle)", f"{cons_p3} kWh × {precio_energia:.6f} €/kWh", fmt_num(cons_p3 * precio_energia, suffix="€")],
         ["Subtotal Energía", "", fmt_num(coste_energia, suffix="€")],
         # TOTALES
-        ["SUBTOTAL SIN IMPUESTOS", "(Potencia + Energía)", fmt_num(subtotal_sin_impuestos, suffix="€")],
+        ["SUBTOTAL SIN IMPUESTOS", "Potencia + Energía", fmt_num(subtotal_sin_impuestos, suffix="€")],
         ["IEE (5.11269632%)", "Subtotal × 0.0511269632", fmt_num(iee, suffix="€")],
         ["Alquiler contador", "", fmt_num(alquiler, suffix="€")],
         ["BASE IVA", "Subtotal + IEE + Alquiler", fmt_num(base_iva, suffix="€")],
         ["IVA (21%)", f"Base IVA × {int(iva_pct*100)}%", fmt_num(iva_importe, suffix="€")],
-        ["TOTAL FACTURA", "Base IVA + IVA", fmt_num(total_factura, suffix="€")],
+        ["TOTAL FACTURA", "Base IVA + IVA", fmt_num(total_factura_nueva, suffix="€")],
     ]
     
     tabla2 = Table(tabla2_data, colWidths=[6*cm, 5*cm, 5*cm])
     tabla2.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#00095C')),
         ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
-        ('BACKGROUND', (0, 1), (-1, 1), colors.HexColor('#E2E8F0')),
-        ('BACKGROUND', (0, 5), (-1, 5), colors.HexColor('#E2E8F0')),
-        ('BACKGROUND', (0, 10), (-1, 10), colors.HexColor('#FEF2F2')),
-        ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#DCFCE7')),
+        ('BACKGROUND', (0, 1), (-1, 1), colors.HexColor('#E2E8F0')),  # POTENCIA
+        ('BACKGROUND', (0, 5), (-1, 5), colors.HexColor('#E2E8F0')),  # ENERGÍA
+        ('BACKGROUND', (0, 10), (-1, 10), colors.HexColor('#FEF2F2')),  # SUBTOTAL
+        ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#DCFCE7')),  # TOTAL
         ('ALIGN', (0, 0), (1, -1), 'LEFT'),
         ('ALIGN', (2, 0), (2, -1), 'RIGHT'),
         ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
@@ -279,32 +223,28 @@ def generar_pdf_presupuesto(factura, selected_offer, db):
     story.append(PageBreak())
     
     # ============================================================
-    # TABLA 3: AHORRO DESTACADO
+    # TABLA 3: AHORRO DESTACADO (VERDE GRANDE)
     # ============================================================
     story.append(Spacer(1, 2*cm))
     
     # Calcular ahorros
     total_factura_actual = float(factura.total_factura or 0.0)
-    ahorro_periodo = total_factura_actual - total_factura
+    ahorro_periodo = total_factura_actual - total_factura_nueva
     factor_anual = 360.0 / float(periodo_dias)
     ahorro_anual = ahorro_periodo * factor_anual
     ahorro_mensual = ahorro_periodo * (30.0 / float(periodo_dias))
     
-    # Título centrado
+    # Título
     story.append(Paragraph("🎯 TU AHORRO ESTIMADO", title_style))
     story.append(Spacer(1, 1*cm))
     
-    # Tabla principal de ahorro
+    # Tabla principal (VERDE GRANDE)
     if ahorro_anual > 0:
-        tabla3_data = [
-            [f"AHORRO ANUAL: {ahorro_anual:.2f} €"],
-        ]
+        tabla3_data = [[f"AHORRO ANUAL: {ahorro_anual:.2f} €"]]
         bg_color = colors.HexColor('#16A34A')  # Verde
         text_color = colors.white
     else:
-        tabla3_data = [
-            [f"⚠️  COSTE ADICIONAL: {abs(ahorro_anual):.2f} €"],
-        ]
+        tabla3_data = [[f"⚠️ COSTE ADICIONAL: {abs(ahorro_anual):.2f} €"]]
         bg_color = colors.HexColor('#DC2626')  # Rojo
         text_color = colors.white
     
@@ -341,22 +281,20 @@ def generar_pdf_presupuesto(factura, selected_offer, db):
     doc.build(story)
     buffer_content.seek(0)
     
-    # 4. Combinar: Portada + Contenido + Páginas finales
+    # 4. Combinar: Portada + Contenido + Contraportada
     writer = PdfWriter()
     
     # Añadir página 1 del modelo (portada)
     writer.add_page(modelo_reader.pages[0])
     
-    # Añadir páginas de contenido generado
+    # Añadir contenido generado
     content_reader = PdfReader(buffer_content)
     for page in content_reader.pages:
         writer.add_page(page)
     
-    # Añadir páginas finales del modelo (páginas 5 y 6, índices 4 y 5)
-    if len(modelo_reader.pages) >= 5:
-        writer.add_page(modelo_reader.pages[4])
+    # Añadir última página del modelo (contraportada, índice len-1)
     if len(modelo_reader.pages) >= 6:
-        writer.add_page(modelo_reader.pages[5])
+        writer.add_page(modelo_reader.pages[-1])  # Última página
     
     # 5. Escribir PDF final
     final_buffer = BytesIO()
