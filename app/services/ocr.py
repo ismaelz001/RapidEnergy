@@ -429,15 +429,24 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
         detected_pf["fecha_fin_consumo"] = data["fecha_fin_consumo"] is not None
 
         # 2b. Dias Facturados
-        dias_match = re.search(r"(?:dias|días|periodo)[\s\S]{0,100}?facturad[oa]s?[\s\S]{0,50}?[:]?\s*(\d+)", raw_text, re.IGNORECASE)
-        if not dias_match:
-             dias_match = re.search(r"(\d+)\s*(?:dias|días)\s+facturad[oa]s?", raw_text, re.IGNORECASE)
-        if not dias_match:
-             dias_match = re.search(r"PERIODO[\s\S]{0,100}?(\d+)\s*D[IÍ]AS", raw_text, re.IGNORECASE)
+        dias_facturados = None
+        for ln in raw_text.splitlines():
+            linea = normalize_text(ln)
+            if not linea:
+                continue
+            low = linea.lower()
+            if not re.search(r"d[íi]as", low):
+                continue
+            if "kwh" in low:
+                continue
+            num_match = re.search(r"(\d+)", low)
+            if num_match:
+                dias_facturados = num_match.group(1)
+                break
 
-        if dias_match:
+        if dias_facturados:
             try:
-                data["dias_facturados"] = int(dias_match.group(1))
+                data["dias_facturados"] = int(dias_facturados)
             except:
                 pass
         
@@ -476,36 +485,51 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
 
         # 5. Consumption (Expanded mapping)
         # P1 = Punta, P2 = Llano, P3 = Valle (Generic approach)
-        
-        # Note: Added 'punta', 'llano', 'valle' keywords
-        # PRIORIDAD: Buscar específicamente el término "consumo" antes del periodo
-        # EVITAR: Palabras como "lectura", "actual", "anterior", "acumulada"
+
+        filtered_keywords = ["lectura", "contador", "acumulada", "actual", "anterior"]
+        consumo_lines = []
+        for ln in raw_text.splitlines():
+            clean = ln.strip()
+            if not clean:
+                continue
+            lower = clean.lower()
+            if "consumo" not in lower:
+                continue
+            if any(bad in lower for bad in filtered_keywords):
+                continue
+            consumo_lines.append(clean)
+
+        consumo_source = "\n".join(consumo_lines) if consumo_lines else raw_text
+        normalized_consumo_text = normalize_text(consumo_source)
+
         consume_patterns = {
             "p1": [
-                r"(?i)consumo.*?P1.*?[:\-]?\s*([\d.,]+)", 
-                r"(?i)(?<!lectura\s)punta.*?[:\-]?\s*([\d.,]+)\s*kwh(?!\s*actual)(?!\s*acumulada)",
-                r"(?i)consumo\s+punta.*?[:\-]?\s*([\d.,]+)"
+                r"(?i)consumo(?:\s+en)?\s*P1[^0-9\n]{0,20}([\d.,]+)",
+                r"(?i)consumo(?:\s+en)?\s*punta[^0-9\n]{0,20}([\d.,]+)",
+                r"(?i)\bP1\b[^0-9\n]{0,20}[:\-]?\s*([\d.,]+)\s*(?:kwh)?",
+                r"(?i)\bpunta\b[^0-9\n]{0,20}([\d.,]+)\s*(?:kwh)?"
             ],
             "p2": [
-                r"(?i)consumo.*?P2.*?[:\-]?\s*([\d.,]+)", 
-                r"(?i)(?<!lectura\s)llano.*?[:\-]?\s*([\d.,]+)\s*kwh(?!\s*actual)(?!\s*acumulada)",
-                r"(?i)consumo\s+llano.*?[:\-]?\s*([\d.,]+)"
+                r"(?i)consumo(?:\s+en)?\s*P2[^0-9\n]{0,20}([\d.,]+)",
+                r"(?i)consumo(?:\s+en)?\s*llano[^0-9\n]{0,20}([\d.,]+)",
+                r"(?i)\bP2\b[^0-9\n]{0,20}[:\-]?\s*([\d.,]+)\s*(?:kwh)?",
+                r"(?i)\bllano\b[^0-9\n]{0,20}([\d.,]+)\s*(?:kwh)?"
             ],
             "p3": [
-                r"(?i)consumo.*?P3.*?[:\-]?\s*([\d.,]+)", 
-                r"(?i)(?<!lectura\s)valle.*?[:\-]?\s*([\d.,]+)\s*kwh(?!\s*actual)(?!\s*acumulada)",
-                r"(?i)consumo\s+valle.*?[:\-]?\s*([\d.,]+)"
+                r"(?i)consumo(?:\s+en)?\s*P3[^0-9\n]{0,20}([\d.,]+)",
+                r"(?i)consumo(?:\s+en)?\s*valle[^0-9\n]{0,20}([\d.,]+)",
+                r"(?i)\bP3\b[^0-9\n]{0,20}[:\-]?\s*([\d.,]+)\s*(?:kwh)?",
+                r"(?i)\bvalle\b[^0-9\n]{0,20}([\d.,]+)\s*(?:kwh)?"
             ],
-            "p4": [r"(?i)consumo.*?P4.*?[:\-]?\s*([\d.,]+)"], 
+            "p4": [r"(?i)consumo.*?P4.*?[:\-]?\s*([\d.,]+)"],
             "p5": [r"(?i)consumo.*?P5.*?[:\-]?\s*([\d.,]+)"],
             "p6": [r"(?i)consumo.*?P6.*?[:\-]?\s*([\d.,]+)"],
         }
-        
+
         for p_key, patterns in consume_patterns.items():
             key = f"consumo_{p_key}_kwh"
             for pat in patterns:
-                # Use [\s\S]{0,100} to allow some newline traversal but not too much
-                m = re.search(pat.replace(".*?", r"[\s\S]{0,100}?"), raw_text, re.IGNORECASE)
+                m = re.search(pat.replace(".*?", r"[\s\S]{0,100}?"), normalized_consumo_text, re.IGNORECASE)
                 if m:
                     data[key] = parse_es_number(m.group(1))
                     break
@@ -567,6 +591,26 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
 
     detected = {}
     detected["atr"] = result["atr"] is not None
+
+    forced_period_missing = False
+
+    def _invalidate_periodo():
+        nonlocal forced_period_missing
+        result["dias_facturados"] = None
+        forced_period_missing = True
+
+    def _check_periodo():
+        nonlocal forced_period_missing
+        val = result.get("dias_facturados")
+        tot = result.get("consumo_kwh")
+        if val is None:
+            return
+        if tot and tot > 0 and val == tot:
+            _invalidate_periodo()
+        elif val > 45:
+            _invalidate_periodo()
+        else:
+            forced_period_missing = False
 
     potencias = _extract_potencias_with_sources(full_text)
     if potencias["p1"] is not None:
@@ -633,6 +677,8 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
              result["parsed_fields"] = {}
          result["parsed_fields"]["dias_facturados"] = structured.get("dias_facturados")
          result["dias_facturados"] = structured.get("dias_facturados") # Add to root too
+
+    _check_periodo()
 
     # Extraer Numero de Factura
     num_fact_match = re.search(
@@ -887,6 +933,8 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
                 import logging
                 logging.warning(f"🕒 [OCR] Calculados {dias} días desde fechas ({result['fecha_inicio_consumo']} - {result['fecha_fin_consumo']})")
 
+    _check_periodo()
+
     # [PATCH BUG C] Guardia de consumos absurdos
     sum_periodos = sum([result.get(f"consumo_p{i}_kwh") or 0 for i in range(1, 4)])
     consumo_tot = result.get("consumo_kwh")
@@ -940,6 +988,9 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
                 missing_fields.append(field)
         elif val is None:
             missing_fields.append(field)
+
+    if forced_period_missing and result.get("dias_facturados") is None and "periodo_dias" not in missing_fields:
+        missing_fields.append("periodo_dias")
 
     result["parsed_fields"] = parsed_fields
     result["detected_por_ocr"] = detected
