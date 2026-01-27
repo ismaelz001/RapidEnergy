@@ -37,8 +37,10 @@ extra_origins = [o.strip() for o in origins_env.split(",") if o.strip()]
 
 allow_origins = [
     "http://localhost:3000",
-    "https://energy.rodorte.com",  # Dominio Producción
-    "https://rapid-energy-iwdtwxqzr-ismaelz001s-projects.vercel.app", # Preview específica
+    "https://energy.rodorte.com",
+    "https://www.energy.rodorte.com",
+    "https://rapidenergy.onrender.com",
+    "https://rapid-energy-iwdtwxqzr-ismaelz001s-projects.vercel.app",
 ]
 
 # Unimos todo eliminando duplicados
@@ -53,6 +55,25 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ⭐ GLOBAL ERROR HANDLER FOR 500s (To reveal the real issue in logs and fix CORS on errors)
+from fastapi import Request
+from fastapi.responses import JSONResponse
+import logging
+import traceback
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    logging.error(f"💥 GLOBAL 500 ERROR: {str(exc)}")
+    logging.error(traceback.format_exc())
+    return JSONResponse(
+        status_code=500,
+        content={"message": "Internal Server Error", "detail": str(exc)},
+        headers={
+            "Access-Control-Allow-Origin": request.headers.get("origin", "*"),
+            "Access-Control-Allow-Credentials": "true",
+        }
+    )
 
 @app.get("/")
 def read_root():

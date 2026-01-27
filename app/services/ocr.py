@@ -7,6 +7,8 @@ from google.oauth2 import service_account
 from google.cloud import vision
 import pypdf
 import google.generativeai as genai
+import logging
+import traceback
 
 
 def normalize_text(raw: str) -> str:
@@ -975,7 +977,6 @@ def extract_data_with_gemini(file_bytes: bytes, is_pdf: bool = True) -> dict:
         return result
 
     except Exception as e:
-        import traceback
         logging.error(f"❌ Error en Gemini Extraction: {str(e)}")
         logging.error(traceback.format_exc())
         return None
