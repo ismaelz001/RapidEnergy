@@ -96,3 +96,15 @@ def test_regression_naturgy_pvpc_truncated():
     assert parsed["potencia_p2_kw"] == 4.6
     # Fallback to structured detection (IMPORTE FACTURA)
     assert parsed["total_factura"] == 26.87
+
+
+def test_consumo_total_fallback_from_periods():
+    raw_text = (
+        "Peaje acceso 2.0TD\n"
+        "Consumo en P1: 17 kWh\n"
+        "Consumo en P2: 18 kWh\n"
+        "Consumo en P3: 32 kWh\n"
+        "IMPORTE FACTURA: 26,87 EUR\n"
+    )
+    parsed = parse_invoice_text(raw_text)
+    assert parsed["consumo_kwh"] == 67.0

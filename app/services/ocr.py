@@ -511,6 +511,29 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
                     break
             detected_pf[key] = data[key] is not None
 
+        # Fallback for truncated OCR where P2/P3 appear as bare lines (e.g. "P2: 18")
+        # Only enable if we already detected at least one consumo period, to avoid confusing with "Potencia P2".
+        has_any_consumo = any(
+            data.get(f"consumo_p{i}_kwh") is not None for i in range(1, 7)
+        )
+        if has_any_consumo:
+            lines = [ln.strip() for ln in raw_text.splitlines() if ln.strip()]
+            for ln in lines:
+                low = ln.lower()
+                if "potencia" in low or re.search(r"\bkw\b", low):
+                    continue
+                m = re.match(r"^p\s*([1-6])\s*[:\-]?\s*([\d.,]+)\s*(?:kwh)?\b", low, re.IGNORECASE)
+                if not m:
+                    # Common OCR variant: "P2 18" without punctuation
+                    m = re.match(r"^p\s*([1-6])\s+([\d.,]+)\s*(?:kwh)?\b", low, re.IGNORECASE)
+                if not m:
+                    continue
+                pnum = int(m.group(1))
+                key = f"consumo_p{pnum}_kwh"
+                if data.get(key) is None:
+                    data[key] = parse_es_number(m.group(2))
+                    detected_pf[key] = data[key] is not None
+
         bono = re.search(r"\bbono\s+social\b", raw_text, re.IGNORECASE)
         data["bono_social"] = True if bono else None
         detected_pf["bono_social"] = bono is not None
@@ -880,6 +903,16 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
             result[f"consumo_p{i}_kwh"] = None
             result["detected_por_ocr"][f"consumo_p{i}_kwh"] = False
     
+    # [PATCH BUG D] Concept Shield
+    result = _shield_concepts(result)
+
+    # Fallback: total consumption from period sums when total is missing
+    sum_periodos_actual = sum([result.get(f"consumo_p{i}_kwh") or 0 for i in range(1, 7)])
+    has_periodos = any(result.get(f"consumo_p{i}_kwh") is not None for i in range(1, 7))
+    if result.get("consumo_kwh") is None and has_periodos and sum_periodos_actual > 0:
+        result["consumo_kwh"] = sum_periodos_actual
+        detected["consumo_kwh"] = True
+
     # [QA AUDIT] LOGS PARA DEPURACIÓN (Mismo formato que frontend)
     print(f"--- [QA AUDIT] Backend Extraction Summary ---")
     print(f"✅ cups: {result.get('cups')}")
@@ -887,11 +920,8 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
     print(f"✅ total_factura: {result.get('total_factura')}")
     print(f"✅ periodo_dias: {result.get('dias_facturados')}")
     print(f"✅ consumo_total: {result.get('consumo_kwh')}")
-    print(f"✅ sum_periodos: {sum_periodos}")
+    print(f"✅ sum_periodos: {sum_periodos_actual}")
     print(f"----------------------------------------------")
-
-    # [PATCH BUG D] Concept Shield
-    result = _shield_concepts(result)
 
     required_fields = [
         "atr",
