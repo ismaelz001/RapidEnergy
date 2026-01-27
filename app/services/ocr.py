@@ -105,14 +105,14 @@ def extract_atr(text: str):
         return None
     normalized = normalize_text(text).upper()
     # Broaden the search
-    if re.search(r"\b2\s*[.,]?\s*[0O]\s*TD\b", normalized):
+    if re.search(r"2\s*[.,]?\s*[0O]\s*TD", normalized):
         return "2.0TD"
-    if re.search(r"\b3\s*[.,]?\s*[0O]\s*TD\b", normalized):
+    if re.search(r"3\s*[.,]?\s*[0O]\s*TD", normalized):
         return "3.0TD"
-    # Fallback: ATR phrase
-    match = re.search(r"PEAJE.*?([23]\.?[0O]\s*TD)", normalized)
+    # Fallback: ATR phrase - allow up to 60 chars of any type including newline
+    match = re.search(r"PEAJE[\s\S]{0,60}?([23]\.?[0O]\s*TD)", normalized, re.IGNORECASE)
     if match:
-        return match.group(1).replace(" ", "").replace(".0TD", ".0TD").replace("0", "0") # Basic normalization
+        return match.group(1).replace(" ", "").upper()
     return None
 
 
@@ -127,6 +127,8 @@ def _extract_potencias_with_sources(text: str):
         ("contratada", r"potencia\s+contratada[^0-9]{0,30}\s+([\d.,]+)\s*kw"),
         ("punta", r"(?:potencia|ncia)\s+(?:contratada\s+)?(?:en\s+)?punta[^0-9]{0,60}([\d.,]+)\s*(?:kw|k\s*w|k)?"),
         ("punta", r"contratada\s+(?:en\s+)?punta[^0-9]{0,60}([\d.,]+)\s*(?:kw|k\s*w|k)?"),
+        # Standalone
+        ("punta", r"\bpunta\b[^0-9]{0,20}([\d.,]+)\s*k?w"),
         # Table labels
         ("grid", r"potencia\s*\(kw\)[^0-9]{0,20}([\d.,]+)"),
     ]
@@ -135,6 +137,8 @@ def _extract_potencias_with_sources(text: str):
         ("p2", r"potencia\s+(?:contratada\s+)?(?:en\s+)?p2[^0-9]{0,20}([\d.,]+)"),
         ("valle", r"(?:potencia|ncia)\s+(?:contratada\s+)?(?:en\s+)?valle[^0-9]{0,60}([\d.,]+)\s*(?:kw|k\s*w|k)?"),
         ("valle", r"contratada\s+(?:en\s+)?valle[^0-9]{0,60}([\d.,]+)\s*(?:kw|k\s*w|k)?"),
+        # Standalone
+        ("valle", r"\bvalle\b[^0-9]{0,20}([\d.,]+)\s*k?w"),
     ]
 
     def _match(patterns):
@@ -354,7 +358,7 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
         # Format 1: 31 de agosto de 2025 a 30 de septiembre...
         meses = "enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre"
         rango_text = re.search(
-            rf"(\d{{1,2}}\s+de\s+(?:{meses})\s+de\s+\d{{4}})\s+a\s+(\d{{1,2}}\s+de\s+(?:{meses})\s+de\s+\d{{4}})",
+            rf"(\d{{1,2}}\s+de\s+(?:{meses})\s+de\s+\d{{4}})[\s\S]{{0,100}}?\b(?:a|al)\b[\s\S]{{0,100}}?(\d{{1,2}}\s+de\s+(?:{meses})\s+de\s+\d{{4}})",
             raw_text,
             re.IGNORECASE,
         )
@@ -363,10 +367,9 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
             data["fecha_fin_consumo"] = rango_text.group(2)
 
         # Format 2: dd/mm/yyyy - dd/mm/yyyy or similar
-        # "PERIODO DE FACTURACIÓN: 31/08/2025 - 30/09/2025"
         if not data["fecha_inicio_consumo"]:
             rango_fechas = re.search(
-                r"(\d{2}[/-]\d{2}[/-]\d{4})\s*(?:-|al|a)\s*(\d{2}[/-]\d{2}[/-]\d{4})", 
+                r"(\d{2}[/-]\d{2}[/-]\d{2,4})[\s\S]{0,50}?(?:-|al|a)[\s\S]{0,50}?(\d{2}[/-]\d{2}[/-]\d{2,4})", 
                 raw_text, 
                 re.IGNORECASE
             )
@@ -378,13 +381,11 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
         detected_pf["fecha_fin_consumo"] = data["fecha_fin_consumo"] is not None
 
         # 2b. Dias Facturados
-        # Allow extra spaces or chars between words
-        dias_match = re.search(r"(?:dias|días|periodo)[^0-9\n]{0,30}facturad[oa]s?[^0-9\n]{0,10}[:]\s*(\d+)", raw_text, re.IGNORECASE)
+        dias_match = re.search(r"(?:dias|días|periodo)[\s\S]{0,100}?facturad[oa]s?[\s\S]{0,50}?[:]?\s*(\d+)", raw_text, re.IGNORECASE)
         if not dias_match:
-             # Fallback more aggressive: "30 días", "periodo de 30", etc.
              dias_match = re.search(r"(\d+)\s*(?:dias|días)\s+facturad[oa]s?", raw_text, re.IGNORECASE)
         if not dias_match:
-             dias_match = re.search(r"PERIODO[:\s]*(\d+)\s*D[IÍ]AS", raw_text, re.IGNORECASE)
+             dias_match = re.search(r"PERIODO[\s\S]{0,100}?(\d+)\s*D[IÍ]AS", raw_text, re.IGNORECASE)
 
         if dias_match:
             try:
@@ -396,7 +397,7 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
         # Look for explicit "TOTAL FACTURA" or "TOTAL A PAGAR" to avoid "Base Imponible"
         # BUG C FIX: TOTAL A PAGAR tiene máxima prioridad
         total_pagar_match = re.search(
-            r"TOTAL\s+A\s+PAGAR[^0-9\n]{0,30}([\d.,]+)\s*(?:€|EUR)", 
+            r"TOTAL[\s\S]{0,50}?A[\s\S]{0,50}?PAGAR[\s\S]{0,50}?([\d.,]+)\s*(?:€|EUR)", 
             raw_text, 
             re.IGNORECASE
         )
@@ -455,7 +456,8 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
         for p_key, patterns in consume_patterns.items():
             key = f"consumo_{p_key}_kwh"
             for pat in patterns:
-                m = re.search(pat, raw_text, re.IGNORECASE)
+                # Use [\s\S]{0,100} to allow some newline traversal but not too much
+                m = re.search(pat.replace(".*?", r"[\s\S]{0,100}?"), raw_text, re.IGNORECASE)
                 if m:
                     data[key] = parse_es_number(m.group(1))
                     break
@@ -872,7 +874,7 @@ def extract_data_with_gemini(file_bytes: bytes, is_pdf: bool = True) -> dict:
 
     try:
         genai.configure(api_key=api_key)
-        model = genai.GenerativeModel("gemini-2.0-flash")  # Upgraded to 2.0 Flash
+        model = genai.GenerativeModel("gemini-1.5-flash")  # Reverted to 1.5 Flash for multimodal stability
 
         # Preparar el archivo para Gemini
         mime_type = "application/pdf" if is_pdf else "image/jpeg"
@@ -881,25 +883,26 @@ def extract_data_with_gemini(file_bytes: bytes, is_pdf: bool = True) -> dict:
         Extrae los siguientes campos de esta factura eléctrica española en formato JSON estricto.
         
         REGLA CRÍTICA DE CONSUMO:
-        Diferencia claramente entre 'Lectura del contador' (que suele ser un número grande acumulado > 1000) 
-        y 'Consumo del periodo' (que es lo facturado en este mes, suele ser < 500 para hogares). 
+        Busca el resumen de la factura o el desglose de consumos. 
+        Diferencia claramente entre 'Lectura del contador' (número grande acumulado) y 'Consumo del periodo' (lo facturado este mes). 
         Queremos el CONSUMO REAL DEL PERIODO.
-        REGLA: La suma de (consumo_p1 + consumo_p2 + consumo_p3) DEBE aproximarse al consumo total.
+        REGLA: La suma de (consumo_p1 + consumo_p2 + consumo_p3) DEBE coincidir con el consumo total del periodo.
         
         Campos:
-        - cups: ES + 18-20 caracteres.
-        - titular: Nombre completo.
-        - dni: DNI/NIF.
-        - direccion: Dirección suministro.
+        - cups: ES + 18-20 caracteres (Suele empezar por ES00).
+        - titular: Nombre completo del cliente.
+        - dni: DNI/NIF/CIF.
+        - direccion: Dirección de suministro.
         - fecha_inicio_consumo, fecha_fin_consumo (DD/MM/YYYY)
-        - dias_facturados: (int)
-        - importe_factura: Total con IVA (número)
-        - atr: Peaje (ej: 2.0TD)
-        - potencia_p1_kw, potencia_p2_kw
-        - consumo_p1_kwh, consumo_p2_kwh, consumo_p3_kwh (¡SOLO CONSUMO REAL, NO LECTURAS!)
-        - bono_social, alquiler_contador, impuesto_electrico, iva
+        - dias_facturados: Número de días total del periodo (int).
+        - importe_factura: Total factura con impuestos e IVA (número).
+        - atr: Peaje de acceso (ej: 2.0TD o 3.0TD).
+        - potencia_p1_kw, potencia_p2_kw: Potencia contratada (número).
+        - consumo_p1_kwh, consumo_p2_kwh, consumo_p3_kwh: Consumo facturado en cada periodo (SOLO CONSUMO, NO LECTURAS).
+        - bono_social (bool), alquiler_contador (float), impuesto_electrico (float), iva (float).
         
-        Si un campo no está, pon null. Solo devuelve el JSON.
+        IMPORTANTE: Si la factura tiene varias páginas, procésalas todas. 
+        Si un campo no está, pon null. Solo devuelve el JSON puro.
         """
 
         response = model.generate_content([
@@ -909,6 +912,7 @@ def extract_data_with_gemini(file_bytes: bytes, is_pdf: bool = True) -> dict:
 
         # Limpiar la respuesta para obtener solo el JSON
         text_response = response.text.strip()
+        print(f"DEBUG: Gemini raw response: {text_response[:200]}...") # Log partial response
         if text_response.startswith("```json"):
             text_response = text_response.split("```json")[1].split("```")[0].strip()
         elif text_response.startswith("```"):
@@ -971,7 +975,9 @@ def extract_data_with_gemini(file_bytes: bytes, is_pdf: bool = True) -> dict:
         return result
 
     except Exception as e:
-        print(f"Error en Gemini Extraction: {e}")
+        import traceback
+        logging.error(f"❌ Error en Gemini Extraction: {str(e)}")
+        logging.error(traceback.format_exc())
         return None
 
 def extract_data_from_pdf(file_bytes: bytes) -> dict:
