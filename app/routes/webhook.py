@@ -449,11 +449,11 @@ async def process_factura(file: UploadFile, db: Session = Depends(get_db)):
         alquiler_contador=ocr_data.get("alquiler_contador"),
         impuesto_electrico=ocr_data.get("impuesto_electrico"),
         iva=ocr_data.get("iva"),
-        # PATCH A2: Guardar iva_porcentaje
-        iva_porcentaje=ocr_data.get("iva_porcentaje"),
+        # PATCH A2: Guardar iva_porcentaje (normalizado a decimal: 0.21)
+        iva_porcentaje=_normalize_iva_porcentaje(ocr_data.get("iva_porcentaje")),
         
-        # ⭐ FIX P0-1: Mapear periodo_dias desde dias_facturados
-        periodo_dias=ocr_data.get("dias_facturados"),
+        # ⭐ FIX P0-1: Mapear periodo_dias desde dias_facturados (normalizado a int)
+        periodo_dias=_normalize_periodo_dias(ocr_data.get("dias_facturados")),
     )
 
     es_valida, errors = validate_factura_completitud(nueva_factura)
@@ -672,10 +672,21 @@ def comparar_factura(factura_id: int, db: Session = Depends(get_db)):
 
     # ⭐ CAMBIO 3: VALIDACIÓN PREVIA SEGÚN ATR
     atr = getattr(factura, "atr", None)
+    atr_inferred = False
     if not atr or not atr.strip():
-        # Inferir ATR por potencia si no hay OCR
-        potencia_p1 = factura.potencia_p1_kw or 0.0
-        atr = "3.0TD" if potencia_p1 >= 15 else "2.0TD"
+        # Si falta ATR, intentamos inferir SOLO si hay potencia_p1_kw; si no, pedimos dato al usuario.
+        potencia_p1 = factura.potencia_p1_kw
+        if potencia_p1 is None:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "message": "El campo ATR es obligatorio para comparar (no se pudo inferir).",
+                    "missing_fields": ["atr"],
+                },
+            )
+        atr = "3.0TD" if float(potencia_p1) >= 15 else "2.0TD"
+        atr_inferred = True
+        logger.warning(f"[ATR] ATR no presente. Inferido atr={atr} por potencia_p1_kw={potencia_p1}.")
     else:
         atr = atr.strip().upper()
     

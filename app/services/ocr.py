@@ -353,7 +353,6 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
             "consumo_p4_kwh": None,
             "consumo_p5_kwh": None,
             "consumo_p6_kwh": None,
-            "consumo_p6_kwh": None,
             "bono_social": None,
             "parsed_fields": {},
         }
@@ -608,12 +607,17 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
     def _check_periodo():
         nonlocal forced_period_missing
         val = result.get("dias_facturados")
-        tot = result.get("consumo_kwh")
         if val is None:
             return
-        if tot and tot > 0 and val == tot:
-            _invalidate_periodo()
-        elif val > 45:
+        # Solo invalidar si es claramente imposible. Hay facturas de 60 días, trimestrales, etc.
+        if not isinstance(val, int):
+            try:
+                val = int(val)
+                result["dias_facturados"] = val
+            except Exception:
+                _invalidate_periodo()
+                return
+        if val <= 0 or val > 370:
             _invalidate_periodo()
         else:
             forced_period_missing = False
@@ -981,15 +985,42 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
         result["consumo_kwh"] = sum_periodos_actual
         detected["consumo_kwh"] = True
 
-    # [QA AUDIT] LOGS PARA DEPURACIÓN (Mismo formato que frontend)
-    print(f"--- [QA AUDIT] Backend Extraction Summary ---")
-    print(f"✅ cups: {result.get('cups')}")
-    print(f"✅ atr: {result.get('atr')}")
-    print(f"✅ total_factura: {result.get('total_factura')}")
-    print(f"✅ periodo_dias: {result.get('dias_facturados')}")
-    print(f"✅ consumo_total: {result.get('consumo_kwh')}")
-    print(f"✅ sum_periodos: {sum_periodos_actual}")
-    print(f"----------------------------------------------")
+
+
+    # --- Normalización final (fechas + limpieza de conceptos) ---
+    def _date_to_iso(d):
+        try:
+            return d.isoformat()
+        except Exception:
+            return None
+
+    # Normalizar fechas a ISO (YYYY-MM-DD) para consistencia DB/deduplicación
+    for k in ("fecha", "fecha_inicio_consumo", "fecha_fin_consumo"):
+        v = result.get(k)
+        if isinstance(v, str):
+            d = _parse_date_flexible(v)
+            if d:
+                result[k] = _date_to_iso(d)
+        else:
+            if v is not None:
+                try:
+                    result[k] = _date_to_iso(v)
+                except Exception:
+                    pass
+
+    # Aplicar blindaje contra mezcla de conceptos (potencia/consumo, IEE 5.11, etc.)
+    result = _shield_concepts(result)
+
+    # --- QA logs solo en TEST_MODE ---
+    if os.getenv("TEST_MODE") == "true":
+        print(f"--- [QA AUDIT] Backend Extraction Summary ---")
+        print(f"✅ cups: {result.get('cups')}")
+        print(f"✅ atr: {result.get('atr')}")
+        print(f"✅ total_factura: {result.get('total_factura')}")
+        print(f"✅ periodo_dias: {result.get('dias_facturados')}")
+        print(f"✅ consumo_total: {result.get('consumo_kwh')}")
+        print(f"✅ sum_periodos: {sum_periodos_actual}")
+        print(f"----------------------------------------------")
 
     required_fields = [
         "atr",
