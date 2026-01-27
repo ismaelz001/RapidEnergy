@@ -11,6 +11,52 @@ import logging
 import traceback
 
 
+def _shield_concepts(result: dict):
+    """
+    🛡️ Concept Shield: Protege contra la mezcla de conceptos (Potencia <-> Consumo).
+    Si el consumo es idéntico a la potencia contratada (valor típico de kW como 3.3, 4.6), 
+    es casi seguro un error de extracción.
+    """
+    import logging
+    p1 = result.get("potencia_p1_kw")
+    p2 = result.get("potencia_p2_kw")
+    tot_c = result.get("consumo_kwh")
+    
+    # Valores de potencia contratada extremadamente comunes en España
+    typical_powers = [2.3, 3.3, 3.45, 4.6, 5.5, 5.75, 6.9, 8.05, 9.2, 10.35, 11.5, 13.8, 14.49]
+    
+    for i in range(1, 7):
+        c_alt = result.get(f"consumo_p{i}_kwh")
+        if c_alt is None: continue
+        
+        # Si el consumo de un periodo es idéntico a P1 o P2 (que son constantes)
+        is_collision = (p1 and abs(c_alt - p1) < 0.001) or (p2 and abs(c_alt - p2) < 0.001)
+        
+        if is_collision:
+            # Si el consumo es muy bajo (< 15) O es un valor típico de potencia...
+            is_suspicious = (c_alt < 15) or any(abs(c_alt - tp) < 0.01 for tp in typical_powers)
+            
+            # EXCEPCIÓN: Si el consumo total de la factura confirma que este valor es real (ej: total = sum(p1..p3))
+            # No lo borramos. Pero si tot_c es 0 o null, desconfiamos.
+            if tot_c and tot_c > 0 and abs(tot_c - c_alt) < 0.1:
+                 # Si solo hay un periodo y coincide con el total, podría ser real
+                 pass
+            else:
+                if is_suspicious:
+                    logging.warning(f"🛡️ [ConceptShield] Colisión C{i}=Potencia ({c_alt}). Anulando C{i} por sospecha de mala extracción.")
+                    result[f"consumo_p{i}_kwh"] = None
+                    if "detected_por_ocr" in result: 
+                        result["detected_por_ocr"][f"consumo_p{i}_kwh"] = False
+
+    # Regla 3: Blindaje de Impuesto Eléctrico (No capturar el porcentaje 5.11)
+    ie = result.get("impuesto_electrico")
+    if ie and (abs(ie - 5.11) < 0.1 or abs(ie - 1.0511) < 0.01 or abs(ie - 0.0511) < 0.01):
+        logging.warning(f"🛡️ [ConceptShield] El impuesto_electrico ({ie}) parece ser el tipo impositivo, no el importe. Limpiando.")
+        result["impuesto_electrico"] = None
+
+    return result
+
+
 def normalize_text(raw: str) -> str:
     if raw is None:
         return ""
@@ -780,6 +826,12 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
     detected["total_factura"] = result["total_factura"] is not None
 
     
+    # Limpiar titular de etiquetas comunes
+    if result.get("titular"):
+        for prefix in ["Nombre:", "Cliente:", "Titular:", "NOMBRE:", "CLIENTE:", "TITULAR:"]:
+            if result["titular"].startswith(prefix):
+                result["titular"] = result["titular"][len(prefix):].strip()
+
     if result["direccion"]:
         # Intento simple de extraer provincia de la direccion
         provincias = [
@@ -838,6 +890,9 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
     print(f"✅ sum_periodos: {sum_periodos}")
     print(f"----------------------------------------------")
 
+    # [PATCH BUG D] Concept Shield
+    result = _shield_concepts(result)
+
     required_fields = [
         "atr",
         "potencia_p1_kw",
@@ -884,11 +939,13 @@ def extract_data_with_gemini(file_bytes: bytes, is_pdf: bool = True) -> dict:
         prompt = """
         Extrae los siguientes campos de esta factura eléctrica española en formato JSON estricto.
         
-        REGLA CRÍTICA DE CONSUMO:
-        Busca el resumen de la factura o el desglose de consumos. 
-        Diferencia claramente entre 'Lectura del contador' (número grande acumulado) y 'Consumo del periodo' (lo facturado este mes). 
-        Queremos el CONSUMO REAL DEL PERIODO.
-        REGLA: La suma de (consumo_p1 + consumo_p2 + consumo_p3) DEBE coincidir con el consumo total del periodo.
+        REGLA CRÍTICA DE CONCEPTOS:
+        - NUNCA uses los valores de 'Potencia Contratada' (kW) como 'Consumo' (kWh). Son conceptos distintos.
+        - La Potencia (kW) suele ser un número pequeño y fijo (ej: 3.3, 4.6, 5.5, 9.2).
+        - El Consumo (kWh) es la energía gastada. Si ves que un número se repite en ambos sitios, prioriza asignarlo a Potencia y deja el Consumo como null si no estás seguro.
+        - Diferencia claramente entre 'Lectura del contador' (número grande acumulado) y 'Consumo del periodo' (lo facturado este mes). 
+        - Queremos el CONSUMO REAL DEL PERIODO.
+        - REGLA DE ORO: La suma de (consumo_p1 + consumo_p2 + consumo_p3) DEBE coincidir con el consumo total del periodo.
         
         Campos:
         - cups: ES + 18-20 caracteres (Suele empezar por ES00).
@@ -899,9 +956,9 @@ def extract_data_with_gemini(file_bytes: bytes, is_pdf: bool = True) -> dict:
         - dias_facturados: Número de días total del periodo (int).
         - importe_factura: Total factura con impuestos e IVA (número).
         - atr: Peaje de acceso (ej: 2.0TD o 3.0TD).
-        - potencia_p1_kw, potencia_p2_kw: Potencia contratada (número).
-        - consumo_p1_kwh, consumo_p2_kwh, consumo_p3_kwh: Consumo facturado en cada periodo (SOLO CONSUMO, NO LECTURAS).
-        - bono_social (bool), alquiler_contador (float), impuesto_electrico (float), iva (float).
+        - potencia_p1_kw, potencia_p2_kw: Potencia contratada en kW (ej: 4.6).
+        - consumo_p1_kwh, consumo_p2_kwh, consumo_p3_kwh: Energía consumida en kWh (SOLO CONSUMO, NO LECTURAS).
+        - bono_social (bool), alquiler_contador (float - importe en €), impuesto_electrico (float - importe en €, NO el porcentaje), iva (float - importe en €).
         
         IMPORTANTE: Si la factura tiene varias páginas, procésalas todas. 
         Si un campo no está, pon null. Solo devuelve el JSON puro.
@@ -966,13 +1023,8 @@ def extract_data_with_gemini(file_bytes: bytes, is_pdf: bool = True) -> dict:
                     result["dias_facturados"] = dias
                     print(f"[GEMINI] Calculado periodo_dias fallback: {dias}")
 
-        # Guardia consumos (Bug C)
-        sum_periodos = sum([result.get(f"consumo_p{i}_kwh") or 0 for i in range(1, 4)])
-        consumo_tot = result.get("consumo_kwh")
-        if (consumo_tot and sum_periodos > consumo_tot * 3) or sum_periodos > 2000:
-            print(f"🛡️ [GEMINI] Limpieza de consumos absurdos (P1+P2+P3={sum_periodos}, Total={consumo_tot})")
-            for i in range(1, 7):
-                result[f"consumo_p{i}_kwh"] = None
+        # [PATCH BUG D] Concept Shield
+        result = _shield_concepts(result)
 
         return result
 
