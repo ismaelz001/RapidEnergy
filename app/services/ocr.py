@@ -71,8 +71,8 @@ def _parse_date_flexible(date_str):
         return None
     date_str = date_str.lower().strip()
     
-    # 1. DD/MM/YY o DD/MM/YYYY
-    match = re.search(r"(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})", date_str)
+    # 1. DD/MM/YY, DD.MM.YYYY o DD-MM-YYYY
+    match = re.search(r"(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})", date_str)
     if match:
         from datetime import date
         try:
@@ -153,10 +153,8 @@ def extract_atr(text: str):
         return None
     normalized = normalize_text(text).upper()
     # Broaden the search
-    if re.search(r"2\s*[.,]?\s*[0O]\s*TD", normalized):
+    if re.search(r"2\s*[.,]?\s*[0O]\s*TD", normalized) or "USO LUZ" in normalized:
         return "2.0TD"
-    if re.search(r"3\s*[.,]?\s*[0O]\s*TD", normalized):
-        return "3.0TD"
     # Fallback: ATR phrase - allow up to 60 chars of any type including newline
     match = re.search(r"PEAJE[\s\S]{0,60}?([23]\.?[0O]\s*TD)", normalized, re.IGNORECASE)
     if match:
@@ -170,6 +168,7 @@ def _extract_potencias_with_sources(text: str):
     normalized = normalize_text(text)
 
     p1_patterns = [
+        ("table", r"P1\s+P2\s+P3\s+P4\s+P5\s+P6\s+([\d.,]+)\s+([\d.,]+)"),
         ("punta", r"potencia\s+(?:contratada\s+)?(?:en\s+)?punta[^0-9]{0,20}([\d.,]+)"),
         ("p1", r"potencia\s+(?:contratada\s+)?(?:en\s+)?p1[^0-9]{0,20}([\d.,]+)"),
         ("contratada", r"potencia\s+contratada[^0-9]{0,30}\s+([\d.,]+)\s*kw"),
@@ -405,7 +404,7 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
         # Format 1: 31 de agosto de 2025 a 30 de septiembre...
         meses = "enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre"
         rango_text = re.search(
-            rf"(\d{{1,2}}\s+de\s+(?:{meses})\s+de\s+\d{{4}})[\s\S]{{0,100}}?\b(?:a|al)\b[\s\S]{{0,100}}?(\d{{1,2}}\s+de\s+(?:{meses})\s+de\s+\d{{4}})",
+            rf"(\d{{1,2}}[\s\w]{{1,8}}(?:{meses})[\s\w]{{1,8}}\d{{4}})[\s\S]{{0,100}}?\b(?:a|al|hasta)\b[\s\S]{{0,100}}?(\d{{1,2}}[\s\w]{{1,8}}(?:{meses})[\s\w]{{1,8}}\d{{4}})",
             raw_text,
             re.IGNORECASE,
         )
@@ -416,7 +415,7 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
         # Format 2: dd/mm/yyyy - dd/mm/yyyy or similar
         if not data["fecha_inicio_consumo"]:
             rango_fechas = re.search(
-                r"(\d{2}[/-]\d{2}[/-]\d{2,4})[\s\S]{0,50}?(?:-|al|a)[\s\S]{0,50}?(\d{2}[/-]\d{2}[/-]\d{2,4})", 
+                r"(\d{1,2}[./-]\d{1,2}[./-]\d{2,4})[\s\S]{0,50}?(?:-|al|a|hasta)[\s\S]{0,50}?(\d{1,2}[./-]\d{1,2}[./-]\d{2,4})", 
                 raw_text, 
                 re.IGNORECASE
             )
@@ -433,7 +432,7 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
             linea = normalize_text(ln)
             if not linea: continue
             low = linea.lower()
-            if "kwh" in low or "consumo" in low: continue
+            if "kwh" in low: continue # Skip energy lines for days, but keep power lines (might have days)
             if "dias" not in low and "días" not in low: continue
             
             # Pattern: "30 dias" or "dias: 30" - stricter
@@ -487,7 +486,7 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
         # 5. Consumption (Expanded mapping)
         # P1 = Punta, P2 = Llano, P3 = Valle (Generic approach)
 
-        filtered_keywords = ["lectura", "contador", "acumulada", "actual", "anterior", "potencia"]
+        filtered_keywords = ["lectura", "contador", "acumulada", "actual", "anterior", "potencia", "último año", "año anterior", "media"]
         consumo_lines = []
         for ln in raw_text.splitlines():
             clean = ln.strip()
@@ -506,22 +505,20 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
 
         consume_patterns = {
             "p1": [
-                r"(?i)consumo\s+.*?\bP1\b[^0-9\n]{0,20}[:\-]?\s*([\d.,]+)",
-                r"(?i)consumo\s+.*?\bpunta\b[^0-9\n]{0,20}[:\-]?\s*([\d.,]+)",
-                r"(?i)\bP1\b[^0-9\n]{0,20}[:\-]?\s*([\d.,]+)\s*(?:kwh)",
-                r"(?i)\bpunta\b[^0-9\n]{0,20}[:\-]?\s*([\d.,]+)\s*(?:kwh)"
+                r"(?i)consumo\s+.*?\bP1\b[\s\S]{0,100}?([\d.,]+)\s*(?:kwh)",
+                r"(?i)\bP1\b[\s\S]{0,100}?([\d.,]+)\s*(?:kwh)",
+                r"(?i)\bpunta\b[\s\S]{0,100}?([\d.,]+)\s*(?:kwh)",
+                r"([\d.,]+)\s*kwh\s*x\s*0,"
             ],
             "p2": [
-                r"(?i)consumo\s+.*?\bP2\b[^0-9\n]{0,20}[:\-]?\s*([\d.,]+)",
-                r"(?i)consumo\s+.*?\bllano\b[^0-9\n]{0,20}[:\-]?\s*([\d.,]+)",
-                r"(?i)\bP2\b[^0-9\n]{0,20}[:\-]?\s*([\d.,]+)\s*(?:kwh)",
-                r"(?i)\bllano\b[^0-9\n]{0,20}[:\-]?\s*([\d.,]+)\s*(?:kwh)"
+                r"(?i)consumo\s+.*?\bP2\b[\s\S]{0,100}?([\d.,]+)\s*(?:kwh)",
+                r"(?i)\bP2\b[\s\S]{0,100}?([\d.,]+)\s*(?:kwh)",
+                r"(?i)\bllano\b[\s\S]{0,100}?([\d.,]+)\s*(?:kwh)"
             ],
             "p3": [
-                r"(?i)consumo\s+.*?\bP3\b[^0-9\n]{0,20}[:\-]?\s*([\d.,]+)",
-                r"(?i)consumo\s+.*?\bvalle\b[^0-9\n]{0,20}[:\-]?\s*([\d.,]+)",
-                r"(?i)\bP3\b[^0-9\n]{0,20}[:\-]?\s*([\d.,]+)\s*(?:kwh)",
-                r"(?i)\bvalle\b[^0-9\n]{0,20}[:\-]?\s*([\d.,]+)\s*(?:kwh)"
+                r"(?i)consumo\s+.*?\bP3\b[\s\S]{0,100}?([\d.,]+)\s*(?:kwh)",
+                r"(?i)\bP3\b[\s\S]{0,100}?([\d.,]+)\s*(?:kwh)",
+                r"(?i)\bvalle\b[\s\S]{0,100}?([\d.,]+)\s*(?:kwh)"
             ],
             "p4": [r"(?i)consumo.*?P4.*?[:\-]?\s*([\d.,]+)"],
             "p5": [r"(?i)consumo.*?P5.*?[:\-]?\s*([\d.,]+)"],
@@ -878,8 +875,9 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
 
     result["impuesto_electrico"] = _extract_number(
         [
-            r"impuesto\s+(?:sobre\s+la\s+)?electricidad[^0-9]{0,20}([\d.,]+)",
-            r"impuesto\s+el[eé]ctrico[^0-9]{0,10}([\d.,]+)"
+            r"impuesto\s+.*?\b([\d.,]+)\s*€\s*$",
+            r"impuesto\s+(?:sobre\s+la\s+)?electricidad[^0-9]{0,40}([\d.,]+)",
+            r"impuesto\s+el[eé]ctrico[^0-9]{0,40}([\d.,]+)"
         ]
     )
     detected["impuesto_electrico"] = result["impuesto_electrico"] is not None
