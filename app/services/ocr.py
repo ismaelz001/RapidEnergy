@@ -23,12 +23,13 @@ def _parse_date_flexible(date_str):
         return None
     date_str = date_str.lower().strip()
     
-    # 1. DD/MM/YYYY o DD-MM-YYYY
-    match = re.search(r"(\d{1,2})[/-](\d{1,2})[/-](\d{4})", date_str)
+    # 1. DD/MM/YY o DD/MM/YYYY
+    match = re.search(r"(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})", date_str)
     if match:
         from datetime import date
         try:
             day, month, year = int(match.group(1)), int(match.group(2)), int(match.group(3))
+            if year < 100: year += 2000
             return date(year, month, day)
         except:
             return None
@@ -39,11 +40,12 @@ def _parse_date_flexible(date_str):
         "julio": 7, "agosto": 8, "septiembre": 9, "octubre": 10, "noviembre": 11, "diciembre": 12
     }
     meses_regex = "|".join(meses_map.keys())
-    match = re.search(rf"(\d{{1,2}})\s+de\s+({meses_regex})\s+de\s+(\d{{4}})", date_str)
+    match = re.search(rf"(\d{{1,2}})\s+de\s+({meses_regex})\s+de\s+(\d{{2,4}})", date_str)
     if match:
         from datetime import date
         try:
             day, month_name, year = int(match.group(1)), match.group(2), int(match.group(3))
+            if year < 100: year += 2000
             return date(year, meses_map[month_name], day)
         except:
             return None
@@ -102,8 +104,15 @@ def extract_atr(text: str):
     if not text:
         return None
     normalized = normalize_text(text).upper()
+    # Broaden the search
     if re.search(r"\b2\s*[.,]?\s*[0O]\s*TD\b", normalized):
         return "2.0TD"
+    if re.search(r"\b3\s*[.,]?\s*[0O]\s*TD\b", normalized):
+        return "3.0TD"
+    # Fallback: ATR phrase
+    match = re.search(r"PEAJE.*?([23]\.?[0O]\s*TD)", normalized)
+    if match:
+        return match.group(1).replace(" ", "").replace(".0TD", ".0TD").replace("0", "0") # Basic normalization
     return None
 
 
@@ -115,22 +124,17 @@ def _extract_potencias_with_sources(text: str):
     p1_patterns = [
         ("punta", r"potencia\s+(?:contratada\s+)?(?:en\s+)?punta[^0-9]{0,20}([\d.,]+)"),
         ("p1", r"potencia\s+(?:contratada\s+)?(?:en\s+)?p1[^0-9]{0,20}([\d.,]+)"),
-        # Nuevos patrones permisivos (fix Naturgy): "ncia contratada...", "contratada en punta..."
+        ("contratada", r"potencia\s+contratada[^0-9]{0,30}\s+([\d.,]+)\s*kw"),
         ("punta", r"(?:potencia|ncia)\s+(?:contratada\s+)?(?:en\s+)?punta[^0-9]{0,60}([\d.,]+)\s*(?:kw|k\s*w|k)?"),
         ("punta", r"contratada\s+(?:en\s+)?punta[^0-9]{0,60}([\d.,]+)\s*(?:kw|k\s*w|k)?"),
-        # Fallbacks genéricos
-        ("punta", r"\bpunta\b[^0-9]{0,60}([\d.,]+)\s*(?:kw|k\s*w|k)"),
-        ("p1", r"\bp1\b[^0-9]{0,60}([\d.,]+)\s*(?:kw|k\s*w|k)"),
+        # Table labels
+        ("grid", r"potencia\s*\(kw\)[^0-9]{0,20}([\d.,]+)"),
     ]
     p2_patterns = [
         ("valle", r"potencia\s+(?:contratada\s+)?(?:en\s+)?valle[^0-9]{0,20}([\d.,]+)"),
         ("p2", r"potencia\s+(?:contratada\s+)?(?:en\s+)?p2[^0-9]{0,20}([\d.,]+)"),
-        # Nuevos patrones permisivos (fix Naturgy)
         ("valle", r"(?:potencia|ncia)\s+(?:contratada\s+)?(?:en\s+)?valle[^0-9]{0,60}([\d.,]+)\s*(?:kw|k\s*w|k)?"),
         ("valle", r"contratada\s+(?:en\s+)?valle[^0-9]{0,60}([\d.,]+)\s*(?:kw|k\s*w|k)?"),
-        # Fallbacks genéricos
-        ("valle", r"\bvalle\b[^0-9]{0,60}([\d.,]+)\s*(?:kw|k\s*w|k)"),
-        ("p2", r"\bp2\b[^0-9]{0,60}([\d.,]+)\s*(?:kw|k\s*w|k)"),
     ]
 
     def _match(patterns):
@@ -735,12 +739,19 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
     detected["servicios_vinculados"] = sv_match is not None
 
     result["alquiler_contador"] = _extract_number(
-        [r"alquiler\s+contador[^0-9]{0,10}([\d.,]+)", r"contador\s+alquiler[^0-9]{0,10}([\d.,]+)"]
+        [
+            r"alquiler\s+(?:de\s+)?(?:equipos|contador|medida)[^0-9]{0,20}([\d.,]+)", 
+            r"equipos\s+de\s+medida[^0-9]{0,20}([\d.,]+)",
+            r"contador\s+alquiler[^0-9]{0,10}([\d.,]+)"
+        ]
     )
     detected["alquiler_contador"] = result["alquiler_contador"] is not None
 
     result["impuesto_electrico"] = _extract_number(
-        [r"impuesto\s+electrico[^0-9]{0,10}([\d.,]+)", r"impuesto\s+el[eé]ctrico[^0-9]{0,10}([\d.,]+)"]
+        [
+            r"impuesto\s+(?:sobre\s+la\s+)?electricidad[^0-9]{0,20}([\d.,]+)",
+            r"impuesto\s+el[eé]ctrico[^0-9]{0,10}([\d.,]+)"
+        ]
     )
     detected["impuesto_electrico"] = result["impuesto_electrico"] is not None
 
@@ -800,12 +811,28 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
     # [PATCH BUG C] Guardia de consumos absurdos
     sum_periodos = sum([result.get(f"consumo_p{i}_kwh") or 0 for i in range(1, 4)])
     consumo_tot = result.get("consumo_kwh")
-    if (consumo_tot and sum_periodos > consumo_tot * 3) or sum_periodos > 2000:
+    
+    # Solo limpiamos si sum_periodos es significativamente distinta del total O absurdamente alta
+    has_crazy_sum = (consumo_tot and consumo_tot > 0 and sum_periodos > consumo_tot * 3)
+    has_absurdly_huge_sum = (sum_periodos > 2000)
+    
+    # EXCEPCIÓN: Si sum_periodos es 0, no es "absurda", es simplemente "missing"
+    if (has_crazy_sum or has_absurdly_huge_sum) and sum_periodos > 0:
         import logging
-        logging.warning(f"🛡️ [OCR] Limpieza de consumos absurdos (P1+P2+P3={sum_periodos}, Total={consumo_tot}). Marcando como missing.")
+        logging.warning(f"🛡️ [OCR] Coherencia fallida (P1+P2+P3={sum_periodos}, Total={consumo_tot}). Seteando consumos a NULL para corrección manual.")
         for i in range(1, 7):
             result[f"consumo_p{i}_kwh"] = None
             result["detected_por_ocr"][f"consumo_p{i}_kwh"] = False
+    
+    # [QA AUDIT] LOGS PARA DEPURACIÓN (Mismo formato que frontend)
+    print(f"--- [QA AUDIT] Backend Extraction Summary ---")
+    print(f"✅ cups: {result.get('cups')}")
+    print(f"✅ atr: {result.get('atr')}")
+    print(f"✅ total_factura: {result.get('total_factura')}")
+    print(f"✅ periodo_dias: {result.get('dias_facturados')}")
+    print(f"✅ consumo_total: {result.get('consumo_kwh')}")
+    print(f"✅ sum_periodos: {sum_periodos}")
+    print(f"----------------------------------------------")
 
     required_fields = [
         "atr",
