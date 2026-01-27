@@ -11,7 +11,7 @@ class TestCupsValidation(unittest.TestCase):
     
     def test_normalize_basic(self):
         self.assertEqual(normalize_cups("  ES1234567890123456AB  "), "ES1234567890123456AB")
-        self.assertEqual(normalize_cups("ES-1234.5678"), "ES12345678")
+        self.assertIsNone(normalize_cups("ES-1234.5678")) # Too short, should be None
     
     def test_normalize_blacklist(self):
         self.assertIsNone(normalize_cups("ESUMENDELAFACTURA"))

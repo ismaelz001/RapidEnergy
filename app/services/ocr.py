@@ -18,6 +18,38 @@ def normalize_text(raw: str) -> str:
     return text.strip()
 
 
+def _parse_date_flexible(date_str):
+    if not date_str or not isinstance(date_str, str):
+        return None
+    date_str = date_str.lower().strip()
+    
+    # 1. DD/MM/YYYY o DD-MM-YYYY
+    match = re.search(r"(\d{1,2})[/-](\d{1,2})[/-](\d{4})", date_str)
+    if match:
+        from datetime import date
+        try:
+            day, month, year = int(match.group(1)), int(match.group(2)), int(match.group(3))
+            return date(year, month, day)
+        except:
+            return None
+            
+    # 2. DD de Mes de YYYY
+    meses_map = {
+        "enero": 1, "febrero": 2, "marzo": 3, "abril": 4, "mayo": 5, "junio": 6,
+        "julio": 7, "agosto": 8, "septiembre": 9, "octubre": 10, "noviembre": 11, "diciembre": 12
+    }
+    meses_regex = "|".join(meses_map.keys())
+    match = re.search(rf"(\d{{1,2}})\s+de\s+({meses_regex})\s+de\s+(\d{{4}})", date_str)
+    if match:
+        from datetime import date
+        try:
+            day, month_name, year = int(match.group(1)), match.group(2), int(match.group(3))
+            return date(year, meses_map[month_name], day)
+        except:
+            return None
+    return None
+
+
 def parse_es_number(value: str):
     if value is None:
         return None
@@ -274,7 +306,7 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
         # 1. CUPS EXTRACTION
         # Regex más estricta: ES + exactamente 18-20 caracteres alfanuméricos (permite espacios/guiones internos)
         # Esto evita capturar texto extra como "TIPO" o saltos de línea
-        candidates = re.findall(r"ES[\s\-]?[0-9]{4}[\s\-]?[0-9]{4}[\s\-]?[0-9]{4}[\s\-]?[0-9]{4}[\s\-]?[A-Z0-9]{2,4}", raw_text, re.IGNORECASE)
+        candidates = re.findall(r"ES[\s\-]?[0-9]{4}[\s\-]?[0-9]{4}[\s\-]?[0-9]{4}[\s\-]?[0-9]{4}[\s\-]?[A-Z0-9]{2}[\s\-]?[A-Z0-9]{0,2}", raw_text, re.IGNORECASE)
         valid_cups_found = None
         
         for cand in candidates:
@@ -439,13 +471,14 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
     if structured.get("cups"):
         result["cups"] = structured.get("cups")
     else:
-        # Fallback regex
-        cups_match = re.search(r"(ES[ \t0-9A-Z\-]{16,24})", full_text, re.IGNORECASE)
+        # Fallback regex (Improved to capture full Iberdrola CUPS)
+        cups_match = re.search(r"(ES[ \t0-9A-Z\-]{18,28})", full_text, re.IGNORECASE)
         if cups_match:
             raw_cups = cups_match.group(1).upper().splitlines()[0]
             cleaned_cups = re.sub(r"[\s\-]", "", raw_cups)
-            valid_cups = re.search(r"ES[0-9A-Z]{18,24}", cleaned_cups)
-            result["cups"] = valid_cups.group(0) if valid_cups else cleaned_cups
+            # Re-verify Mod529 or at least length
+            valid_cups = re.search(r"ES[0-9A-Z]{18,22}", cleaned_cups)
+            result["cups"] = valid_cups.group(0) if valid_cups else cleaned_cups[:22]
 
     atr_value = extract_atr(full_text)
     if atr_value:
@@ -468,12 +501,14 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
     if potencias["warnings"]:
         extraction_summary["parse_warnings"].extend(potencias["warnings"])
 
-    # Generic total consumption
-    consumo_match = re.search(r"(\d+[.,]?\d*)\s*kWh", full_text, re.IGNORECASE)
+    # Generic total consumption - VERY STRICT to avoid period-specific values
+    consumo_match = re.search(r"(?i)(?:consumo\s+total|total\s+consumo|consumo\s+(?:facturado|del\s+periodo))[^0-9\n]{0,50}([\d.,]+)\s*kwh", full_text)
+    
     if consumo_match:
         result["consumo_kwh"] = parse_es_number(consumo_match.group(1))
-        detected["consumo_kwh"] = result["consumo_kwh"] is not None
+        detected["consumo_kwh"] = True
     else:
+        result["consumo_kwh"] = None
         detected["consumo_kwh"] = False
 
     # Total Importe Strategy
@@ -750,6 +785,28 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
     else:
         result["provincia"] = None
 
+    # [PATCH BUG B] Fallback periodo_dias desde fechas
+    if result.get("dias_facturados") is None and result.get("fecha_inicio_consumo") and result.get("fecha_fin_consumo"):
+        d_ini = _parse_date_flexible(result["fecha_inicio_consumo"])
+        d_fin = _parse_date_flexible(result["fecha_fin_consumo"])
+        if d_ini and d_fin:
+            dias = (d_fin - d_ini).days + 1
+            if dias > 0:
+                result["dias_facturados"] = dias
+                result["detected_por_ocr"]["dias_facturados"] = True
+                import logging
+                logging.warning(f"🕒 [OCR] Calculados {dias} días desde fechas ({result['fecha_inicio_consumo']} - {result['fecha_fin_consumo']})")
+
+    # [PATCH BUG C] Guardia de consumos absurdos
+    sum_periodos = sum([result.get(f"consumo_p{i}_kwh") or 0 for i in range(1, 4)])
+    consumo_tot = result.get("consumo_kwh")
+    if (consumo_tot and sum_periodos > consumo_tot * 3) or sum_periodos > 2000:
+        import logging
+        logging.warning(f"🛡️ [OCR] Limpieza de consumos absurdos (P1+P2+P3={sum_periodos}, Total={consumo_tot}). Marcando como missing.")
+        for i in range(1, 7):
+            result[f"consumo_p{i}_kwh"] = None
+            result["detected_por_ocr"][f"consumo_p{i}_kwh"] = False
+
     required_fields = [
         "atr",
         "potencia_p1_kw",
@@ -861,7 +918,29 @@ def extract_data_with_gemini(file_bytes: bytes, is_pdf: bool = True) -> dict:
         # Completar metadatos
         result["parsed_fields"] = {k: v is not None for k, v in data.items()}
         result["detection_method"] = "gemini-1.5-flash"
+
+        # [PATCH P0] Saneado post-Gemini
+        if result.get("iva_porcentaje") is None:
+            result["iva_porcentaje"] = 21.0
         
+        # Fallback periodo_dias (Bug B)
+        if result.get("dias_facturados") is None and result.get("fecha_inicio_consumo") and result.get("fecha_fin_consumo"):
+            d_ini = _parse_date_flexible(result["fecha_inicio_consumo"])
+            d_fin = _parse_date_flexible(result["fecha_fin_consumo"])
+            if d_ini and d_fin:
+                dias = (d_fin - d_ini).days + 1
+                if dias > 0:
+                    result["dias_facturados"] = dias
+                    print(f"[GEMINI] Calculado periodo_dias fallback: {dias}")
+
+        # Guardia consumos (Bug C)
+        sum_periodos = sum([result.get(f"consumo_p{i}_kwh") or 0 for i in range(1, 4)])
+        consumo_tot = result.get("consumo_kwh")
+        if (consumo_tot and sum_periodos > consumo_tot * 3) or sum_periodos > 2000:
+            print(f"🛡️ [GEMINI] Limpieza de consumos absurdos (P1+P2+P3={sum_periodos}, Total={consumo_tot})")
+            for i in range(1, 7):
+                result[f"consumo_p{i}_kwh"] = None
+
         return result
 
     except Exception as e:

@@ -401,43 +401,60 @@ async def process_factura(file: UploadFile, db: Session = Depends(get_db)):
   atr: {ocr_data.get('atr')}
 """)
 
-    nueva_factura = Factura(
-        filename=file.filename,
-        cups=cups_final_db,
-        consumo_kwh=ocr_data.get("consumo_kwh"),
-        importe=ocr_data.get("importe"), # Base imponible fallback?
-        total_factura=ocr_data.get("total_factura"), # Priority
-        fecha=ocr_data.get("fecha"),
-        fecha_inicio=ocr_data.get("fecha_inicio_consumo"),
-        fecha_fin=ocr_data.get("fecha_fin_consumo"),
-        raw_data=raw_payload_str,
-        
-        # FIX: Fallback ATR extraction
-        atr=ocr_data.get("atr"),
-        cliente_id=cliente_db.id if cliente_db else None,
-        
-        # Deduplicacion
-        file_hash=file_hash,
-        numero_factura=ocr_data.get("numero_factura"),
-        
-        # Nuevos campos mapeados
-        potencia_p1_kw=ocr_data.get("potencia_p1_kw"),
-        potencia_p2_kw=ocr_data.get("potencia_p2_kw"),
-        consumo_p1_kwh=ocr_data.get("consumo_p1_kwh"),
-        consumo_p2_kwh=ocr_data.get("consumo_p2_kwh"),
-        consumo_p3_kwh=ocr_data.get("consumo_p3_kwh"),
-        consumo_p4_kwh=ocr_data.get("consumo_p4_kwh"),
-        consumo_p5_kwh=ocr_data.get("consumo_p5_kwh"),
-        consumo_p6_kwh=ocr_data.get("consumo_p6_kwh"),
-        bono_social=ocr_data.get("bono_social"),
-        servicios_vinculados=ocr_data.get("servicios_vinculados"),
-        alquiler_contador=ocr_data.get("alquiler_contador"),
-        impuesto_electrico=ocr_data.get("impuesto_electrico"),
-        iva=ocr_data.get("iva"),
-        
-        # ⭐ FIX P0-1: Mapear periodo_dias desde dias_facturados
-        periodo_dias=ocr_data.get("dias_facturados"),
-    )
+        # [PATCH A1] Sanitizado de booleanos para evitar 500 por tipos incorrectos (ej: float de OCR)
+        def _to_bool(val, field_name):
+            if isinstance(val, bool):
+                return val
+            if isinstance(val, str):
+                v = val.lower().strip()
+                if v in ("si", "sí", "true", "1"): return True
+                if v in ("no", "false", "0"): return False
+            if val is not None:
+                logger.warning(f"⚠️ [WEBHOOK] Campo {field_name} con valor no booleano ({val}). Seteando a None.")
+            return None
+
+        bono_social_clean = _to_bool(ocr_data.get("bono_social"), "bono_social")
+        servicios_vinculados_clean = _to_bool(ocr_data.get("servicios_vinculados"), "servicios_vinculados")
+
+        nueva_factura = Factura(
+            filename=file.filename,
+            cups=cups_final_db,
+            consumo_kwh=ocr_data.get("consumo_kwh"),
+            importe=ocr_data.get("importe"), # Base imponible fallback?
+            total_factura=ocr_data.get("total_factura"), # Priority
+            fecha=ocr_data.get("fecha"),
+            fecha_inicio=ocr_data.get("fecha_inicio_consumo"),
+            fecha_fin=ocr_data.get("fecha_fin_consumo"),
+            raw_data=raw_payload_str,
+            
+            # FIX: Fallback ATR extraction
+            atr=ocr_data.get("atr"),
+            cliente_id=cliente_db.id if cliente_db else None,
+            
+            # Deduplicacion
+            file_hash=file_hash,
+            numero_factura=ocr_data.get("numero_factura"),
+            
+            # Nuevos campos mapeados
+            potencia_p1_kw=ocr_data.get("potencia_p1_kw"),
+            potencia_p2_kw=ocr_data.get("potencia_p2_kw"),
+            consumo_p1_kwh=ocr_data.get("consumo_p1_kwh"),
+            consumo_p2_kwh=ocr_data.get("consumo_p2_kwh"),
+            consumo_p3_kwh=ocr_data.get("consumo_p3_kwh"),
+            consumo_p4_kwh=ocr_data.get("consumo_p4_kwh"),
+            consumo_p5_kwh=ocr_data.get("consumo_p5_kwh"),
+            consumo_p6_kwh=ocr_data.get("consumo_p6_kwh"),
+            bono_social=bono_social_clean,
+            servicios_vinculados=servicios_vinculados_clean,
+            alquiler_contador=ocr_data.get("alquiler_contador"),
+            impuesto_electrico=ocr_data.get("impuesto_electrico"),
+            iva=ocr_data.get("iva"),
+            # PATCH A2: Guardar iva_porcentaje
+            iva_porcentaje=ocr_data.get("iva_porcentaje"),
+            
+            # ⭐ FIX P0-1: Mapear periodo_dias desde dias_facturados
+            periodo_dias=ocr_data.get("dias_facturados"),
+        )
 
     es_valida, errors = validate_factura_completitud(nueva_factura)
     nueva_factura.estado_factura = "lista_para_comparar" if es_valida else "pendiente_datos"
