@@ -13,11 +13,9 @@ import traceback
 
 def _shield_concepts(result: dict):
     """
-    🛡️ Concept Shield: Protege contra la mezcla de conceptos (Potencia <-> Consumo).
-    Si el consumo es idéntico a la potencia contratada (valor típico de kW como 3.3, 4.6), 
-    es casi seguro un error de extracción.
+    Validación suave de conceptos (Potencia <-> Consumo).
+    Ahora solo advierte sin anular datos válidos.
     """
-    import logging
     p1 = result.get("potencia_p1_kw")
     p2 = result.get("potencia_p2_kw")
     tot_c = result.get("consumo_kwh")
@@ -27,32 +25,23 @@ def _shield_concepts(result: dict):
     
     for i in range(1, 7):
         c_alt = result.get(f"consumo_p{i}_kwh")
-        if c_alt is None: continue
+        if c_alt is None: 
+            continue
         
-        # Si el consumo de un periodo es idéntico a P1 o P2 (que son constantes)
+        # Validar pero NO anular - solo advertir en logs
+        # Si el consumo coincide exactamente con potencia contratada
         is_collision = (p1 and abs(c_alt - p1) < 0.001) or (p2 and abs(c_alt - p2) < 0.001)
         
         if is_collision:
-            # Si el consumo es muy bajo (< 15) O es un valor típico de potencia...
             is_suspicious = (c_alt < 15) or any(abs(c_alt - tp) < 0.01 for tp in typical_powers)
-            
-            # EXCEPCIÓN: Si el consumo total de la factura confirma que este valor es real (ej: total = sum(p1..p3))
-            # No lo borramos. Pero si tot_c es 0 o null, desconfiamos.
-            if tot_c and tot_c > 0 and abs(tot_c - c_alt) < 0.1:
-                 # Si solo hay un periodo y coincide con el total, podría ser real
-                 pass
-            else:
-                if is_suspicious:
-                    logging.warning(f"🛡️ [ConceptShield] Colisión C{i}=Potencia ({c_alt}). Anulando C{i} por sospecha de mala extracción.")
-                    result[f"consumo_p{i}_kwh"] = None
-                    if "detected_por_ocr" in result: 
-                        result["detected_por_ocr"][f"consumo_p{i}_kwh"] = False
+            if is_suspicious:
+                # Solo advertir, no anular
+                logging.debug(f"[ValidateShield] Advertencia: Consumo P{i}={c_alt} cercano a potencia contratada")
 
-    # Regla 3: Blindaje de Impuesto Eléctrico (No capturar el porcentaje 5.11)
+    # Validar Impuesto Eléctrico pero no anular automáticamente
     ie = result.get("impuesto_electrico")
     if ie and (abs(ie - 5.11) < 0.1 or abs(ie - 1.0511) < 0.01 or abs(ie - 0.0511) < 0.01):
-        logging.warning(f"🛡️ [ConceptShield] El impuesto_electrico ({ie}) parece ser el tipo impositivo, no el importe. Limpiando.")
-        result["impuesto_electrico"] = None
+        logging.debug(f"[ValidateShield] Advertencia: Impuesto eléctrico ({ie}) parece ser porcentaje")
 
     return result
 
@@ -731,36 +720,14 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
                 data[key] = table_consumos[key]
                 detected_pf[key] = True
 
-        # SEGUNDA ESTRATEGIA: Patrones regex tradicionales (para consumos no encontrados)
-        for p_key, patterns in consume_patterns.items():
-            key = f"consumo_{p_key}_kwh"
-            if data[key] is not None:
-                continue  # Ya fue encontrado en estrategia 1
-                
-            value_found = None
-            
-            for pat in patterns:
-                m = re.search(pat, normalized_consumo_text, re.IGNORECASE)
-                if m:
-                    try:
-                        candidate = parse_es_number(m.group(1))
-                        # Validación: consumos típicos son entre 0 y 5000 kWh por período
-                        if candidate is not None and 0 < candidate <= 5000:
-                            value_found = candidate
-                            break
-                    except:
-                        continue
-            
-            data[key] = value_found
-            detected_pf[key] = value_found is not None
-
-        # TERCERA ESTRATEGIA: Búsqueda en líneas de tabla para consumos restantes
+        # ESTRATEGIA 3B: Búsqueda en líneas de tabla PRIMERO (más precisa - filtra por kwh)
         # Common pattern in Spanish invoices: table with columns P1, P2, P3, etc.
+        # IMPORTANTE: Filtrar solo líneas que tengan "kwh" para evitar capturar potencias (kW)
         table_lines = []
         for ln in raw_text.splitlines():
             clean = ln.strip()
-            # Lines que contienen P1, P2, P3 o números separados por espacios/tabs
-            if re.search(r"\bP[1-6]\b|consumo|punta|llano|valle", clean, re.IGNORECASE):
+            # Lines que contienen P1, P2, P3 Y "kwh" (para asegurar son consumos, no potencias)
+            if re.search(r"\b(?:kwh|kWh)\b", clean, re.IGNORECASE) and re.search(r"\bP[1-6]\b|punta|llano|valle", clean, re.IGNORECASE):
                 table_lines.append(clean)
         
         # Try to extract consumos from table lines when not found yet
@@ -785,12 +752,17 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
                 if not any(name in line_lower for name in period_names.get(p_num, [])):
                     continue
                 
-                # Try to extract a number from this line
+                # Try to extract a number from this line - but skip the first match if it's tiny (like "2" from "P2")
                 nums = re.findall(r"([\d.,]+)", line)
+                # Skip first match if it's less than 5 (likely the period number like "2" in "P2")
+                if nums and len(nums) > 1 and parse_es_number(nums[0]) is not None and parse_es_number(nums[0]) < 5:
+                    nums = nums[1:]  # Skip the period marker
+                
                 for num_str in nums:
                     try:
                         val = parse_es_number(num_str)
-                        if val is not None and 0 < val <= 5000:
+                        # Rango válido para consumos: 0-5000 kWh (inclusive 0)
+                        if val is not None and 0 <= val <= 5000:
                             data[key] = val
                             detected_pf[key] = True
                             break
@@ -798,6 +770,29 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
                         continue
                 if data[key] is not None:
                     break
+
+        # SEGUNDA ESTRATEGIA: Patrones regex tradicionales (para consumos no encontrados)
+        for p_key, patterns in consume_patterns.items():
+            key = f"consumo_{p_key}_kwh"
+            if data[key] is not None:
+                continue  # Ya fue encontrado en estrategia 1 o 3
+                
+            value_found = None
+            
+            for pat in patterns:
+                m = re.search(pat, normalized_consumo_text, re.IGNORECASE)
+                if m:
+                    try:
+                        candidate = parse_es_number(m.group(1))
+                        # Validación: consumos típicos son entre 0 y 5000 kWh por período
+                        if candidate is not None and 0 <= candidate <= 5000:
+                            value_found = candidate
+                            break
+                    except:
+                        continue
+            
+            data[key] = value_found
+            detected_pf[key] = value_found is not None
 
         # CUARTA ESTRATEGIA: Fallback para líneas con formato "P2: 18"
         # Only enable if we detected at least ONE consumo
