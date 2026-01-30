@@ -426,23 +426,63 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
         detected_pf["fecha_inicio_consumo"] = data["fecha_inicio_consumo"] is not None
         detected_pf["fecha_fin_consumo"] = data["fecha_fin_consumo"] is not None
 
-        # 2b. Dias Facturados (Strict Regex)
+        # 2b. Dias Facturados (Improved - Multiple strategies)
         dias_facturados = None
+        
+        # Strategy 1: Look for explicit "días" keyword
         for ln in raw_text.splitlines():
             linea = normalize_text(ln)
-            if not linea: continue
+            if not linea: 
+                continue
             low = linea.lower()
-            if "kwh" in low: continue # Skip energy lines for days, but keep power lines (might have days)
-            if "dias" not in low and "días" not in low: continue
             
-            # Pattern: "30 dias" or "dias: 30" - stricter
-            m = re.search(r"(?:d[íi]as.*?(\d+)|(\d+)\s*d[íi]as)", low)
+            # Pattern: "30 dias" or "días: 30" 
+            m = re.search(r"(?:d[íi]as[\s:]*(\d+)|(\d+)\s*d[íi]as)", low)
             if m:
                 val = m.group(1) or m.group(2)
-                # Sanity range for days (1-100)
-                if 1 <= int(val) <= 120:
-                    dias_facturados = val
-                    break
+                try:
+                    val_int = int(val)
+                    # Sanity range for days (1-120)
+                    if 1 <= val_int <= 120:
+                        dias_facturados = val_int
+                        break
+                except:
+                    continue
+        
+        # Strategy 2: Look for "Período" o "periodo" followed by dates or days
+        if dias_facturados is None:
+            periodo_match = re.search(
+                r"(?i)per[íi]odo[\s\S]{0,100}?(\d{1,2})\s+(?:d[íi]as|days)",
+                raw_text
+            )
+            if periodo_match:
+                try:
+                    val = int(periodo_match.group(1))
+                    if 1 <= val <= 120:
+                        dias_facturados = val
+                except:
+                    pass
+        
+        # Strategy 3: Calculate from date range if available
+        if dias_facturados is None:
+            # Look for "del XX de XXX al YY de YYY"
+            date_range = re.search(
+                r"del\s+(\d{1,2})\s+de\s+\w+\s+al\s+(\d{1,2})\s+de\s+(\w+)",
+                raw_text,
+                re.IGNORECASE
+            )
+            if date_range:
+                try:
+                    start_day = int(date_range.group(1))
+                    end_day = int(date_range.group(2))
+                    # Simple approximation: if different months, assume month boundaries
+                    if end_day >= start_day:
+                        dias_facturados = end_day - start_day + 1
+                    else:
+                        # Different months, estimate ~30 days per month
+                        dias_facturados = (30 - start_day) + end_day + 1
+                except:
+                    pass
 
         if dias_facturados:
             try:
@@ -505,40 +545,127 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
 
         consume_patterns = {
             "p1": [
-                r"(?i)consumo\s+.*?\bP1\b[\s\S]{0,100}?([\d.,]+)\s*(?:kwh)",
-                r"(?i)\bP1\b[\s\S]{0,100}?([\d.,]+)\s*(?:kwh)",
-                r"(?i)\bpunta\b[\s\S]{0,100}?([\d.,]+)\s*(?:kwh)",
-                r"([\d.,]+)\s*kwh\s*x\s*0,"
+                # Consumo explícito P1 con kwh
+                r"(?i)consumo\s+(?:de\s+)?(?:energía\s+)?.*?\bP1\b[\s\S]{0,100}?([\d.,]+)\s*(?:kwh)?",
+                # P1 solo seguido de número y posible kwh
+                r"(?i)\bP1\b[\s\S]{0,100}?([\d.,]+)\s*(?:kwh)?",
+                # Punta (Spanish term for P1)
+                r"(?i)\bpunta\b[\s\S]{0,100}?([\d.,]+)\s*(?:kwh)?",
+                # Consumo punta explícito
+                r"(?i)consumo\s+punta[\s\S]{0,50}?([\d.,]+)",
+                # Número solo después de "P1:" o "Punta:"
+                r"(?i)(?:P1|punta)\s*[:\-]?\s*([\d.,]+)",
+                # Tabla format: "P1 XXX" (números grandes, típicamente > 50)
+                r"\bP1\b\s+([\d.,]+)(?:\s|$)",
             ],
             "p2": [
-                r"(?i)consumo\s+.*?\bP2\b[\s\S]{0,100}?([\d.,]+)\s*(?:kwh)",
-                r"(?i)\bP2\b[\s\S]{0,100}?([\d.,]+)\s*(?:kwh)",
-                r"(?i)\bllano\b[\s\S]{0,100}?([\d.,]+)\s*(?:kwh)"
+                # Consumo explícito P2 con kwh
+                r"(?i)consumo\s+(?:de\s+)?(?:energía\s+)?.*?\bP2\b[\s\S]{0,100}?([\d.,]+)\s*(?:kwh)?",
+                # P2 solo seguido de número
+                r"(?i)\bP2\b[\s\S]{0,100}?([\d.,]+)\s*(?:kwh)?",
+                # Llano (Spanish term for P2)
+                r"(?i)\bllano\b[\s\S]{0,100}?([\d.,]+)\s*(?:kwh)?",
+                # Consumo llano explícito
+                r"(?i)consumo\s+llano[\s\S]{0,50}?([\d.,]+)",
+                # Número solo después de "P2:" o "Llano:"
+                r"(?i)(?:P2|llano)\s*[:\-]?\s*([\d.,]+)",
+                # Tabla format
+                r"\bP2\b\s+([\d.,]+)(?:\s|$)",
             ],
             "p3": [
-                r"(?i)consumo\s+.*?\bP3\b[\s\S]{0,100}?([\d.,]+)\s*(?:kwh)",
-                r"(?i)\bP3\b[\s\S]{0,100}?([\d.,]+)\s*(?:kwh)",
-                r"(?i)\bvalle\b[\s\S]{0,100}?([\d.,]+)\s*(?:kwh)"
+                # Consumo explícito P3 con kwh
+                r"(?i)consumo\s+(?:de\s+)?(?:energía\s+)?.*?\bP3\b[\s\S]{0,100}?([\d.,]+)\s*(?:kwh)?",
+                # P3 solo seguido de número
+                r"(?i)\bP3\b[\s\S]{0,100}?([\d.,]+)\s*(?:kwh)?",
+                # Valle (Spanish term for P3)
+                r"(?i)\bvalle\b[\s\S]{0,100}?([\d.,]+)\s*(?:kwh)?",
+                # Consumo valle explícito
+                r"(?i)consumo\s+valle[\s\S]{0,50}?([\d.,]+)",
+                # Número solo después de "P3:" o "Valle:"
+                r"(?i)(?:P3|valle)\s*[:\-]?\s*([\d.,]+)",
+                # Tabla format
+                r"\bP3\b\s+([\d.,]+)(?:\s|$)",
             ],
-            "p4": [r"(?i)consumo.*?P4.*?[:\-]?\s*([\d.,]+)"],
-            "p5": [r"(?i)consumo.*?P5.*?[:\-]?\s*([\d.,]+)"],
-            "p6": [r"(?i)consumo.*?P6.*?[:\-]?\s*([\d.,]+)"],
+            "p4": [
+                r"(?i)consumo.*?P4.*?[:\-]?\s*([\d.,]+)",
+                r"(?i)\bP4\b\s+([\d.,]+)",
+            ],
+            "p5": [
+                r"(?i)consumo.*?P5.*?[:\-]?\s*([\d.,]+)",
+                r"(?i)\bP5\b\s+([\d.,]+)",
+            ],
+            "p6": [
+                r"(?i)consumo.*?P6.*?[:\-]?\s*([\d.,]+)",
+                r"(?i)\bP6\b\s+([\d.,]+)",
+            ],
         }
 
         for p_key, patterns in consume_patterns.items():
             key = f"consumo_{p_key}_kwh"
+            value_found = None
+            
             for pat in patterns:
-                # Debug
-                # print(f"Checking {p_key} with {pat} in text len={len(normalized_consumo_text)}")
-                m = re.search(pat.replace(".*?", r"[\s\S]{0,100}?"), normalized_consumo_text, re.IGNORECASE)
+                m = re.search(pat, normalized_consumo_text, re.IGNORECASE)
                 if m:
-                    # print(f"MATCH {p_key}: {m.group(0)} -> {m.group(1)}")
-                    data[key] = parse_es_number(m.group(1))
-                    break
-            detected_pf[key] = data[key] is not None
+                    try:
+                        candidate = parse_es_number(m.group(1))
+                        # Validación: consumos típicos son entre 0 y 5000 kWh por período
+                        if candidate is not None and 0 < candidate <= 5000:
+                            value_found = candidate
+                            break
+                    except:
+                        continue
+            
+            data[key] = value_found
+            detected_pf[key] = value_found is not None
 
-        # Fallback for truncated OCR where P2/P3 appear as bare lines (e.g. "P2: 18")
-        # Only enable if we already detected at least one consumo period, to avoid confusing with "Potencia P2".
+        # IMPROVED FALLBACK: Search for consumo values in table-like structures
+        # Common pattern in Spanish invoices: table with columns P1, P2, P3, etc.
+        table_lines = []
+        for ln in raw_text.splitlines():
+            clean = ln.strip()
+            # Lines que contienen P1, P2, P3 o números separados por espacios/tabs
+            if re.search(r"\bP[1-6]\b|consumo|punta|llano|valle", clean, re.IGNORECASE):
+                table_lines.append(clean)
+        
+        # Try to extract consumos from table lines when not found yet
+        for p_num in range(1, 7):
+            key = f"consumo_p{p_num}_kwh"
+            if data[key] is not None:
+                continue  # Ya fue encontrado
+            
+            # Buscar en líneas específicas
+            period_names = {
+                1: ["punta", "p1"],
+                2: ["llano", "p2"],
+                3: ["valle", "p3"],
+                4: ["p4"],
+                5: ["p5"],
+                6: ["p6"],
+            }
+            
+            for line in table_lines:
+                line_lower = line.lower()
+                # Check if this line contains the period label
+                if not any(name in line_lower for name in period_names.get(p_num, [])):
+                    continue
+                
+                # Try to extract a number from this line
+                nums = re.findall(r"([\d.,]+)", line)
+                for num_str in nums:
+                    try:
+                        val = parse_es_number(num_str)
+                        if val is not None and 0 < val <= 5000:
+                            data[key] = val
+                            detected_pf[key] = True
+                            break
+                    except:
+                        continue
+                if data[key] is not None:
+                    break
+
+        # Final fallback for bare period lines (e.g. "P2: 18" with space/newline)
+        # Only enable if we detected at least ONE consumo
         has_any_consumo = any(
             data.get(f"consumo_p{i}_kwh") is not None for i in range(1, 7)
         )
@@ -548,9 +675,9 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
                 low = ln.lower()
                 if "potencia" in low or re.search(r"\bkw\b", low):
                     continue
+                # Match "P1: 123" or "P1 123"
                 m = re.match(r"^p\s*([1-6])\s*[:\-]?\s*([\d.,]+)\s*(?:kwh)?\b", low, re.IGNORECASE)
                 if not m:
-                    # Common OCR variant: "P2 18" without punctuation
                     m = re.match(r"^p\s*([1-6])\s+([\d.,]+)\s*(?:kwh)?\b", low, re.IGNORECASE)
                 if not m:
                     continue
