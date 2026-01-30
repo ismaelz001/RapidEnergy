@@ -877,40 +877,29 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
     titular = None
     name_line_index = None
 
-    # Logic to find Titular near DNI (Heuristic)
-    # Applied to both Image and PDF text to improve coverage
+    # ⭐ CAMBIO: Buscar el nombre en las PRIMERAS líneas (cliente/remitente está al inicio)
+    # NO por proximidad al DNI (que está al final de la factura)
     raw_lines = [ln.strip() for ln in full_text.splitlines() if ln.strip()]
-    label_keywords = {"titular", "dni", "cif", "nif", "telefono", "teléfono", "email", "direccion", "dirección", "cups"}
-    filtered_lines = []
     
-    # Pre-filter lines just in case (though we use raw_lines for scanning)
-    dni_pattern = re.compile(r"\b\d{8}[A-Z]\b", re.IGNORECASE)
-    dni_indices_raw = []
-    for idx, ln in enumerate(raw_lines):
-        if dni_pattern.search(ln.replace(" ", "")):
-            dni_indices_raw.append(idx)
-            
-    for idx in dni_indices_raw:
-        found = False
-        for back in range(1, 4):
-            if idx - back >= 0:
-                candidate = _clean_name(raw_lines[idx - back])
-                if _is_valid_name(candidate):
-                    titular = candidate
-                    name_line_index = idx - back
-                    found = True
-                    break
-        if found:
-            break
-
+    # Strategy 1: Buscar en las primeras 30 líneas (zona de encabezado)
+    for idx in range(min(30, len(raw_lines))):
+        candidate = _clean_name(raw_lines[idx])
+        if _is_valid_name(candidate):
+            # Validar que NO sea nombre de empresa (Iberdrola, Naturgy, etc.)
+            if not re.search(r"(iberdrola|naturgy|endesa|repsol|enel|viesgo|telefonica)", candidate, re.IGNORECASE):
+                titular = candidate
+                name_line_index = idx
+                break
+    
+    # Strategy 2: Si no encontró, buscar patrón "NIF titular:" más específicamente
     if not titular:
         titular_block_match = re.search(
-            r"(titular|nombre del titular)\s*[:\-]?\s*([A-Za-zÁÉÍÓÚÜÑáéíóúüñ ,.'´`-]{3,80})",
+            r"(?:nif\s+titular|nombre\s+del\s+titular|titular)\s*[:\-]?\s*([A-Za-zÁÉÍÓÚÜÑáéíóúüñ ,.'´`\-]{3,80})",
             full_text,
             re.IGNORECASE,
         )
         if titular_block_match:
-            linea = _clean_name(titular_block_match.group(2))
+            linea = _clean_name(titular_block_match.group(1))
             if _is_valid_name(linea):
                 titular = linea
 
@@ -1039,26 +1028,42 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
             if result["titular"].startswith(prefix):
                 result["titular"] = result["titular"][len(prefix):].strip()
 
-    if result["direccion"]:
-        # Intento simple de extraer provincia de la direccion
-        provincias = [
-            "Álava", "Albacete", "Alicante", "Almería", "Asturias", "Ávila", "Badajoz", "Barcelona", "Burgos", "Cáceres",
-            "Cádiz", "Cantabria", "Castellón", "Ciudad Real", "Córdoba", "Cuenca", "Girona", "Granada", "Guadalajara",
-            "Guipúzcoa", "Huelva", "Huesca", "Illes Balears", "Jaén", "La Rioja", "Las Palmas", "León", "Lleida", "Lugo",
-            "Madrid", "Málaga", "Murcia", "Navarra", "Ourense", "Palencia", "Pontevedra", "Salamanca", "Santa Cruz de Tenerife",
-            "Segovia", "Sevilla", "Soria", "Tarragona", "Teruel", "Toledo", "Valencia", "Valladolid", "Vizcaya", "Zamora", "Zaragoza",
-            "A Coruña", "Ceuta", "Melilla"
-        ]
+    # ⭐ MEJORA: Extraer provincia - buscar en dirección primero, luego en texto alrededor
+    provincias = [
+        "Álava", "Albacete", "Alicante", "Almería", "Asturias", "Ávila", "Badajoz", "Barcelona", "Burgos", "Cáceres",
+        "Cádiz", "Cantabria", "Castellón", "Ciudad Real", "Córdoba", "Cuenca", "Girona", "Granada", "Guadalajara",
+        "Guipúzcoa", "Huelva", "Huesca", "Illes Balears", "Jaén", "La Rioja", "Las Palmas", "León", "Lleida", "Lugo",
+        "Madrid", "Málaga", "Murcia", "Navarra", "Ourense", "Palencia", "Pontevedra", "Salamanca", "Santa Cruz de Tenerife",
+        "Segovia", "Sevilla", "Soria", "Tarragona", "Teruel", "Toledo", "Valencia", "Valladolid", "Vizcaya", "Zamora", "Zaragoza",
+        "A Coruña", "Ceuta", "Melilla"
+    ]
+    
+    # Strategy 1: Buscar en dirección (es el lugar más relevante)
+    if result.get("direccion"):
         addr_lower = result["direccion"].lower()
         for prov in provincias:
             if prov.lower() in addr_lower:
                 result["provincia"] = prov
                 break
-        if "provincia" not in result:
-             result["provincia"] = None
-    else:
+    
+    # Strategy 2: Si no encontró, buscar en líneas que contengan un código postal (típicamente junto a provincia)
+    # Patrón: "XXXXX" (5 dígitos) suele ir con provincia en España
+    if not result.get("provincia"):
+        lines = full_text.split('\n')
+        for line in lines:
+            # Buscar líneas con patrón: número + provincia
+            if re.search(r'\d{4,5}', line):  # Contiene código postal
+                line_lower = line.lower()
+                for prov in provincias:
+                    if prov.lower() in line_lower:
+                        result["provincia"] = prov
+                        break
+                if result.get("provincia"):
+                    break
+    
+    # Si sigue sin provincia, deixar como None
+    if not result.get("provincia"):
         result["provincia"] = None
-
     # [PATCH BUG B] Periodo_dias calculated from Dates (PRIMARY SOURCE)
     if result.get("fecha_inicio_consumo") and result.get("fecha_fin_consumo"):
         d_ini = _parse_date_flexible(result["fecha_inicio_consumo"])
