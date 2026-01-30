@@ -167,25 +167,38 @@ def _extract_potencias_with_sources(text: str):
         return {"p1": None, "p2": None, "p1_source": None, "p2_source": None, "warnings": []}
     normalized = normalize_text(text)
 
+    # MEJORADO: Priorizar "Potencia Contratada" explícita, luego punta/valle
+    # Pero EVITAR capturar consumos (que dicen "kwh" no "kw")
     p1_patterns = [
         ("table", r"P1\s+P2\s+P3\s+P4\s+P5\s+P6\s+([\d.,]+)\s+([\d.,]+)"),
-        ("punta", r"potencia\s+(?:contratada\s+)?(?:en\s+)?punta[^0-9]{0,20}([\d.,]+)"),
-        ("p1", r"potencia\s+(?:contratada\s+)?(?:en\s+)?p1[^0-9]{0,20}([\d.,]+)"),
-        ("contratada", r"potencia\s+contratada[^0-9]{0,30}\s+([\d.,]+)\s*kw"),
-        ("punta", r"(?:potencia|ncia)\s+(?:contratada\s+)?(?:en\s+)?punta[^0-9]{0,60}([\d.,]+)\s*(?:kw|k\s*w|k)?"),
-        ("punta", r"contratada\s+(?:en\s+)?punta[^0-9]{0,60}([\d.,]+)\s*(?:kw|k\s*w|k)?"),
-        # Standalone
-        ("punta", r"\bpunta\b[^0-9]{0,20}([\d.,]+)\s*k?w"),
+        # Direct "P1: X kW" after "Potencia Contratada"
+        ("contratada_p1", r"potencia\s+contratada[^0-9]*?p1\s*[:\-]?\s*([\d.,]+)\s*(?:kw|k\s*w|kilovatio)(?!\s*h)"),
+        # Specific punta patterns with "kw" NOT "kwh"
+        ("punta", r"potencia\s+(?:contratada\s+)?en\s+punta\s*[:\-]?\s*([\d.,]+)\s*(?:kw|k\s*w|kilovatio)(?!\s*h)"),
+        ("punta", r"p1\s+\(punta\)\s*[:\-]?\s*([\d.,]+)\s*(?:kw|k\s*w|kilovatio)(?!\s*h)"),
+        ("punta", r"punta\s+\(potencia\)\s*[:\-]?\s*([\d.,]+)\s*(?:kw|k\s*w|kilovatio)(?!\s*h)"),
+        # P1 explicit notation
+        ("p1", r"potencia\s+(?:contratada\s+)?(?:en\s+)?p1\s*[:\-]?\s*([\d.,]+)\s*(?:kw|k\s*w|kilovatio)(?!\s*h)"),
+        # Standalone "P1: X kW"
+        ("p1_direct", r"\bp1\s*[:\-]?\s*([\d.,]+)\s*(?:kw|kilovatio)(?!\s*h)"),
         # Table labels
         ("grid", r"potencia\s*\(kw\)[^0-9]{0,20}([\d.,]+)"),
+        # Last resort: standalone "punta X kW" (BUT NOT kWh)
+        ("punta", r"\bpunta\b[^0-9]{0,20}([\d.,]+)\s*(?:kw|kilovatio)(?!\s*h)"),
     ]
     p2_patterns = [
-        ("valle", r"potencia\s+(?:contratada\s+)?(?:en\s+)?valle[^0-9]{0,20}([\d.,]+)"),
-        ("p2", r"potencia\s+(?:contratada\s+)?(?:en\s+)?p2[^0-9]{0,20}([\d.,]+)"),
-        ("valle", r"(?:potencia|ncia)\s+(?:contratada\s+)?(?:en\s+)?valle[^0-9]{0,60}([\d.,]+)\s*(?:kw|k\s*w|k)?"),
-        ("valle", r"contratada\s+(?:en\s+)?valle[^0-9]{0,60}([\d.,]+)\s*(?:kw|k\s*w|k)?"),
-        # Standalone
-        ("valle", r"\bvalle\b[^0-9]{0,20}([\d.,]+)\s*k?w"),
+        # Direct "P2: X kW" after "Potencia Contratada"
+        ("contratada_p2", r"potencia\s+contratada[^0-9]*?p2\s*[:\-]?\s*([\d.,]+)\s*(?:kw|k\s*w|kilovatio)(?!\s*h)"),
+        # Specific valle patterns with "kw" NOT "kwh"
+        ("valle", r"potencia\s+(?:contratada\s+)?en\s+valle\s*[:\-]?\s*([\d.,]+)\s*(?:kw|k\s*w|kilovatio)(?!\s*h)"),
+        ("valle", r"p2\s+\(valle\)\s*[:\-]?\s*([\d.,]+)\s*(?:kw|k\s*w|kilovatio)(?!\s*h)"),
+        ("valle", r"valle\s+\(potencia\)\s*[:\-]?\s*([\d.,]+)\s*(?:kw|k\s*w|kilovatio)(?!\s*h)"),
+        # P2 explicit notation
+        ("p2", r"potencia\s+(?:contratada\s+)?(?:en\s+)?p2\s*[:\-]?\s*([\d.,]+)\s*(?:kw|k\s*w|kilovatio)(?!\s*h)"),
+        # Standalone "P2: X kW"
+        ("p2_direct", r"\bp2\s*[:\-]?\s*([\d.,]+)\s*(?:kw|kilovatio)(?!\s*h)"),
+        # Last resort: standalone "valle X kW" (BUT NOT kWh)
+        ("valle", r"\bvalle\b[^0-9]{0,20}([\d.,]+)\s*(?:kw|kilovatio)(?!\s*h)"),
     ]
 
     def _match(patterns):
@@ -460,29 +473,29 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
         for match in strict_matches:
             # Reconstruct without spaces/dashes
             cups_candidate = "ES" + "".join(match.groups())
-            print(f"🔍 CUPS CANDIDATE (STRICT): {cups_candidate} (raw match: {match.group(0)})")
+            print(f"[CUPS] CANDIDATE (STRICT): {cups_candidate} (raw match: {match.group(0)})")
             
             # Validate with MOD529
             if is_valid_cups(cups_candidate):
                 valid_cups_found = cups_candidate
-                print(f"✅ VALID CUPS FOUND: {cups_candidate}")
+                print(f"[OK] VALID CUPS FOUND: {cups_candidate}")
                 break
             else:
-                print(f"❌ MOD529 validation failed for: {cups_candidate}")
+                print(f"[FAIL] MOD529 validation failed for: {cups_candidate}")
         
         # Pattern 2: Fallback - if MOD529 fails, accept best match anyway
         if not valid_cups_found:
-            print("📋 [FALLBACK] Trying without strict MOD529...")
+            print("[FALLBACK] Trying without strict MOD529...")
             fallback_matches = list(re.finditer(strict_pattern, raw_text, re.IGNORECASE))
             if fallback_matches:
                 # Take the first one even if MOD529 fails
                 match = fallback_matches[0]
                 cups_candidate = "ES" + "".join(match.groups())
-                print(f"⚠️ Accepting without MOD529 validation: {cups_candidate}")
+                print(f"[WARN] Accepting without MOD529 validation: {cups_candidate}")
                 valid_cups_found = cups_candidate
         
         data["cups"] = valid_cups_found
-        print(f"🏁 FINAL CUPS VALUE: {valid_cups_found}")
+        print(f"[FINAL] CUPS VALUE: {valid_cups_found}")
         
         detected_pf["cups"] = data["cups"] is not None
 
@@ -1266,12 +1279,12 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
     # --- QA logs solo en TEST_MODE ---
     if os.getenv("TEST_MODE") == "true":
         print(f"--- [QA AUDIT] Backend Extraction Summary ---")
-        print(f"✅ cups: {result.get('cups')}")
-        print(f"✅ atr: {result.get('atr')}")
-        print(f"✅ total_factura: {result.get('total_factura')}")
-        print(f"✅ periodo_dias: {result.get('dias_facturados')}")
-        print(f"✅ consumo_total: {result.get('consumo_kwh')}")
-        print(f"✅ sum_periodos: {sum_periodos_actual}")
+        print(f"[OK] cups: {result.get('cups')}")
+        print(f"[OK] atr: {result.get('atr')}")
+        print(f"[OK] total_factura: {result.get('total_factura')}")
+        print(f"[OK] periodo_dias: {result.get('dias_facturados')}")
+        print(f"[OK] consumo_total: {result.get('consumo_kwh')}")
+        print(f"[OK] sum_periodos: {sum_periodos_actual}")
         print(f"----------------------------------------------")
 
     required_fields = [
