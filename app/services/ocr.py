@@ -352,56 +352,62 @@ def _extract_table_consumos(raw_text: str) -> dict:
         # Detect consumo section start
         if "consumo" in lower_line and ("desagregado" in lower_line or "período" in lower_line or "detalle" in lower_line):
             in_consumo_section = True
-            logging.info(f"[OCR] Detected consumo section at line {i}: {line[:60]}")
             
-            # Parse the next 15 lines looking for P1/P2/P3 with values
-            for j in range(i, min(i+15, len(lines))):
+            # Parse the next 20 lines looking for P1/P2/P3 with values
+            for j in range(i, min(i+20, len(lines))):
                 next_line = lines[j]
                 next_lower = next_line.lower()
                 
                 # Look for patterns like:
-                # "Consumo P1: 59 kWh" or "P1 59" or "Punta 59"
-                for p_num in range(1, 4):
+                # "Consumo P1: 59 kWh" or "P1 59" or "Punta 59" or "P1 (PUNTA): 0 kWh"
+                for p_num in range(1, 7):
                     period_aliases = {
-                        1: ["p1", "punta", "consumo.*p1"],
-                        2: ["p2", "llano", "consumo.*p2"],
-                        3: ["p3", "valle", "consumo.*p3"],
-                        4: ["p4", "supervalleentrehorasnocturnas"],
+                        1: ["p1", "punta"],
+                        2: ["p2", "llano"],
+                        3: ["p3", "valle"],
+                        4: ["p4"],
                         5: ["p5"],
                         6: ["p6"],
                     }
                     
                     for alias in period_aliases.get(p_num, []):
-                        # Look for pattern: "alias: NUMBER" or "alias NUMBER"
-                        pattern = rf"(?i){alias}\s*[:\-]?\s*([\d.,]+)\s*(?:kwh)?"
-                        m = re.search(pattern, next_line)
-                        if m:
-                            try:
-                                val = parse_es_number(m.group(1))
-                                if val and 0 < val <= 5000:
-                                    result[f"consumo_p{p_num}_kwh"] = val
-                                    logging.info(f"[OCR] P{p_num} = {val} kWh (from '{next_line[:50]}...')")
-                            except:
-                                pass
+                        # Look for pattern: "P1 (PUNTA): NUMBER" or "p1 59" or "punta 304"
+                        # Allows parentheses and colons
+                        patterns = [
+                            rf"(?i){alias}\s*\([^)]*\)\s*[:\-]?\s*([\d.,]+)",  # "P1 (PUNTA): 0"
+                            rf"(?i){alias}\s*[:\-]?\s*([\d.,]+)\s*(?:kwh)?",    # "P1: 0 kWh" or "punta 59"
+                        ]
+                        
+                        for pattern in patterns:
+                            m = re.search(pattern, next_line)
+                            if m:
+                                try:
+                                    val = parse_es_number(m.group(1))
+                                    if val is not None and 0 <= val <= 5000:  # Allow zero values
+                                        result[f"consumo_p{p_num}_kwh"] = val
+                                        break  # Found this P_num, move to next
+                                except:
+                                    pass
+                        
+                        if result[f"consumo_p{p_num}_kwh"] is not None:
+                            break  # Already found this P_num
     
     # Strategy 2: Look for lines that start with "P1", "P2", etc. standalone
     # Only if we haven't found consumos via section headers
     if not any(result.values()):
-        logging.info("[OCR] Strategy 1 failed, trying standalone P lines...")
         for line in lines:
             stripped = line.strip()
             if not stripped or len(stripped) > 100:
                 continue
             
-            # Pattern: "P1 59" or "P1: 59" or "P1  59"
-            match = re.match(r"^P(\d)\s*[:\-]?\s*([\d.,]+)\s*(?:kwh)?$", stripped, re.IGNORECASE)
+            # Pattern: "P1 59" or "P1: 59" or "P1  59" or "P1 (PUNTA): 59"
+            match = re.match(r"^P(\d)\s*(?:\([^)]*\))?\s*[:\-]?\s*([\d.,]+)\s*(?:kwh)?$", stripped, re.IGNORECASE)
             if match:
                 p_num = int(match.group(1))
                 try:
                     val = parse_es_number(match.group(2))
-                    if val and 0 < val <= 5000:
+                    if val is not None and 0 <= val <= 5000:  # Allow zero values
                         result[f"consumo_p{p_num}_kwh"] = val
-                        logging.info(f"[OCR] P{p_num} = {val} kWh (standalone line)")
                 except:
                     pass
     
@@ -491,7 +497,6 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
         if rango_text:
             data["fecha_inicio_consumo"] = rango_text.group(1)
             data["fecha_fin_consumo"] = rango_text.group(2)
-            logging.info(f"[OCR] Fechas Format 1 (texto): {data['fecha_inicio_consumo']} a {data['fecha_fin_consumo']}")
 
         # Format 2: "dd/mm/yyyy - dd/mm/yyyy" o "dd.mm.yyyy a dd.mm.yyyy"
         if not data["fecha_inicio_consumo"]:
@@ -503,7 +508,6 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
             if rango_fechas:
                 data["fecha_inicio_consumo"] = rango_fechas.group(1)
                 data["fecha_fin_consumo"] = rango_fechas.group(2)
-                logging.info(f"[OCR] Fechas Format 2 (nums): {data['fecha_inicio_consumo']} a {data['fecha_fin_consumo']}")
 
         # Format 3: NUEVO - "Periodo de consumo: 5 de junio al 9 de agosto de 2024"
         if not data["fecha_inicio_consumo"]:
@@ -512,7 +516,6 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
             if match:
                 data["fecha_inicio_consumo"] = match.group(1).strip()
                 data["fecha_fin_consumo"] = match.group(2).strip()
-                logging.info(f"[OCR] Fechas Format 3 (Período): {data['fecha_inicio_consumo']} a {data['fecha_fin_consumo']}")
         
         # Format 4: NUEVO - "del DD de MES al DD de MES de YYYY"
         if not data["fecha_inicio_consumo"]:
@@ -523,7 +526,6 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
                 year = groups[4] if groups[4] else "2025"  # Default year if not found
                 data["fecha_inicio_consumo"] = f"{groups[0]} de {groups[1]} de {year}"
                 data["fecha_fin_consumo"] = f"{groups[2]} de {groups[3]} de {year}"
-                logging.info(f"[OCR] Fechas Format 4 (del...al): {data['fecha_inicio_consumo']} a {data['fecha_fin_consumo']}")
         
         detected_pf["fecha_inicio_consumo"] = data["fecha_inicio_consumo"] is not None
         detected_pf["fecha_fin_consumo"] = data["fecha_fin_consumo"] is not None
@@ -709,14 +711,12 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
         }
 
         # PRIMERA ESTRATEGIA: Usar la función mejorada de extracción de tablas
-        logging.info("[OCR] Intentando extracción de consumos con _extract_table_consumos()...")
         table_consumos = _extract_table_consumos(raw_text)
         for p_num in range(1, 7):
             key = f"consumo_p{p_num}_kwh"
             if key in table_consumos and table_consumos[key]:
                 data[key] = table_consumos[key]
                 detected_pf[key] = True
-                logging.info(f"[OCR] Consumo P{p_num} extraído de tabla: {table_consumos[key]} kWh")
 
         # SEGUNDA ESTRATEGIA: Patrones regex tradicionales (para consumos no encontrados)
         for p_key, patterns in consume_patterns.items():
@@ -734,7 +734,6 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
                         # Validación: consumos típicos son entre 0 y 5000 kWh por período
                         if candidate is not None and 0 < candidate <= 5000:
                             value_found = candidate
-                            logging.info(f"[OCR] Consumo {p_key} extraído por regex: {value_found} kWh")
                             break
                     except:
                         continue
@@ -781,7 +780,6 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
                         if val is not None and 0 < val <= 5000:
                             data[key] = val
                             detected_pf[key] = True
-                            logging.info(f"[OCR] Consumo P{p_num} extraído de línea de tabla: {val} kWh")
                             break
                     except:
                         continue
@@ -810,8 +808,6 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
                 if data.get(key) is None:
                     data[key] = parse_es_number(m.group(2))
                     detected_pf[key] = data[key] is not None
-                    if data[key]:
-                        logging.info(f"[OCR] Consumo P{pnum} extraído de línea directa: {data[key]} kWh")
 
         bono = re.search(r"\bbono\s+social\b", raw_text, re.IGNORECASE)
         data["bono_social"] = True if bono else None
