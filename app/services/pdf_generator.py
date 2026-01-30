@@ -261,25 +261,81 @@ def generar_pdf_presupuesto(factura, selected_offer, db):
     story.append(t_b)
     story.append(Spacer(1, 0.8*cm))
 
-    # --- TABLA C: CÁLCULO DE AHORRO ---
-    story.append(Paragraph("C) Cálculo de ahorro", styles['EnergySubheading']))
+    # --- TABLA C: CÁLCULO PASO A PASO (Desglose de Fórmula) ---
+    story.append(Paragraph("C) Cálculo paso a paso de la oferta propuesta", styles['EnergySubheading']))
     
-    coste_diario = subtotal_ep / periodo
+    # Recuperamos datos para la fórmula
+    consumo_p1 = float(getattr(factura, 'consumo_p1', 0) or 0)
+    consumo_p2 = float(getattr(factura, 'consumo_p2', 0) or 0)
+    consumo_p3 = float(getattr(factura, 'consumo_p3', 0) or 0)
+    potencia_p1 = float(breakdown.get('potencia_p1', 0) or 0)
+    potencia_p2 = float(breakdown.get('potencia_p2', 0) or 0)
     
+    # Extraemos costes unitarios de breakdown
+    tarifa_p1 = float(breakdown.get('precio_unitario_p1', 0) or 0)
+    tarifa_p2 = float(breakdown.get('precio_unitario_p2', 0) or 0)
+    tarifa_p3 = float(breakdown.get('precio_unitario_p3', 0) or 0)
+    precio_potencia_p1 = float(breakdown.get('precio_potencia_p1', 0) or 0)
+    precio_potencia_p2 = float(breakdown.get('precio_potencia_p2', 0) or 0)
+    
+    # IEE estándar según regulación
+    iee_pct = 0.0511269632
+    bono_social = float(breakdown.get('bono_social', 0) or 0)
+    
+    # --- TABLA C: DESGLOSE ESTRUCTURADO ---
     tabla_c_data = [
-        ["Concepto / Paso", "Fórmula", "Resultado"],
-        ["3) Coste diario est.", "(E+P nueva) / días", f"{coste_diario:.2f} €/día"],
-        ["4) Ahorro ANUAL TOTAL", "Ahorro periodo × (360 / días)", f"{ahorro_anual:.2f} €/año"]
+        ["PASO", "CONCEPTO", "FÓRMULA / CÁLCULO", "IMPORTE (€)"],
+        ["1", "POTENCIA (P1+P2)", f"({potencia_p1:.2f} + {potencia_p2:.2f}) kW × días × tarifa", f"{coste_p:.2f}"],
+        ["2", "CONSUMO (P1+P2+P3)", f"({consumo_p1:.2f} + {consumo_p2:.2f} + {consumo_p3:.2f}) kWh × tarifa", f"{coste_e:.2f}"],
+        ["", "Total Potencia + Consumo", "", f"{subtotal_ep:.2f}"],
+        ["3", "+ Bono Social (si aplica)", "Descuento regulatorio", f"-{bono_social:.2f}"],
+        ["", "═══ TOTAL 1 ═══", "Subtotal (antes de impuestos)", f"{subtotal_ep - bono_social:.2f}"],
+        ["4", "× Impuesto Eléctrico (IEE)", f"Subtotal × {iee_pct*100:.2f}%", f"{impuestos_total * (iee_pct/(iee_pct+0.21)):.2f}"],
+        ["", "═══ TOTAL 2 ═══", "Después de impuesto eléctrico", f"{subtotal_ep - bono_social + (impuestos_total * (iee_pct/(iee_pct+0.21))):.2f}"],
+        ["5", "+ Alquiler Contador", "Cuota fija de alquiler", f"{alquiler_oferta:.2f}"],
+        ["", "═══ TOTAL 3 ═══", "Antes de IVA", f"{subtotal_ep - bono_social + (impuestos_total * (iee_pct/(iee_pct+0.21))) + alquiler_oferta:.2f}"],
+        ["6", "IVA (21%)", f"Total 3 × 21%", f"{impuestos_total * (0.21/(iee_pct+0.21)):.2f}"],
+        ["", "═══ IMPORTE TOTAL ═══", "TOTAL CON IVA", f"{total_est:.2f}"],
     ]
-    t_c = Table(tabla_c_data, colWidths=[6*cm, 7*cm, 4*cm])
+    
+    t_c = Table(tabla_c_data, colWidths=[1.2*cm, 3.5*cm, 6.5*cm, 2.8*cm])
     t_c.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#E2E8F0')),
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1E293B')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, 0), 9),
         ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
-        ('FONTNAME', (0,0), (-1, 0), 'Helvetica-Bold'),
-        ('ALIGN', (2,1), (2,-1), 'RIGHT'),
+        ('ALIGN', (0,0), (0,-1), 'CENTER'),
+        ('ALIGN', (3,0), (3,-1), 'RIGHT'),
+        ('FONTNAME', (0, 5), (-1, 5), 'Helvetica-Bold'),
+        ('BACKGROUND', (0, 5), (-1, 5), colors.HexColor('#E2E8F0')),
+        ('FONTNAME', (0, 7), (-1, 7), 'Helvetica-Bold'),
+        ('BACKGROUND', (0, 7), (-1, 7), colors.HexColor('#E2E8F0')),
+        ('FONTNAME', (0, 9), (-1, 9), 'Helvetica-Bold'),
+        ('BACKGROUND', (0, 9), (-1, 9), colors.HexColor('#E2E8F0')),
+        ('FONTNAME', (0, 11), (-1, 11), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 11), (-1, 11), 10),
+        ('BACKGROUND', (0, 11), (-1, 11), colors.HexColor('#DCFCE7')),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 6),
+        ('TOPPADDING', (0,0), (-1,-1), 6),
     ]))
     story.append(t_c)
-    story.append(Spacer(1, 1*cm))
+    story.append(Spacer(1, 0.8*cm))
+    
+    # Nota explicativa
+    nota_formula = ParagraphStyle(
+        name='NotaFormula',
+        fontSize=8,
+        textColor=colors.HexColor('#475569'),
+        italics=True,
+        spaceBefore=5
+    )
+    story.append(Paragraph(
+        "* Esta tabla muestra el cálculo paso a paso de la tarifa propuesta, permitiendo auditar cada etapa del proceso. "
+        "Los importes se calculan aplicando las tarifas unitarias de cada comercializadora.",
+        nota_formula
+    ))
+    story.append(Spacer(1, 0.8*cm))
 
     # --- RESUMEN FINAL ---
     story.append(Paragraph("RESUMEN", styles['EnergyHeading']))
