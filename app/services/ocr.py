@@ -357,42 +357,40 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
         }
         detected_pf = {}
 
-        # 1. CUPS EXTRACTION - AGRESIVE FALLBACK (Ignoring MOD529 validation for now)
+        # 1. CUPS EXTRACTION - DIRECT REGEX MATCHING
         valid_cups_found = None
         
-        # Find ANY ES sequence and clean it aggressively
-        # Most PDFs have CUPS as "ES XXXX XXXX XXXX XXXX XX" with spaces
-        es_candidates = re.findall(r"ES[\s\-]*[\w\s\-]{15,50}", raw_text, re.IGNORECASE)
+        # CUPS format: ES + 16 digits + 2 letters (+ optional 1 digit + 1 letter)
+        # Allows spaces/dashes between groups: ES XXXX XXXX XXXX XXXX XX
+        # Regex: ES followed by exactly 16 digits and 2 letters, with optional separators
         
-        for candidate in es_candidates:
-            print(f"🔍 CUPS RAW CANDIDATE: {candidate}")
+        # Pattern 1: Strict - exactly as format should be
+        strict_pattern = r"ES[\s\-]*(\d{4})[\s\-]*(\d{4})[\s\-]*(\d{4})[\s\-]*(\d{4})[\s\-]*([A-Z]{2})"
+        strict_matches = re.finditer(strict_pattern, raw_text, re.IGNORECASE)
+        
+        for match in strict_matches:
+            # Reconstruct without spaces/dashes
+            cups_candidate = "ES" + "".join(match.groups())
+            print(f"🔍 CUPS CANDIDATE (STRICT): {cups_candidate} (raw match: {match.group(0)})")
             
-            # Aggressive cleaning: remove ALL non-alphanumeric except ES
-            cleaned = re.sub(r'[\s\-]', '', candidate.upper())
-            # Keep only first 22 chars (ES + 20 alphanumeric)
-            cleaned = cleaned[:22] if len(cleaned) > 22 else cleaned
-            
-            print(f"🧹 CLEANED: {cleaned}")
-            
-            # Must start with ES and have at least 20 chars total
-            if not cleaned.startswith("ES") or len(cleaned) < 20:
-                print(f"❌ Too short or invalid format: {len(cleaned)} chars")
-                continue
-            
-            # Try to validate with MOD529
-            is_valid = is_valid_cups(cleaned)
-            print(f"🔢 MOD529 Result: {is_valid}")
-            
-            if is_valid:
-                valid_cups_found = cleaned
-                print(f"✅ VALID CUPS FOUND: {cleaned}")
+            # Validate with MOD529
+            if is_valid_cups(cups_candidate):
+                valid_cups_found = cups_candidate
+                print(f"✅ VALID CUPS FOUND: {cups_candidate}")
                 break
             else:
-                # Even if MOD529 fails, accept it if it looks like CUPS (ES + 20 alphanumeric)
-                if len(cleaned) == 22 and cleaned.startswith("ES"):
-                    print(f"⚠️ [WARNING] MOD529 failed but accepting as CUPS: {cleaned}")
-                    valid_cups_found = cleaned
-                    break
+                print(f"❌ MOD529 validation failed for: {cups_candidate}")
+        
+        # Pattern 2: Fallback - if MOD529 fails, accept best match anyway
+        if not valid_cups_found:
+            print("📋 [FALLBACK] Trying without strict MOD529...")
+            fallback_matches = list(re.finditer(strict_pattern, raw_text, re.IGNORECASE))
+            if fallback_matches:
+                # Take the first one even if MOD529 fails
+                match = fallback_matches[0]
+                cups_candidate = "ES" + "".join(match.groups())
+                print(f"⚠️ Accepting without MOD529 validation: {cups_candidate}")
+                valid_cups_found = cups_candidate
         
         data["cups"] = valid_cups_found
         print(f"🏁 FINAL CUPS VALUE: {valid_cups_found}")
@@ -525,7 +523,7 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
         # 5. Consumption (Expanded mapping)
         # P1 = Punta, P2 = Llano, P3 = Valle (Generic approach)
 
-        filtered_keywords = ["lectura", "contador", "acumulada", "actual", "anterior", "potencia", "último año", "año anterior", "media"]
+        filtered_keywords = ["acumulada", "actual", "anterior", "último año", "año anterior"]
         consumo_lines = []
         for ln in raw_text.splitlines():
             clean = ln.strip()
@@ -544,44 +542,50 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
 
         consume_patterns = {
             "p1": [
-                # Consumo explícito P1 con kwh
-                r"(?i)consumo\s+(?:de\s+)?(?:energía\s+)?.*?\bP1\b[\s\S]{0,100}?([\d.,]+)\s*(?:kwh)?",
-                # P1 solo seguido de número y posible kwh
-                r"(?i)\bP1\b[\s\S]{0,100}?([\d.,]+)\s*(?:kwh)?",
-                # Punta (Spanish term for P1)
-                r"(?i)\bpunta\b[\s\S]{0,100}?([\d.,]+)\s*(?:kwh)?",
-                # Consumo punta explícito
+                # PRIORITY 1: Consumos desagregados + punta (Iberdrola format)
+                r"(?i)consumos\s+desagregados.*?punta[:\s]+([\d.,]+)",
+                # PRIORITY 2: Consumo punta explícito (with "consumo" keyword)
                 r"(?i)consumo\s+punta[\s\S]{0,50}?([\d.,]+)",
-                # Número solo después de "P1:" o "Punta:"
-                r"(?i)(?:P1|punta)\s*[:\-]?\s*([\d.,]+)",
+                # PRIORITY 3: Consumo + P1 with kwh
+                r"(?i)consumo\s+(?:de\s+)?(?:energía\s+)?.*?\bP1\b[\s\S]{0,100}?([\d.,]+)\s*(?:kwh)?",
+                # PRIORITY 4: P1 solo seguido de número
+                r"(?i)\bP1\b[\s\S]{0,100}?([\d.,]+)\s*(?:kwh)?",
+                # PRIORITY 5: punta after "consumo" keyword (to avoid Potencia punta)
+                r"(?i)(?:consumo\s+)?punta\s*[:\-]?\s*([\d.,]+)\s*(?:kwh)?",
+                # LAST RESORT: Punta alone (but will match "Potencia punta" too)
+                r"(?i)\bpunta\b[\s\S]{0,100}?([\d.,]+)\s*(?:kwh)?",
                 # Tabla format: "P1 XXX" (números grandes, típicamente > 50)
                 r"\bP1\b\s+([\d.,]+)(?:\s|$)",
             ],
             "p2": [
-                # Consumo explícito P2 con kwh
-                r"(?i)consumo\s+(?:de\s+)?(?:energía\s+)?.*?\bP2\b[\s\S]{0,100}?([\d.,]+)\s*(?:kwh)?",
-                # P2 solo seguido de número
-                r"(?i)\bP2\b[\s\S]{0,100}?([\d.,]+)\s*(?:kwh)?",
-                # Llano (Spanish term for P2)
-                r"(?i)\bllano\b[\s\S]{0,100}?([\d.,]+)\s*(?:kwh)?",
-                # Consumo llano explícito
+                # PRIORITY 1: Consumos desagregados + llano (Iberdrola format)
+                r"(?i)consumos\s+desagregados.*?llano[:\s]+([\d.,]+)",
+                # PRIORITY 2: Consumo llano explícito
                 r"(?i)consumo\s+llano[\s\S]{0,50}?([\d.,]+)",
-                # Número solo después de "P2:" o "Llano:"
-                r"(?i)(?:P2|llano)\s*[:\-]?\s*([\d.,]+)",
+                # PRIORITY 3: Consumo + P2 with kwh
+                r"(?i)consumo\s+(?:de\s+)?(?:energía\s+)?.*?\bP2\b[\s\S]{0,100}?([\d.,]+)\s*(?:kwh)?",
+                # PRIORITY 4: P2 solo seguido de número
+                r"(?i)\bP2\b[\s\S]{0,100}?([\d.,]+)\s*(?:kwh)?",
+                # PRIORITY 5: llano after "consumo" keyword
+                r"(?i)(?:consumo\s+)?llano\s*[:\-]?\s*([\d.,]+)\s*(?:kwh)?",
+                # LAST RESORT: Llano alone
+                r"(?i)\bllano\b[\s\S]{0,100}?([\d.,]+)\s*(?:kwh)?",
                 # Tabla format
                 r"\bP2\b\s+([\d.,]+)(?:\s|$)",
             ],
             "p3": [
-                # Consumo explícito P3 con kwh
-                r"(?i)consumo\s+(?:de\s+)?(?:energía\s+)?.*?\bP3\b[\s\S]{0,100}?([\d.,]+)\s*(?:kwh)?",
-                # P3 solo seguido de número
-                r"(?i)\bP3\b[\s\S]{0,100}?([\d.,]+)\s*(?:kwh)?",
-                # Valle (Spanish term for P3)
-                r"(?i)\bvalle\b[\s\S]{0,100}?([\d.,]+)\s*(?:kwh)?",
-                # Consumo valle explícito
+                # PRIORITY 1: Consumos desagregados + valle (Iberdrola format)
+                r"(?i)consumos\s+desagregados.*?valle[:\s]+([\d.,]+)",
+                # PRIORITY 2: Consumo valle explícito
                 r"(?i)consumo\s+valle[\s\S]{0,50}?([\d.,]+)",
-                # Número solo después de "P3:" o "Valle:"
-                r"(?i)(?:P3|valle)\s*[:\-]?\s*([\d.,]+)",
+                # PRIORITY 3: Consumo + P3 with kwh
+                r"(?i)consumo\s+(?:de\s+)?(?:energía\s+)?.*?\bP3\b[\s\S]{0,100}?([\d.,]+)\s*(?:kwh)?",
+                # PRIORITY 4: P3 solo seguido de número
+                r"(?i)\bP3\b[\s\S]{0,100}?([\d.,]+)\s*(?:kwh)?",
+                # PRIORITY 5: valle after "consumo" keyword
+                r"(?i)(?:consumo\s+)?valle\s*[:\-]?\s*([\d.,]+)\s*(?:kwh)?",
+                # LAST RESORT: Valle alone
+                r"(?i)\bvalle\b[\s\S]{0,100}?([\d.,]+)\s*(?:kwh)?",
                 # Tabla format
                 r"\bP3\b\s+([\d.,]+)(?:\s|$)",
             ],
