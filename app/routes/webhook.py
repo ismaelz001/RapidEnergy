@@ -840,6 +840,20 @@ def generar_presupuesto_pdf(factura_id: int, db: Session = Depends(get_db)):
     except:
         raise HTTPException(status_code=500, detail="Error al leer la oferta seleccionada")
     
+    # ⭐ DEBUG: Logs para factura 287
+    if factura_id == 287:
+        breakdown = selected_offer.get('breakdown', {})
+        logger.warning(f"[DEBUG-287-PDF] Payload final:")
+        logger.warning(f"  ATR: {factura.atr}")
+        logger.warning(f"  Periodo: {factura.periodo_dias} días")
+        logger.warning(f"  Consumos DB: P1={getattr(factura, 'consumo_p1_kwh', 'N/A')}, P2={getattr(factura, 'consumo_p2_kwh', 'N/A')}, P3={getattr(factura, 'consumo_p3_kwh', 'N/A')}")
+        logger.warning(f"  Potencias DB: P1={getattr(factura, 'potencia_p1_kw', 'N/A')}, P2={getattr(factura, 'potencia_p2_kw', 'N/A')}")
+        logger.warning(f"  Breakdown (desde selected_offer): consumo_p1={breakdown.get('consumo_p1')}, potencia_p1={breakdown.get('potencia_p1')}")
+        logger.warning(f"  Total factura actual: {factura.total_factura}€")
+        logger.warning(f"  Oferta: {selected_offer.get('provider')} / {selected_offer.get('plan_name')}")
+        logger.warning(f"  Total estimado: {selected_offer.get('estimated_total')}€")
+        logger.warning(f"  Breakdown desglose: coste_energia={breakdown.get('coste_energia')}, coste_potencia={breakdown.get('coste_potencia')}")
+    
     try:
         # Generar PDF usando el servicio especializado
         buffer = generar_pdf_presupuesto(factura, selected_offer, db)

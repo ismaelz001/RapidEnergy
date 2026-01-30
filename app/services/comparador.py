@@ -806,6 +806,11 @@ def compare_factura(factura, db) -> Dict[str, Any]:
             "Tarifa 2.0TD",
         )
 
+        # ⭐ DEBUG: Logs especiales para factura 287
+        if factura.id == 287:
+            logger.warning(f"[DEBUG-287] Oferta {provider}/{plan_name}: periodo={periodo_dias}d, consumos={consumos}, potencias={potencias}")
+            logger.warning(f"[DEBUG-287] coste_energia={coste_energia:.4f}, coste_potencia={coste_potencia:.4f}, total_est={estimated_total_periodo:.2f}")
+        
         offer = {
             "tarifa_id": tarifa_id,
             "provider": provider,
@@ -822,6 +827,14 @@ def compare_factura(factura, db) -> Dict[str, Any]:
             "tag": "balanced",
             "breakdown": {
                 "periodo_dias": int(periodo_dias),
+                "consumo_p1": round(consumos[0], 2),
+                "consumo_p2": round(consumos[1], 2),
+                "consumo_p3": round(consumos[2], 2),
+                "consumo_p4": round(consumos[3], 2) if len(consumos) > 3 else 0,
+                "consumo_p5": round(consumos[4], 2) if len(consumos) > 4 else 0,
+                "consumo_p6": round(consumos[5], 2) if len(consumos) > 5 else 0,
+                "potencia_p1": round(potencias[0], 4),
+                "potencia_p2": round(potencias[1], 4),
                 "coste_energia": round(coste_energia, 2),
                 "coste_potencia": round(coste_potencia, 2),
                 "impuestos": round(impuestos_oferta, 2),

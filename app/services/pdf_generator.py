@@ -309,10 +309,11 @@ def generar_pdf_presupuesto(factura, selected_offer, db):
     # --- TABLA C: CÁLCULO PASO A PASO (Desglose de Fórmula) ---
     story.append(Paragraph("C) Cálculo paso a paso de la oferta propuesta", styles['EnergySubheading']))
     
-    # Recuperamos datos para la fórmula
-    consumo_p1 = float(getattr(factura, 'consumo_p1', 0) or 0)
-    consumo_p2 = float(getattr(factura, 'consumo_p2', 0) or 0)
-    consumo_p3 = float(getattr(factura, 'consumo_p3', 0) or 0)
+    # ⭐ CRÍTICO: Leer consumos/potencias DESDE EL BREAKDOWN (no desde factura)
+    # Esto garantiza que usamos los MISMOS valores que se usaron en el comparador
+    consumo_p1 = float(breakdown.get('consumo_p1', 0) or 0)
+    consumo_p2 = float(breakdown.get('consumo_p2', 0) or 0)
+    consumo_p3 = float(breakdown.get('consumo_p3', 0) or 0)
     potencia_p1 = float(breakdown.get('potencia_p1', 0) or 0)
     potencia_p2 = float(breakdown.get('potencia_p2', 0) or 0)
     
