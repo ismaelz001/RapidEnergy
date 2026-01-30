@@ -48,17 +48,62 @@ def normalize_pct(value):
 def generar_pdf_presupuesto(factura, selected_offer, db):
     """
     Genera PDF combinando:
-    - Página 1: Portada Patricia Vázquez
+    - Página 1: Portada Francisco Miguel
     - Página 2+: Contenido técnico (Tablas A, B, C)
-    - Última página: Contraportada Patricia Vázquez
+    - Última página: Contraportada Francisco Miguel
     """
     
-    # 0. Cargar modelo Patricia Vázquez
-    modelo_pattern = os.path.join(os.path.dirname(__file__), '..', '..', 'modelosPresuPDF', '*Patricia*.pdf')
-    modelo_files = glob.glob(modelo_pattern)
-    if not modelo_files:
-        raise FileNotFoundError("No se encontró el PDF modelo de Patricia Vázquez")
-    modelo_reader = PdfReader(modelo_files[0])
+    # 0. Cargar modelo fijo de Francisco Miguel con búsqueda robusta
+    # Intenta múltiples rutas para soportar diferentes entornos (dev, producción en Render, etc.)
+    possible_paths = [
+        # Ruta relativa desde services/
+        os.path.join(
+            os.path.dirname(__file__),
+            '..',
+            '..',
+            'modelosPresuPDF',
+            'Estudio EnergyLuz (Francisco Miguel Gallego).pdf'
+        ),
+        # Ruta desde raíz del proyecto (para Render)
+        os.path.join(
+            os.path.dirname(__file__),
+            '..',
+            '..',
+            '..',
+            'modelosPresuPDF',
+            'Estudio EnergyLuz (Francisco Miguel Gallego).pdf'
+        ),
+        # Búsqueda glob en el directorio actual y subdirectorios
+    ]
+    
+    modelo_path = None
+    for path in possible_paths:
+        if os.path.isfile(path):
+            modelo_path = path
+            logger.info(f"[PDF] Modelo PDF encontrado en: {path}")
+            break
+    
+    # Si no encontró en rutas predefinidas, buscar recursivamente
+    if not modelo_path:
+        try:
+            for root, dirs, files in os.walk(os.path.dirname(__file__)):
+                for f in files:
+                    if "Francisco Miguel Gallego" in f and f.endswith(".pdf"):
+                        modelo_path = os.path.join(root, f)
+                        logger.info(f"[PDF] Modelo PDF encontrado por búsqueda en: {modelo_path}")
+                        break
+                if modelo_path:
+                    break
+        except Exception as e:
+            logger.warning(f"[PDF] Error en búsqueda recursiva: {e}")
+    
+    if not modelo_path or not os.path.isfile(modelo_path):
+        raise FileNotFoundError(
+            f"No se encontró el PDF modelo 'Estudio EnergyLuz (Francisco Miguel Gallego).pdf' "
+            f"en rutas esperadas. Búsqueda realizada desde: {os.path.dirname(__file__)}"
+        )
+    
+    modelo_reader = PdfReader(modelo_path)
     
     # 1. Crear contenido dinámico
     buffer_content = BytesIO()
