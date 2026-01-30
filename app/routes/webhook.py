@@ -686,9 +686,16 @@ def comparar_factura(factura_id: int, db: Session = Depends(get_db)):
             )
         atr = "3.0TD" if float(potencia_p1) >= 15 else "2.0TD"
         atr_inferred = True
+        # ⭐ IMPORTANTE: Actualizar la factura con el ATR inferido
+        factura.atr = atr
+        db.commit()
         logger.warning(f"[ATR] ATR no presente. Inferido atr={atr} por potencia_p1_kw={potencia_p1}.")
     else:
         atr = atr.strip().upper()
+        # Actualizar a uppercase por si acaso
+        if factura.atr != atr:
+            factura.atr = atr
+            db.commit()
     
     # Validación específica por ATR
     if atr == "3.0TD":

@@ -79,9 +79,15 @@ export default function Step3ComparerPage({ params }) {
           total_factura: parseFloat(d.total_factura || 0)
         };
 
-        // C) VALIDACIÓN PREVIA (Evitar reventar el backend)
-        if (!payload.atr || !payload.periodo_dias) {
-          throw new Error("Faltan datos críticos para la comparación (ATR o Periodo).");
+        // C) VALIDACIÓN PREVIA (Solo período es obligatorio)
+        // ⭐ CAMBIO: Permitir que el backend infiera el ATR si falta
+        if (!payload.periodo_dias) {
+          throw new Error("Falta el período en días para la comparación.");
+        }
+
+        // Si falta ATR pero hay potencia_p1, permite inferencia en backend
+        if (!payload.atr && !payload.potencia_p1_kw) {
+          throw new Error("Necesitamos el ATR o la Potencia P1 para hacer la comparación.");
         }
 
         // Llamada al backend pasando el payload actualizado
