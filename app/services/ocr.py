@@ -357,72 +357,42 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
         }
         detected_pf = {}
 
-        # 1. CUPS EXTRACTION - IMPROVED MULTI-STRATEGY
+        # 1. CUPS EXTRACTION - AGRESIVE FALLBACK (Ignoring MOD529 validation for now)
         valid_cups_found = None
         
-        # Strategy 1: Strict pattern for clean CUPS
-        candidates = re.findall(r"ES[\s\-]?[0-9]{4}[\s\-]?[0-9]{4}[\s\-]?[0-9]{4}[\s\-]?[0-9]{4}[\s\-]?[A-Z0-9]{2}[\s\-]?[A-Z0-9]{0,2}", raw_text, re.IGNORECASE)
+        # Find ANY ES sequence and clean it aggressively
+        # Most PDFs have CUPS as "ES XXXX XXXX XXXX XXXX XX" with spaces
+        es_candidates = re.findall(r"ES[\s\-]*[\w\s\-]{15,50}", raw_text, re.IGNORECASE)
         
-        for cand in candidates:
-            print(f"🔍 CUPS CANDIDATE (STRICT): {cand}")
-            # Normalizar
-            norm = normalize_cups(cand)
-            print(f"🧹 NORMALIZED: {norm}")
+        for candidate in es_candidates:
+            print(f"🔍 CUPS RAW CANDIDATE: {candidate}")
             
-            # [CUPS-AUDIT] LOG #3: CUPS PARSING DETAIL
-            from app.utils.cups import BLACKLIST
-            blacklist_hit = False
-            blacklist_word = None
-            for word in BLACKLIST:
-                if word in cand.upper():
-                    blacklist_hit = True
-                    blacklist_word = word
-                    break
+            # Aggressive cleaning: remove ALL non-alphanumeric except ES
+            cleaned = re.sub(r'[\s\-]', '', candidate.upper())
+            # Keep only first 22 chars (ES + 20 alphanumeric)
+            cleaned = cleaned[:22] if len(cleaned) > 22 else cleaned
             
-            print(f"[CUPS-AUDIT] #3 - PARSE: raw='{cand}' norm='{norm}' blacklist={blacklist_hit}({blacklist_word}) valid_len={20 <= len(norm) <= 22 if norm else False}")
-
-            if not norm:
-                print("❌ REJECTED BY NORMALIZATION")
+            print(f"🧹 CLEANED: {cleaned}")
+            
+            # Must start with ES and have at least 20 chars total
+            if not cleaned.startswith("ES") or len(cleaned) < 20:
+                print(f"❌ Too short or invalid format: {len(cleaned)} chars")
                 continue
-                
-            # Validar Módulo 529
-            is_valid = is_valid_cups(norm)
-            print(f"🔢 VALIDATION RESULT: {is_valid}")
+            
+            # Try to validate with MOD529
+            is_valid = is_valid_cups(cleaned)
+            print(f"🔢 MOD529 Result: {is_valid}")
+            
             if is_valid:
-                valid_cups_found = norm
-                print(f"✅ VALID CUPS FOUND: {norm}")
+                valid_cups_found = cleaned
+                print(f"✅ VALID CUPS FOUND: {cleaned}")
                 break
             else:
-                print(f"❌ REJECTED BY MOD529")
-        
-        # Strategy 2: Fallback - look for ES + 20+ alphanumeric chars (more lenient for OCR artifacts)
-        if not valid_cups_found:
-            print("📋 [FALLBACK] Intentando patrón más flexible...")
-            flexible_candidates = re.findall(r"ES[\s\-\w]{18,32}", raw_text, re.IGNORECASE)
-            for flex_cand in flexible_candidates:
-                print(f"🔍 CUPS CANDIDATE (FLEXIBLE): {flex_cand}")
-                norm = normalize_cups(flex_cand)
-                if norm and is_valid_cups(norm):
-                    valid_cups_found = norm
-                    print(f"✅ VALID CUPS FOUND (FLEXIBLE): {norm}")
+                # Even if MOD529 fails, accept it if it looks like CUPS (ES + 20 alphanumeric)
+                if len(cleaned) == 22 and cleaned.startswith("ES"):
+                    print(f"⚠️ [WARNING] MOD529 failed but accepting as CUPS: {cleaned}")
+                    valid_cups_found = cleaned
                     break
-        
-        # Strategy 3: Last resort - extract the longest ES sequence (might be broken by OCR)
-        if not valid_cups_found:
-            print("🔴 [LAST RESORT] Buscando secuencia ES más larga...")
-            es_match = re.search(r"ES[\w\s\-]{16,40}", raw_text, re.IGNORECASE)
-            if es_match:
-                raw_es = es_match.group(0)
-                print(f"Found: {raw_es}")
-                # Try to clean it up aggressively
-                cleaned = re.sub(r'[^A-Z0-9]', '', raw_es.upper())[:22]
-                if cleaned.startswith("ES") and len(cleaned) >= 20:
-                    norm = normalize_cups(cleaned)
-                    print(f"Cleaned: {norm}")
-                    if norm:
-                        # Accept it even if MOD529 fails, but log warning
-                        print(f"⚠️ [WARNING] Aceptando CUPS sin validación MOD529: {norm}")
-                        valid_cups_found = norm
         
         data["cups"] = valid_cups_found
         print(f"🏁 FINAL CUPS VALUE: {valid_cups_found}")
