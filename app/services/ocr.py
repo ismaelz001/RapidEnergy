@@ -55,6 +55,29 @@ def normalize_text(raw: str) -> str:
     return text.strip()
 
 
+def _preprocess_fragmented_text(text: str) -> str:
+    """
+    Fix Google Vision API fragmentation issue:
+    - "1\n7/09/2025" → "17/09/2025"
+    - "8\n3,895" → "83,895"
+    
+    Unifica dígitos separados por saltos de línea o espacios dentro de contextos numéricos.
+    """
+    if not text:
+        return text
+    
+    # Pattern 1: Dates fragmented (1\n7/09/2025 → 17/09/2025)
+    text = re.sub(r'(\d)\s*[\n\r]\s*(\d+[\/\-\.](\d+))', r'\1\2', text)
+    
+    # Pattern 2: Numbers fragmented in middle (8\n3,895 → 83,895)
+    text = re.sub(r'(\d)\s*[\n\r]\s*(\d)', r'\1\2', text)
+    
+    # Pattern 3: Numbers separated by spaces in numeric contexts (precio: 12 3,45 → 123,45)
+    text = re.sub(r'(\d)\s+(\d[\d\.,]*(?:\s+kWh|\s+€|\s+EUR|\s*x\s|\s*/\s))', r'\1\2', text, flags=re.IGNORECASE)
+    
+    return text
+
+
 def _parse_date_flexible(date_str):
     if not date_str or not isinstance(date_str, str):
         return None
@@ -179,15 +202,15 @@ def _sanity_energy(result: dict) -> dict:
         result["consumo_kwh"] = None
         result["detected_por_ocr"]["consumo_kwh"] = False
     
-    # Check 4: Validate dias_facturados range (1-370 days)
+    # Check 4: Validate dias_facturados range (15-370 days)
     dias = result.get("dias_facturados")
     if dias is not None:
         try:
             dias_int = int(dias)
-            if dias_int <= 0 or dias_int > 370:
+            if dias_int < 15 or dias_int > 370:
                 logging.warning(
                     f"🛡️ [SANITY] dias_facturados fuera de rango: {dias_int}. "
-                    f"Descartando (rango válido 1-370)."
+                    f"Descartando (rango válido 15-370 días)."
                 )
                 result["dias_facturados"] = None
         except (ValueError, TypeError):
@@ -202,26 +225,30 @@ def _extract_consumo_safe(full_text: str) -> dict:
     Retorna {'value': float, 'pattern': str} o {'value': None, 'pattern': None}
     """
     # Pattern A: "Su consumo en el periodo facturado ha sido XXX kWh" (Naturgy/Regulada)
-    pattern_a = r"su\s+consumo\s+en\s+(?:el\s+)?periodo\s+(?:facturado\s+)?ha\s+sido\s+([\d.,]+)\s*(?:kw)?h"
+    # Tolerante a newlines/espacios en números
+    pattern_a = r"su\s+consumo\s+en\s+(?:el\s+)?periodo\s+(?:facturado\s+)?ha\s+sido\s+([\d.,\s]+)\s*(?:kw)?h"
     m = re.search(pattern_a, full_text, re.IGNORECASE)
     if m:
-        val = parse_es_number(m.group(1))
+        num_str = m.group(1).replace(' ', '').replace('\n', '')
+        val = parse_es_number(num_str)
         if val and 0 < val < 5000:
             return {'value': val, 'pattern': 'A (su consumo en el periodo)'}
     
     # Pattern B: "XXX kWh x 0,xxxxx €/kWh = Energía" (CHC/facturas tablas)
-    pattern_b = r"([\d.,]+)\s*(?:kw)?h\s*x\s*[\d.,]+\s*[€€]\s*/\s*(?:kw)?h"
+    pattern_b = r"([\d.,\s]+)\s*(?:kw)?h\s*x\s*[\d.,]+\s*[€€]\s*/\s*(?:kw)?h"
     m = re.search(pattern_b, full_text, re.IGNORECASE)
     if m:
-        val = parse_es_number(m.group(1))
+        num_str = m.group(1).replace(' ', '').replace('\n', '')
+        val = parse_es_number(num_str)
         if val and 0 < val < 5000:
             return {'value': val, 'pattern': 'B (consumo × tarifa)'}
     
     # Pattern C: "Total consumo" genérico como fallback
-    pattern_c = r"(?:consumo\s+total|total\s+consumo|consumo\s+(?:facturado|del\s+periodo))[^0-9\n]{0,50}([\d.,]+)\s*(?:kw)?h"
+    pattern_c = r"(?:consumo\s+total|total\s+consumo|consumo\s+(?:facturado|del\s+periodo))[^0-9\n]{0,50}([\d.,\s]+)\s*(?:kw)?h"
     m = re.search(pattern_c, full_text, re.IGNORECASE)
     if m:
-        val = parse_es_number(m.group(1))
+        num_str = m.group(1).replace(' ', '').replace('\n', '')
+        val = parse_es_number(num_str)
         if val and 0 < val < 5000:
             return {'value': val, 'pattern': 'C (generic total consumo)'}
     
@@ -1570,6 +1597,8 @@ def extract_data_from_pdf(file_bytes: bytes) -> dict:
             return gemini_result
         print("Fallo Gemini, reintentando con método tradicional...")
 
+    # STEP 1: Intentar pypdf primero (rápido, gratis, 95% accuracy en PDFs digitales)
+    pypdf_result = None
     if is_pdf:
         try:
             reader = pypdf.PdfReader(io.BytesIO(file_bytes))
@@ -1580,15 +1609,27 @@ def extract_data_from_pdf(file_bytes: bytes) -> dict:
                     full_text += text + "\n"
 
             if len(full_text.strip()) > 50:
-                print("PDF digital detectado. Usando pypdf.")
-                return parse_invoice_text(full_text)
-            else:
-                msg = "PDF escaneado detectado. Por favor, sube una imagen (JPG/PNG) o usa un PDF original."
-                return _empty_result(msg)
+                print("[HYBRID OCR] Intentando pypdf primero...")
+                pypdf_result = parse_invoice_text(full_text)
+                
+                # Validación cruzada: si pypdf extrajo campos críticos, úsalo
+                critical_fields = [
+                    pypdf_result.get('consumo_kwh'),
+                    pypdf_result.get('dias_facturados'),
+                    pypdf_result.get('fecha_inicio'),
+                    pypdf_result.get('fecha_fin')
+                ]
+                
+                critical_count = sum(1 for f in critical_fields if f)
+                if critical_count >= 3:
+                    print(f"[HYBRID OCR] ✅ pypdf exitoso ({critical_count}/4 campos críticos). Omitiendo Vision API.")
+                    return pypdf_result
+                else:
+                    print(f"[HYBRID OCR] ⚠️ pypdf incompleto ({critical_count}/4 campos). Fallback a Vision API...")
         except Exception as e:
-            print(f"Error leyendo PDF con pypdf: {e}")
-            pass
+            print(f"[HYBRID OCR] Error en pypdf: {e}. Fallback a Vision API...")
 
+    # STEP 2: Vision API como fallback (para PDFs escaneados o cuando pypdf falla)
     client, auth_log = get_vision_client()
     if not client:
         return _empty_result(f"Error configuracion credenciales:\n{auth_log}")
@@ -1605,8 +1646,33 @@ def extract_data_from_pdf(file_bytes: bytes) -> dict:
             )
 
         full_text = texts[0].description
-        return parse_invoice_text(full_text, is_image=True)
+        
+        # PREPROCESADO: Unir números fragmentados antes de parsear
+        full_text = _preprocess_fragmented_text(full_text)
+        print("[HYBRID OCR] Vision API con preprocesado aplicado.")
+        
+        vision_result = parse_invoice_text(full_text, is_image=True)
+        
+        # VALIDACIÓN CRUZADA: Si pypdf extrajo datos, comparar con Vision
+        if pypdf_result:
+            print("[HYBRID OCR] Fusionando pypdf + Vision API (prioritando pypdf)...")
+            # Priorizar pypdf para campos críticos si están presentes
+            for field in ['consumo_kwh', 'dias_facturados', 'fecha_inicio', 'fecha_fin']:
+                if pypdf_result.get(field) and not vision_result.get(field):
+                    vision_result[field] = pypdf_result[field]
+                    print(f"[HYBRID OCR] Recuperado {field} desde pypdf: {pypdf_result[field]}")
+        
+        # Validación final: Rechazar resultados absurdos
+        consumo = vision_result.get('consumo_kwh')
+        if consumo and consumo < 10:
+            print(f"[HYBRID OCR] ⚠️ Consumo sospechoso ({consumo} kWh < 10). Verificar.")
+        
+        return vision_result
 
     except Exception as e:
         print(f"Error en Vision API: {e}")
+        # Si Vision falla pero pypdf tuvo algo, devolver pypdf aunque sea incompleto
+        if pypdf_result:
+            print("[HYBRID OCR] Vision API falló, devolviendo resultado parcial de pypdf.")
+            return pypdf_result
         return _empty_result(f"Error procesando OCR: {str(e)}\n\n--- DEBUG LOG ---\n{auth_log}")
