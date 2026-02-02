@@ -8,6 +8,7 @@ google-cloud-vision==3.9.0
 pypdf==5.1.0
 reportlab==4.3.0
 google-generativeai==0.8.3  # Gemini 1.5 Flash (usar modelo base "gemini-1.5-flash" sin sufijos)
+openai==1.58.1  # GPT-4o Vision para OCR facturas
 pandas>=2.2.3
 openpyxl==3.1.2
 
