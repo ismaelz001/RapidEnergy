@@ -1589,9 +1589,10 @@ def extract_data_from_pdf(file_bytes: bytes) -> dict:
   Tipo archivo: {'PDF' if is_pdf else 'IMAGE'}
 """)
     
-    # INTENTAR GEMINI PRIMERO (Premium)
+    # INTENTAR GEMINI PRIMERO (Premium) - TEMPORALMENTE DESACTIVADO POR 404 ERROR
+    # TODO: Investigar nombre correcto del modelo para v1beta
     api_key = os.getenv("GEMINI_API_KEY")
-    if api_key:
+    if False and api_key:  # Desactivado temporalmente
         print("Intentando extracción premium con Gemini 1.5 Flash...")
         gemini_result = extract_data_with_gemini(file_bytes, is_pdf=is_pdf)
         if gemini_result:
