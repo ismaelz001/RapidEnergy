@@ -252,9 +252,19 @@ export default function Step2ValidarPage({ params }) {
       try {
         setAutoSaveStatus('saving');
         setAutoSaveError(null);
-        const { updateFactura } = await import('@/lib/apiClient');
+        const { updateFactura, validarFacturaComercialmente } = await import('@/lib/apiClient');
         const payload = buildPayload(formData);
+        
+        // PASO 1: Actualizar campos de la factura
         const result = await updateFactura(params.id, payload);
+        
+        // PASO 2: Validar comercialmente (activa validado_step2=True)
+        // Por ahora sin ajustes comerciales (bono social, descuentos, etc.)
+        await validarFacturaComercialmente(params.id, {
+          ajustes_comerciales: {},
+          modo: "asesor"
+        });
+        
         if (result && typeof result === 'object') {
           const missing = Array.isArray(result.missing_fields)
             ? result.missing_fields
