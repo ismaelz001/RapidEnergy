@@ -1471,7 +1471,8 @@ def extract_data_with_gemini(file_bytes: bytes, is_pdf: bool = True) -> dict:
 
     try:
         genai.configure(api_key=api_key)
-        model = genai.GenerativeModel("gemini-1.5-flash-latest")  # Updated model name for v1beta compatibility
+        # Usar modelo base sin -latest para compatibilidad v1beta
+        model = genai.GenerativeModel("gemini-1.5-flash")
 
         # Preparar el archivo para Gemini
         mime_type = "application/pdf" if is_pdf else "image/jpeg"
@@ -1632,6 +1633,10 @@ def extract_data_from_pdf(file_bytes: bytes) -> dict:
     # STEP 2: Vision API como fallback (para PDFs escaneados o cuando pypdf falla)
     client, auth_log = get_vision_client()
     if not client:
+        print(f"[HYBRID OCR] ❌ Vision API credenciales no disponibles.")
+        if pypdf_result:
+            print(f"[HYBRID OCR] Devolviendo resultado parcial de pypdf ({critical_count}/4 campos).")
+            return pypdf_result
         return _empty_result(f"Error configuracion credenciales:\n{auth_log}")
 
     image = vision.Image(content=file_bytes)
@@ -1656,8 +1661,10 @@ def extract_data_from_pdf(file_bytes: bytes) -> dict:
         # VALIDACIÓN CRUZADA: Si pypdf extrajo datos, comparar con Vision
         if pypdf_result:
             print("[HYBRID OCR] Fusionando pypdf + Vision API (prioritando pypdf)...")
-            # Priorizar pypdf para campos críticos si están presentes
-            for field in ['consumo_kwh', 'dias_facturados', 'fecha_inicio', 'fecha_fin']:
+            # Priorizar pypdf para TODOS los campos si están presentes
+            critical_fields = ['cups', 'atr', 'consumo_kwh', 'dias_facturados', 'fecha_inicio', 'fecha_fin',
+                             'total_factura', 'cliente', 'potencia_p1_kw', 'potencia_p2_kw']
+            for field in critical_fields:
                 if pypdf_result.get(field) and not vision_result.get(field):
                     vision_result[field] = pypdf_result[field]
                     print(f"[HYBRID OCR] Recuperado {field} desde pypdf: {pypdf_result[field]}")
