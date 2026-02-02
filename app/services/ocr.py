@@ -204,15 +204,15 @@ def _sanity_energy(result: dict) -> dict:
         result["consumo_kwh"] = None
         result["detected_por_ocr"]["consumo_kwh"] = False
     
-    # Check 4: Validate dias_facturados range (15-370 days)
+    # Check 4: Validate dias_facturados range (1-370 days - permite facturas parciales y períodos largos)
     dias = result.get("dias_facturados")
     if dias is not None:
         try:
             dias_int = int(dias)
-            if dias_int < 15 or dias_int > 370:
+            if dias_int < 1 or dias_int > 370:
                 logging.warning(
                     f"[SANITY] dias_facturados fuera de rango: {dias_int}. "
-                    f"Descartando (rango válido 15-370 días)."
+                    f"Descartando (rango válido 1-370 días)."
                 )
                 result["dias_facturados"] = None
         except (ValueError, TypeError):
@@ -231,10 +231,9 @@ def _sanity_energy(result: dict) -> dict:
         suma_periodos = consumo_p1 + consumo_p2 + consumo_p3 + consumo_p4 + consumo_p5 + consumo_p6
         
         # Si hay datos en periodos, verificar coherencia
-        if suma_periodos > 0:
+        if suma_periodos > 0 and consumo_total is not None:
             diferencia = abs(suma_periodos - consumo_total)
-            tolerancia = max(consumo_total * 0.10, 1.0)  # 10% o 1 kWh mínimo (pérdidas, estimaciones)
-            
+            tolerancia = max(float(consumo_total) * 0.10, 1.0)  # 10% o 1 kWh mínimo (pérdidas, estimaciones)
             if diferencia > tolerancia:
                 logging.warning(
                     f"[SANITY] Incoherencia consumos: "
@@ -517,17 +516,64 @@ def _extract_table_consumos(raw_text: str) -> dict:
     
     lines = raw_text.split('\n')
     
-    # Strategy 1: Look for section headers like "CONSUMOS DESAGREGADOS"
+    # Strategy 0: Look for "Consumos desagregados:" line with inline values
+    # Pattern: "Consumos desagregados: punta: 59 kWh; llano: 55,99 kWh; valle 166,72 kWh"
+    for line in lines:
+        lower_line = line.lower()
+        if "consumos" in lower_line and "desagregados" in lower_line:
+            # Extract all period:value pairs from this line
+            # Look for patterns like "punta: 59" or "llano: 55,99" or "valle 166,72"
+            
+            # Punta
+            m_punta = re.search(r"(?:punta|p1)\s*[:\-]?\s*([\d.,]+)", lower_line)
+            if m_punta:
+                try:
+                    val = parse_es_number(m_punta.group(1))
+                    if val is not None and 0 <= val <= 5000:
+                        result["consumo_p1_kwh"] = val
+                except:
+                    pass
+            
+            # Llano
+            m_llano = re.search(r"(?:llano|p2)\s*[:\-]?\s*([\d.,]+)", lower_line)
+            if m_llano:
+                try:
+                    val = parse_es_number(m_llano.group(1))
+                    if val is not None and 0 <= val <= 5000:
+                        result["consumo_p2_kwh"] = val
+                except:
+                    pass
+            
+            # Valle
+            m_valle = re.search(r"(?:valle|p3)\s*[:\-]?\s*([\d.,]+)", lower_line)
+            if m_valle:
+                try:
+                    val = parse_es_number(m_valle.group(1))
+                    if val is not None and 0 <= val <= 5000:
+                        result["consumo_p3_kwh"] = val
+                except:
+                    pass
+            
+            # If any found in this line, return early
+            if any(result.values()):
+                return result
+    
+    # Strategy 1: Look for section headers with various titles
+    # Titles contemplados: CONSUMOS DESAGREGADOS, CONSUMOS DE FACTURA, DETALLES DE FACTURA, DATOS DE FACTURA, INFORMACIÓN DE CONSUMO
     in_consumo_section = False
     for i, line in enumerate(lines):
         lower_line = line.lower()
         
-        # Detect consumo section start
-        if "consumo" in lower_line and ("desagregado" in lower_line or "período" in lower_line or "detalle" in lower_line):
+        # Detect consumo section start - múltiples variantes de títulos
+        if re.search(
+            r"(consumo|detalle|dato|información).*?(factura|consumo|desagregad|período|detalle|energía)",
+            lower_line,
+            re.IGNORECASE
+        ):
             in_consumo_section = True
             
-            # Parse the next 20 lines looking for P1/P2/P3 with values
-            for j in range(i, min(i+20, len(lines))):
+            # Parse the next 30 lines looking for P1/P2/P3 or PUNTA/LLANO/VALLE with values
+            for j in range(i, min(i+30, len(lines))):
                 next_line = lines[j]
                 next_lower = next_line.lower()
                 
@@ -544,11 +590,13 @@ def _extract_table_consumos(raw_text: str) -> dict:
                     }
                     
                     for alias in period_aliases.get(p_num, []):
-                        # Look for pattern: "P1 (PUNTA): NUMBER" or "p1 59" or "punta 304"
-                        # Allows parentheses and colons
+                        # Look for pattern: "P1 (PUNTA): NUMBER" or "p1 59" or "punta 304" or "punta    123,45 kWh"
+                        # Permite parentheses, colons, múltiples espacios, con/sin kWh
                         patterns = [
-                            rf"(?i){alias}\s*\([^)]*\)\s*[:\-]?\s*([\d.,]+)",  # "P1 (PUNTA): 0"
-                            rf"(?i){alias}\s*[:\-]?\s*([\d.,]+)\s*(?:kwh)?",    # "P1: 0 kWh" or "punta 59"
+                            rf"(?i){alias}\s*\([^)]*\)\s*[:\-]?\s*([\d.,]+)",       # "P1 (PUNTA): 0"
+                            rf"(?i){alias}\s+[\-:]*\s*([\d.,]+)\s*(?:kwh|kWh)?",    # "P1: 0 kWh" o "punta 59"
+                            rf"(?i){alias}\s+.*?:\s*([\d.,]+)\s*(?:kwh|kWh)?",      # "P1 PUNTA: 123"
+                            rf"(?i){alias}\s*[,;]?\s*([\d.,]+)(?:\s|$)",             # "P1, 123" o "P1 123"
                         ]
                         
                         for pattern in patterns:
@@ -972,6 +1020,31 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
             data[key] = value_found
             detected_pf[key] = value_found is not None
 
+        # ESTRATEGIA 3.5: Búsqueda explícita de PUNTA/LLANO/VALLE sin P[1-6]
+        # Cuando la factura usa nombres españoles pero sin etiquetas P1/P2/P3
+        spanish_period_map = {
+            "punta": "p1",
+            "llano": "p2", 
+            "valle": "p3"
+        }
+        
+        for spanish_name, p_key in spanish_period_map.items():
+            key = f"consumo_{p_key}_kwh"
+            if data[key] is not None:
+                continue  # Ya fue encontrado
+            
+            # Buscar líneas con "Punta: 123" o "LLANO 456 kWh" etc
+            pattern = rf"(?i)(?:consumo\s+)?{spanish_name}\s*[:\-]?\s*([\d.,]+)\s*(?:kwh)?"
+            m = re.search(pattern, raw_text)
+            if m:
+                try:
+                    val = parse_es_number(m.group(1))
+                    if val is not None and 0 <= val <= 5000:
+                        data[key] = val
+                        detected_pf[key] = True
+                except:
+                    pass
+
         # CUARTA ESTRATEGIA: Fallback para líneas con formato "P2: 18"
         # Only enable if we detected at least ONE consumo
         has_any_consumo = any(
@@ -1049,7 +1122,8 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
             except Exception:
                 _invalidate_periodo()
                 return
-        if val <= 0 or val > 370:
+        # Aceptar períodos desde 1 día (incluyendo facturas parciales y períodos > 32 días)
+        if val < 1 or val > 370:
             _invalidate_periodo()
         else:
             forced_period_missing = False
@@ -1443,6 +1517,7 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
                 break
             
     # Enprint(f"[DEBUG] Entering heuristic address search (name_line_index={name_line_index})")
+    if name_line_index is not None:
         raw_lines = [ln.strip() for ln in full_text.splitlines() if ln.strip()]
         for forward in range(1, 3):
             if name_line_index + forward < len(raw_lines):
@@ -1627,7 +1702,7 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
     consumo_tot = result.get("consumo_kwh")
     
     # Solo limpiamos si sum_periodos es significativamente distinta del total O absurdamente alta
-    has_crazy_sum = (consumo_tot and consumo_tot > 0 and sum_periodos > consumo_tot * 3)
+    has_crazy_sum = (consumo_tot is not None and consumo_tot > 0 and sum_periodos > consumo_tot * 3)
     has_absurdly_huge_sum = (sum_periodos > 2000)
     
     # EXCEPCIÓN: Si sum_periodos es 0, no es "absurda", es simplemente "missing"
@@ -1644,7 +1719,8 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
 
     if result.get("impuesto_electrico") and result.get("total_factura"):
         # Validación más flexible: descartamos solo si es > 50% del total (claramente erróneo)
-        if result["impuesto_electrico"] > result["total_factura"] * 0.5:
+        total_val = result.get("total_factura")
+        if total_val is not None and result["impuesto_electrico"] > total_val * 0.5:
              logging.warning(f"[OCR] Impuesto electrico {result['impuesto_electrico']} > 50% de total {result['total_factura']}. Descartando.")
              result["impuesto_electrico"] = None
 
