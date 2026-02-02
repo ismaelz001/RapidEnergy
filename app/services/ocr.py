@@ -1471,7 +1471,7 @@ def extract_data_with_gemini(file_bytes: bytes, is_pdf: bool = True) -> dict:
 
     try:
         genai.configure(api_key=api_key)
-        model = genai.GenerativeModel("gemini-1.5-flash")  # Reverted to 1.5 Flash for multimodal stability
+        model = genai.GenerativeModel("gemini-1.5-flash-latest")  # Updated model name for v1beta compatibility
 
         # Preparar el archivo para Gemini
         mime_type = "application/pdf" if is_pdf else "image/jpeg"
