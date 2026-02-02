@@ -218,6 +218,41 @@ def _sanity_energy(result: dict) -> dict:
         except (ValueError, TypeError):
             pass
     
+    # Check 5: Validar coherencia consumos por periodo vs consumo total
+    consumo_total = result.get("consumo_kwh")
+    if consumo_total and consumo_total > 0:
+        consumo_p1 = result.get("consumo_p1_kwh") or 0
+        consumo_p2 = result.get("consumo_p2_kwh") or 0
+        consumo_p3 = result.get("consumo_p3_kwh") or 0
+        consumo_p4 = result.get("consumo_p4_kwh") or 0
+        consumo_p5 = result.get("consumo_p5_kwh") or 0
+        consumo_p6 = result.get("consumo_p6_kwh") or 0
+        
+        suma_periodos = consumo_p1 + consumo_p2 + consumo_p3 + consumo_p4 + consumo_p5 + consumo_p6
+        
+        # Si hay datos en periodos, verificar coherencia
+        if suma_periodos > 0:
+            diferencia = abs(suma_periodos - consumo_total)
+            tolerancia = max(consumo_total * 0.02, 1.0)  # 2% o 1 kWh mínimo
+            
+            if diferencia > tolerancia:
+                logging.warning(
+                    f"🛡️ [SANITY] Incoherencia consumos: "
+                    f"suma_periodos={suma_periodos:.2f} kWh ≠ consumo_total={consumo_total:.2f} kWh "
+                    f"(diferencia={diferencia:.2f} > tolerancia={tolerancia:.2f}). "
+                    f"Probable error OCR - descartando consumos por periodo."
+                )
+                # Mantener consumo_total, limpiar periodos sospechosos
+                result["consumo_p1_kwh"] = None
+                result["consumo_p2_kwh"] = None
+                result["consumo_p3_kwh"] = None
+                result["consumo_p4_kwh"] = None
+                result["consumo_p5_kwh"] = None
+                result["consumo_p6_kwh"] = None
+                result["detected_por_ocr"]["consumo_p1_kwh"] = False
+                result["detected_por_ocr"]["consumo_p2_kwh"] = False
+                result["detected_por_ocr"]["consumo_p3_kwh"] = False
+    
     return result
 
 
@@ -689,26 +724,17 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
                 except:
                     pass
         
-        # Strategy 3: Calculate from date range if available
-        if dias_facturados is None:
-            # Look for "del XX de XXX al YY de YYY"
-            date_range = re.search(
-                r"del\s+(\d{1,2})\s+de\s+\w+\s+al\s+(\d{1,2})\s+de\s+(\w+)",
-                raw_text,
-                re.IGNORECASE
-            )
-            if date_range:
-                try:
-                    start_day = int(date_range.group(1))
-                    end_day = int(date_range.group(2))
-                    # Simple approximation: if different months, assume month boundaries
-                    if end_day >= start_day:
-                        dias_facturados = end_day - start_day + 1
-                    else:
-                        # Different months, estimate ~30 days per month
-                        dias_facturados = (30 - start_day) + end_day + 1
-                except:
-                    pass
+        # Strategy 3: Calculate from fechas completas (FIXED - usa parsed dates en vez de solo días)
+        if dias_facturados is None and data.get("fecha_inicio_consumo") and data.get("fecha_fin_consumo"):
+            try:
+                d_ini = _parse_date_flexible(data["fecha_inicio_consumo"])
+                d_fin = _parse_date_flexible(data["fecha_fin_consumo"])
+                if d_ini and d_fin and d_fin >= d_ini:
+                    dias_calculados = (d_fin - d_ini).days + 1  # +1 incluye inicio y fin
+                    if 1 <= dias_calculados <= 370:
+                        dias_facturados = dias_calculados
+            except Exception as e:
+                logging.debug(f"[OCR] No se pudo calcular dias_facturados desde fechas: {e}")
 
         if dias_facturados:
             try:
@@ -1773,12 +1799,21 @@ def extract_data_from_pdf(file_bytes: bytes) -> dict:
 
     try:
         response = client.text_detection(image=image)
+        
+        # Debug: verificar respuesta de Vision API
+        if response.error and response.error.message:
+            print(f"[Vision] ❌ Error de API: {response.error.message}")
+            if pypdf_result:
+                print(f"[Vision] Devolviendo pypdf parcial ({critical_count}/5 campos)")
+                return pypdf_result
+            return _empty_result(f"Vision API error: {response.error.message}")
+        
         texts = response.text_annotations
 
         if not texts:
             print("[Vision] ❌ No se detectó texto")
             if pypdf_result:
-                print(f"[Vision] Devolviendo pypdf parcial ({critical_count}/4 campos)")
+                print(f"[Vision] Devolviendo pypdf parcial ({critical_count}/5 campos)")
                 return pypdf_result
             return _empty_result("El OCR no detecto texto.")
 
