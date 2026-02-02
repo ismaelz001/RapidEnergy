@@ -1634,7 +1634,7 @@ REGLAS CRÍTICAS:
 Procesa TODAS las páginas de la factura si es multipágina."""
 
         response = client.chat.completions.create(
-            model="gpt-4o",
+            model="gpt-4o-mini",  # Free tier compatible (3 RPM, 200 RPD)
             messages=[{
                 "role": "user",
                 "content": [
