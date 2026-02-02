@@ -1168,17 +1168,18 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
 
     raw_lines = [ln.strip() for ln in full_text.splitlines() if ln.strip()]
     
-    # Strategy 1: Buscar en sección "DATOS DEL CONTRATO" (Naturgy, Iberdrola)
+    # Strategy 1: Buscar "Titular" seguido de nombre en sección DATOS DEL CONTRATO (Iberdrola)
+    # Patrón: DATOS DEL CONTRATO ... Titular: NOMBRE o "Titular\nNOMBRE"
     datos_contrato_match = re.search(
-        r"datos\s+del\s+contrato[\s\S]{0,500}?([A-ZÁÉÍÓÚÜÑ][A-Za-zÁÉÍÓÚÜÑáéíóúüñ ,.'´`\-]{10,80})",
+        r"datos\s+del\s+contrato[\s\S]{0,500}?titular[:\s]+([A-ZÁÉÍÓÚÜÑ][A-ZÁÉÍÓÚÜÑ ,.'´`\-]{10,80})",
         full_text,
         re.IGNORECASE
     )
     if datos_contrato_match:
         candidate = _clean_name(datos_contrato_match.group(1))
-        if _is_valid_name(candidate):
-            # Validar que NO sea etiqueta o nombre comercializadora
-            if not re.search(r"(iberdrola|naturgy|endesa|repsol|enel|viesgo|telefonica|direccion|codigo|cups|datos|contrato|titular|nombre|cliente)", candidate, re.IGNORECASE):
+        # Filtrar keywords que NO son nombres
+        if not re.search(r"\b(potencia|direccion|contrato|plan|datos|del|de|la|el|en)\b", candidate, re.IGNORECASE):
+            if _is_valid_name(candidate):
                 titular = candidate
     
     # Strategy 2: Buscar patrón "Titular:" o "Nombre del titular:"
@@ -1194,16 +1195,20 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
                 if not re.search(r"(iberdrola|naturgy|endesa|direccion|codigo|cups)", linea, re.IGNORECASE):
                     titular = linea
     
-    # Strategy 3: Buscar en primeras 50 líneas (fallback conservador)
+    # Strategy 3: Buscar en primeras 10 líneas (nombre suele estar al inicio) - MÁS ESTRICTO
     if not titular:
-        for idx in range(min(50, len(raw_lines))):
+        for idx in range(min(10, len(raw_lines))):
             candidate = _clean_name(raw_lines[idx])
-            if _is_valid_name(candidate) and len(candidate) > 10:
-                # Filtros más estrictos
-                if not re.search(r"(iberdrola|naturgy|endesa|repsol|enel|registro|mercantil|madrid|barcelona|telefono|email|web|http|www|factura|importe|periodo)", candidate, re.IGNORECASE):
-                    titular = candidate
-                    name_line_index = idx
-                    break
+            # Validar que sea nombre válido (2+ palabras, todas con primera letra mayúscula)
+            if _is_valid_name(candidate) and len(candidate) > 15:
+                # Debe tener formato "NOMBRE APELLIDO APELLIDO" (mayúsculas)
+                words = candidate.split()
+                if len(words) >= 2 and all(w[0].isupper() for w in words if w):
+                    # Filtros MUY estrictos para primeras líneas
+                    if not re.search(r"(iberdrola|naturgy|endesa|repsol|enel|registro|mercantil|madrid|barcelona|telefono|email|web|http|www|factura|importe|periodo|domicilio|social|inscrita|tomo|libro|folio)", candidate, re.IGNORECASE):
+                        titular = candidate
+                        name_line_index = idx
+                        break
 
     result["titular"] = titular
 
