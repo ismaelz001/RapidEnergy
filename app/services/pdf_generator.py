@@ -53,54 +53,45 @@ def generar_pdf_presupuesto(factura, selected_offer, db):
     - Última página: Contraportada Francisco Miguel
     """
     
-    # 0. Cargar modelo fijo de Francisco Miguel con búsqueda robusta
-    # Intenta múltiples rutas para soportar diferentes entornos (dev, producción en Render, etc.)
-    possible_paths = [
-        # Ruta relativa desde services/
-        os.path.join(
-            os.path.dirname(__file__),
-            '..',
-            '..',
-            'modelosPresuPDF',
-            'Estudio EnergyLuz (Francisco Miguel Gallego).pdf'
-        ),
-        # Ruta desde raíz del proyecto (para Render)
-        os.path.join(
-            os.path.dirname(__file__),
-            '..',
-            '..',
-            '..',
-            'modelosPresuPDF',
-            'Estudio EnergyLuz (Francisco Miguel Gallego).pdf'
-        ),
-        # Búsqueda glob en el directorio actual y subdirectorios
+    # 0. Localizar modelo de portada/contraportada (flexible y tolerante)
+    # Buscamos en los directorios comunes `modelosPresuPDF` y aceptamos varios nombres (Francisco, Patricia, genéricos)
+    modelos_candidates = []
+    search_dirs = [
+        os.path.join(os.path.dirname(__file__), '..', '..', 'modelosPresuPDF'),
+        os.path.join(os.path.dirname(__file__), '..', '..', '..', 'modelosPresuPDF'),
     ]
-    
-    modelo_path = None
-    for path in possible_paths:
-        if os.path.isfile(path):
-            modelo_path = path
-            logger.info(f"[PDF] Modelo PDF encontrado en: {path}")
-            break
-    
-    # Si no encontró en rutas predefinidas, buscar recursivamente
-    if not modelo_path:
+
+    # Buscar PDFs que contengan 'estudio' o 'energyluz' en el nombre
+    for d in search_dirs:
         try:
-            for root, dirs, files in os.walk(os.path.dirname(__file__)):
-                for f in files:
-                    if "Francisco Miguel Gallego" in f and f.endswith(".pdf"):
-                        modelo_path = os.path.join(root, f)
-                        logger.info(f"[PDF] Modelo PDF encontrado por búsqueda en: {modelo_path}")
-                        break
-                if modelo_path:
-                    break
+            if os.path.isdir(d):
+                for f in os.listdir(d):
+                    lf = f.lower()
+                    if lf.endswith('.pdf') and ('estudio' in lf or 'energyluz' in lf or 'francisco' in lf or 'patricia' in lf):
+                        modelos_candidates.append(os.path.join(d, f))
         except Exception as e:
-            logger.warning(f"[PDF] Error en búsqueda recursiva: {e}")
-    
-    if not modelo_path or not os.path.isfile(modelo_path):
-        raise FileNotFoundError(
-            f"No se encontró el PDF modelo 'Estudio EnergyLuz (Francisco Miguel Gallego).pdf' "
-            f"en rutas esperadas. Búsqueda realizada desde: {os.path.dirname(__file__)}"
+            logger.debug(f"[PDF] Error al listar {d}: {e}")
+
+    # Fallback: aceptar cualquier PDF en los directorios si no encontramos coincidencias más concretas
+    if not modelos_candidates:
+        for d in search_dirs:
+            try:
+                if os.path.isdir(d):
+                    for f in os.listdir(d):
+                        if f.lower().endswith('.pdf'):
+                            modelos_candidates.append(os.path.join(d, f))
+            except Exception as e:
+                logger.debug(f"[PDF] Error al listar {d}: {e}")
+
+    modelo_path = modelos_candidates[0] if modelos_candidates else None
+
+    if modelo_path:
+        logger.info(f"[PDF] Modelo PDF seleccionado: {modelo_path}")
+        if len(modelos_candidates) > 1:
+            logger.info(f"[PDF] Otros modelos disponibles: {modelos_candidates[1:5]}")
+    else:
+        logger.warning(
+            f"[PDF] No se encontraron modelos en 'modelosPresuPDF'. Se generará el PDF dinámico sin portada/contraportada. Búsqueda intentada en: {search_dirs}"
         )
     
     modelo_reader = PdfReader(modelo_path)
@@ -198,7 +189,15 @@ def generar_pdf_presupuesto(factura, selected_offer, db):
     
     box_style = ParagraphStyle(name='BlueBox', fontSize=9, textColor=colors.HexColor('#2563EB'), backColor=colors.HexColor('#EFF6FF'), borderPadding=10, borderRadius=5)
     story.append(Paragraph("*Nota: La comparación se basa en el coste total final (IVA incl.). Tu tarifa actual incluye descuentos o condiciones comerciales especiales que impiden un desglose estructural exacto de energía y potencia. El ahorro anual estimado es el valor más preciso disponible.", box_style))
-    
+
+    # Si no hay ahorro, mostrar aviso claro en el PDF para evitar confusión
+    try:
+        if ahorro_anual <= 0:
+            warning_style = ParagraphStyle(name='Warning', fontSize=10, textColor=colors.HexColor('#B91C1C'), backColor=colors.HexColor('#FEF2F2'), alignment=TA_LEFT, spaceBefore=8, spaceAfter=8)
+            story.append(Paragraph("⚠️ Con las tarifas actuales no se mejora esta factura. Revisa descuentos comerciales o condiciones especiales que puedan afectar el resultado.", warning_style))
+    except Exception:
+        # No bloquear la generación por fallos en esta comprobación
+        logger.debug("[PDF] No se pudo evaluar ahorro_anual para mostrar aviso")    
     story.append(Spacer(1, 1*cm))
     story.append(Paragraph("DESGLOSE TÉCNICO", styles['EnergyHeading']))
     story.append(Spacer(1, 0.3*cm))
@@ -425,21 +424,47 @@ def generar_pdf_presupuesto(factura, selected_offer, db):
     """
     story.append(Paragraph(footer_text, ParagraphStyle(name='Footer', fontSize=9, textColor=colors.HexColor('#0073EC'), alignment=TA_CENTER)))
 
-    # 2. Generar PDF
+    # Debug: registrar salida del comparador y valores intermedios (útil para auditar discrepancias)
+    logger.info(
+        "[PDF] factura_id=%s provider=%s plan=%s total_est=%s breakdown_keys=%s",
+        getattr(factura, 'id', None),
+        selected_offer.get('provider'),
+        selected_offer.get('plan_name'),
+        total_est,
+        list(breakdown.keys())
+    )
+    logger.info("[PDF] Calculos: coste_e=%s, coste_p=%s, subtotal_ep=%s, impuestos_total=%s, ahorro_anual=%s",
+                coste_e, coste_p, subtotal_ep, impuestos_total, ahorro_anual)
+
+    # 2. Generar PDF dinámico
     doc.build(story)
     buffer_content.seek(0)
-    
-    # 3. Combinar con modelo Patricia
+
+    # 3. Combinar con modelo (si existe)
+    modelo_reader_obj = None
+    if modelo_path:
+        try:
+            modelo_reader_obj = PdfReader(modelo_path)
+            logger.info(f"[PDF] Modelo cargado correctamente: {modelo_path}")
+        except Exception as e:
+            logger.warning(f"[PDF] No se pudo leer el modelo PDF {modelo_path}: {e}")
+            modelo_reader_obj = None
+
     writer = PdfWriter()
-    writer.add_page(modelo_reader.pages[0]) # Portada
+
+    # Añadir portada si existe
+    if modelo_reader_obj and len(modelo_reader_obj.pages) > 0:
+        writer.add_page(modelo_reader_obj.pages[0])  # Portada
     
+    # Añadir contenido dinámico
     dynamic_reader = PdfReader(buffer_content)
     for p in dynamic_reader.pages:
         writer.add_page(p)
-        
-    if len(modelo_reader.pages) > 1:
-        writer.add_page(modelo_reader.pages[-1]) # Contraportada
-        
+
+    # Añadir contraportada si existe
+    if modelo_reader_obj and len(modelo_reader_obj.pages) > 1:
+        writer.add_page(modelo_reader_obj.pages[-1])  # Contraportada
+
     final_buffer = BytesIO()
     writer.write(final_buffer)
     final_buffer.seek(0)

@@ -60,8 +60,8 @@ def _parse_date_flexible(date_str):
         return None
     date_str = date_str.lower().strip()
     
-    # 1. DD/MM/YY, DD.MM.YYYY o DD-MM-YYYY
-    match = re.search(r"(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})", date_str)
+    # 1. DD/MM/YY, DD.MM.YYYY o DD-MM-YYYY (soporta dots, slashes, dashes)
+    match = re.search(r"(\d{1,2})[.\/-](\d{1,2})[.\/-](\d{2,4})", date_str)
     if match:
         from datetime import date
         try:
@@ -135,6 +135,97 @@ def parse_es_number(value: str):
         return float(cleaned)
     except Exception:
         return None
+
+
+def _sanity_energy(result: dict) -> dict:
+    """
+    P0 Sanity checks para consumos de energía.
+    Detecta y neutraliza lecturas de contador malformadas, confusiones IVA, etc.
+    """
+    import logging
+    
+    consumo_kwh = result.get("consumo_kwh")
+    potencia_p1 = result.get("potencia_p1_kw")
+    potencia_p2 = result.get("potencia_p2_kw")
+    
+    # Check 1: Anti-lecturas (>5000 kWh with <15 kW potencia = meter reading, not consumption)
+    if consumo_kwh and consumo_kwh > 5000:
+        max_potencia = max(filter(None, [potencia_p1, potencia_p2])) if any([potencia_p1, potencia_p2]) else None
+        if max_potencia and max_potencia < 15:
+            logging.warning(
+                f"🛡️ [SANITY] Anti-lecturas: consumo_kwh={consumo_kwh:.0f} (>5000) + "
+                f"max_potencia={max_potencia} (<15 kW) = probable lectura acumulada del contador. "
+                f"Descartando consumo_kwh por sospechoso."
+            )
+            result["consumo_kwh"] = None
+            result["detected_por_ocr"]["consumo_kwh"] = False
+    
+    # Check 2: Anti-IVA confusion (consumo_kwh ≈ 21 o 10 = probable captación de % de impuesto)
+    if consumo_kwh:
+        if 19 <= consumo_kwh <= 23 or 9 <= consumo_kwh <= 11:
+            logging.warning(
+                f"🛡️ [SANITY] Anti-IVA: consumo_kwh={consumo_kwh} ≈ %impuesto. "
+                f"Descartando por probable confusión con porcentaje de IVA."
+            )
+            result["consumo_kwh"] = None
+            result["detected_por_ocr"]["consumo_kwh"] = False
+    
+    # Check 3: Anti-potencia confusion (consumo_kwh muy pequeño = probable potencia mal asignada)
+    if consumo_kwh and consumo_kwh < 0.5:
+        logging.warning(
+            f"🛡️ [SANITY] Consumo mínimo: consumo_kwh={consumo_kwh} < 0.5 kWh. "
+            f"Probable confusión con potencia. Descartando."
+        )
+        result["consumo_kwh"] = None
+        result["detected_por_ocr"]["consumo_kwh"] = False
+    
+    # Check 4: Validate dias_facturados range (1-370 days)
+    dias = result.get("dias_facturados")
+    if dias is not None:
+        try:
+            dias_int = int(dias)
+            if dias_int <= 0 or dias_int > 370:
+                logging.warning(
+                    f"🛡️ [SANITY] dias_facturados fuera de rango: {dias_int}. "
+                    f"Descartando (rango válido 1-370)."
+                )
+                result["dias_facturados"] = None
+        except (ValueError, TypeError):
+            pass
+    
+    return result
+
+
+def _extract_consumo_safe(full_text: str) -> dict:
+    """
+    P0 Extracción segura de consumo_total con 3 patrones prioritarios (A, B, C).
+    Retorna {'value': float, 'pattern': str} o {'value': None, 'pattern': None}
+    """
+    # Pattern A: "Su consumo en el periodo facturado ha sido XXX kWh" (Naturgy/Regulada)
+    pattern_a = r"su\s+consumo\s+en\s+(?:el\s+)?periodo\s+(?:facturado\s+)?ha\s+sido\s+([\d.,]+)\s*(?:kw)?h"
+    m = re.search(pattern_a, full_text, re.IGNORECASE)
+    if m:
+        val = parse_es_number(m.group(1))
+        if val and 0 < val < 5000:
+            return {'value': val, 'pattern': 'A (su consumo en el periodo)'}
+    
+    # Pattern B: "XXX kWh x 0,xxxxx €/kWh = Energía" (CHC/facturas tablas)
+    pattern_b = r"([\d.,]+)\s*(?:kw)?h\s*x\s*[\d.,]+\s*[€€]\s*/\s*(?:kw)?h"
+    m = re.search(pattern_b, full_text, re.IGNORECASE)
+    if m:
+        val = parse_es_number(m.group(1))
+        if val and 0 < val < 5000:
+            return {'value': val, 'pattern': 'B (consumo × tarifa)'}
+    
+    # Pattern C: "Total consumo" genérico como fallback
+    pattern_c = r"(?:consumo\s+total|total\s+consumo|consumo\s+(?:facturado|del\s+periodo))[^0-9\n]{0,50}([\d.,]+)\s*(?:kw)?h"
+    m = re.search(pattern_c, full_text, re.IGNORECASE)
+    if m:
+        val = parse_es_number(m.group(1))
+        if val and 0 < val < 5000:
+            return {'value': val, 'pattern': 'C (generic total consumo)'}
+    
+    return {'value': None, 'pattern': None}
 
 
 def extract_atr(text: str):
@@ -890,11 +981,27 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
     consumo_match = re.search(r"(?i)(?:consumo\s+total|total\s+consumo|consumo\s+(?:facturado|del\s+periodo))[^0-9\n]{0,50}([\d.,]+)\s*kwh", full_text)
     
     if consumo_match:
-        result["consumo_kwh"] = parse_es_number(consumo_match.group(1))
-        detected["consumo_kwh"] = True
+        # [P0] Use safe extraction with priority patterns A→B→C
+        safe_result = _extract_consumo_safe(full_text)
+        if safe_result['value'] is not None:
+            result["consumo_kwh"] = safe_result['value']
+            extraction_summary["consumo_safe_pattern"] = safe_result['pattern']
+            detected["consumo_kwh"] = True
+        else:
+            # Fallback: use old regex if safe patterns fail
+            result["consumo_kwh"] = parse_es_number(consumo_match.group(1))
+            extraction_summary["consumo_safe_pattern"] = "fallback_regex"
+            detected["consumo_kwh"] = True
     else:
-        result["consumo_kwh"] = None
-        detected["consumo_kwh"] = False
+        # [P0] Try safe extraction even without initial regex match
+        safe_result = _extract_consumo_safe(full_text)
+        if safe_result['value'] is not None:
+            result["consumo_kwh"] = safe_result['value']
+            extraction_summary["consumo_safe_pattern"] = safe_result['pattern']
+            detected["consumo_kwh"] = True
+        else:
+            result["consumo_kwh"] = None
+            detected["consumo_kwh"] = False
 
     # Total Importe Strategy
     if structured.get("importe_factura"):
@@ -1201,11 +1308,25 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
                 result["dias_facturados"] = dias
                 result["detected_por_ocr"]["dias_facturados"] = True
                 
-    # If still None, ensure it is flagged (logic implied by final check)
+    # [P0] Calculate dias_facturados from fecha_inicio/fecha_fin if missing (Bug B)
     if result.get("dias_facturados") is None:
-         pass
+        if result.get("fecha_inicio_consumo") and result.get("fecha_fin_consumo"):
+            d_ini = _parse_date_flexible(result["fecha_inicio_consumo"])
+            d_fin = _parse_date_flexible(result["fecha_fin_consumo"])
+            if d_ini and d_fin and d_fin >= d_ini:
+                dias = (d_fin - d_ini).days + 1  # +1 to include both start and end dates
+                if 1 <= dias <= 370:
+                    result["dias_facturados"] = dias
+                    result["detected_por_ocr"]["dias_facturados"] = True
+                    extraction_summary["dias_facturados_source"] = "calculated_from_dates"
 
     _check_periodo()
+
+    # [P0] Execute sanity checks (must be before _shield_concepts to avoid conflicts)
+    result = _sanity_energy(result)
+    
+    # Re-shield concepts after sanity checks in case consumo_kwh was modified
+    result = _shield_concepts(result)
 
     # [PATCH BUG C] Guardia de consumos absurdos
     sum_periodos = sum([result.get(f"consumo_p{i}_kwh") or 0 for i in range(1, 4)])

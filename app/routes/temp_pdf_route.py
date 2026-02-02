@@ -2,7 +2,7 @@
 def generar_presupuesto_pdf(factura_id: int, db: Session = Depends(get_db)):
     """
     GENERACIÓN DE PDF DEFINITIVA
-    Llama al servicio especializado que combina el modelo publicitario de Patricia Vázquez 
+    Llama al servicio especializado que combina un modelo publicitario de `modelosPresuPDF` (p. ej. Estudio EnergyLuz)
     con los datos técnicos (Tablas 1, 2 y 3).
     """
     from fastapi.responses import StreamingResponse

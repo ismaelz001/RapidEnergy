@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Depends
+﻿from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from app.utils.cups import normalize_cups, is_valid_cups, BLACKLIST
 from sqlalchemy.orm import Session
@@ -19,11 +19,11 @@ class CupsAuditRequest(BaseModel):
 @router.post("/cups-audit")
 def audit_cups(request: CupsAuditRequest):
     """
-    Endpoint de auditoría CUPS para debugging.
+    Endpoint de auditorÃ­a CUPS para debugging.
     Solo disponible con DEBUG=1 en variables de entorno.
     
-    Simula exactamente el proceso de normalización y validación
-    que debería ejecutarse en producción.
+    Simula exactamente el proceso de normalizaciÃ³n y validaciÃ³n
+    que deberÃ­a ejecutarse en producciÃ³n.
     """
     if os.getenv("DEBUG") != "1":
         raise HTTPException(
@@ -33,7 +33,7 @@ def audit_cups(request: CupsAuditRequest):
     
     candidate_raw = request.text_input
     
-    # Paso 1: Normalización
+    # Paso 1: NormalizaciÃ³n
     candidate_clean = normalize_cups(candidate_raw)
     
     # Paso 2: Verificar blacklist (manual check para debugging)
@@ -47,12 +47,12 @@ def audit_cups(request: CupsAuditRequest):
             matched_word = word
             break
     
-    # Paso 3: Validación Mod529
+    # Paso 3: ValidaciÃ³n Mod529
     is_valid = False
     if candidate_clean:
         is_valid = is_valid_cups(candidate_clean)
     
-    # Paso 4: Decisión final
+    # Paso 4: DecisiÃ³n final
     final_cups = candidate_clean if (candidate_clean and is_valid) else None
     
     return {
@@ -78,8 +78,8 @@ def audit_cups(request: CupsAuditRequest):
 @router.get("/tarifas/stats")
 def tarifas_stats(db: Session = Depends(get_db)):
     """
-    Retorna estadísticas sobre las tarifas en la BD.
-    Útil para debuggear problemas de comparador.
+    Retorna estadÃ­sticas sobre las tarifas en la BD.
+    Ãštil para debuggear problemas de comparador.
     
     Disponible en: GET /debug/tarifas/stats
     """
@@ -115,7 +115,7 @@ def tarifas_stats(db: Session = Depends(get_db)):
             "status": "success",
             "tarifas_por_atr": atr_stats,
             "precios_muestra": atr_prices,
-            "mensaje": "Usa esta información para debuggear problemas de comparador"
+            "mensaje": "Usa esta informaciÃ³n para debuggear problemas de comparador"
         }
     except Exception as e:
         logger.error(f"Error en tarifas_stats: {e}")
@@ -125,9 +125,9 @@ def tarifas_stats(db: Session = Depends(get_db)):
 @router.post("/comparador/factura/{factura_id}")
 def debug_comparador(factura_id: int, db: Session = Depends(get_db)):
     """
-    Ejecuta el comparador en modo debug y retorna análisis detallado.
+    Ejecuta el comparador en modo debug y retorna anÃ¡lisis detallado.
     
-    Útil para investigar por qué no hay ofertas o por qué el ahorro es negativo.
+    Ãštil para investigar por quÃ© no hay ofertas o por quÃ© el ahorro es negativo.
     
     Disponible en: POST /debug/comparador/factura/{factura_id}
     """
@@ -142,7 +142,7 @@ def debug_comparador(factura_id: int, db: Session = Depends(get_db)):
         # Ejecutar comparador con logging completo
         result = compare_factura(factura, db)
         
-        # Enriquecer resultado con análisis
+        # Enriquecer resultado con anÃ¡lisis
         analysis = {
             "factura_id": factura_id,
             "success": True,
@@ -177,5 +177,6 @@ def debug_comparador(factura_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail={
             "error": str(e),
             "tipo": type(e).__name__,
-            "mensaje": "Ver logs del servidor para más detalles"
+            "mensaje": "Ver logs del servidor para mÃ¡s detalles"
         })
+

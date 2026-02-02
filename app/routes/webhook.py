@@ -670,6 +670,38 @@ def comparar_factura(factura_id: int, db: Session = Depends(get_db)):
     if not factura:
         raise HTTPException(status_code=404, detail="Factura no encontrada")
 
+    # ═══════════════════════════════════════════════════════════════
+    # P1-STEP2-01: VALIDACIÓN STEP2 OBLIGATORIA
+    # ═══════════════════════════════════════════════════════════════
+    validado_step2 = getattr(factura, "validado_step2", False)
+    if not validado_step2:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "STEP2_REQUIRED",
+                "message": f"Factura {factura_id} NO pasó validación comercial (Step2). "
+                           f"Completa Step2 antes de comparar.",
+                "url_step2": f"/webhook/facturas/{factura_id}/step2",
+                "estado_factura": factura.estado_factura,
+            }
+        )
+    
+    # ═══════════════════════════════════════════════════════════════
+    # P1-VAL-01: VALIDAR TOTAL_AJUSTADO (post-Step2)
+    # ═══════════════════════════════════════════════════════════════
+    total_ajustado = getattr(factura, "total_ajustado", None)
+    if not total_ajustado or total_ajustado <= 0:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "TOTAL_AJUSTADO_MISSING",
+                "message": f"Factura {factura_id}: total_ajustado no definido o inválido. "
+                           f"Verifica que Step2 guardó correctamente.",
+                "total_ajustado": total_ajustado,
+                "url_step2": f"/webhook/facturas/{factura_id}/step2",
+            }
+        )
+
     # ⭐ CAMBIO 3: VALIDACIÓN PREVIA SEGÚN ATR
     atr = getattr(factura, "atr", None)
     atr_inferred = False
@@ -823,7 +855,7 @@ def guardar_seleccion_oferta(factura_id: int, offer: OfferSelection, db: Session
 @router.get("/facturas/{factura_id}/presupuesto.pdf")
 def generar_presupuesto_pdf(factura_id: int, db: Session = Depends(get_db)):
     """
-    PDF con estructura EXACTA: Tabla 1, Tabla 2, Tabla 3 + modelo Patricia Vázquez
+    PDF con estructura EXACTA: Tabla 1, Tabla 2, Tabla 3 + modelo de portada/contraportada desde `modelosPresuPDF` (Estudio EnergyLuz u otros)
     """
     from fastapi.responses import StreamingResponse
     from app.services.pdf_generator import generar_pdf_presupuesto

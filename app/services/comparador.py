@@ -569,12 +569,13 @@ def compare_factura(factura, db) -> Dict[str, Any]:
 
     result = db.execute(
         text("SELECT * FROM tarifas WHERE atr = :atr"),
-        {"atr": atr},  # Usa el ATR detectado automáticamente (2.0TD o 3.0TD)
+        {"atr": atr},
     )
     try:
         tarifas = result.mappings().all()
     except AttributeError:
         tarifas = [row._mapping for row in result.fetchall()]
+    
     # ⭐ MÉTODO PO/NODOÁMBAR: Calcular subtotal sin impuestos de factura ACTUAL
     # mediante BACKSOLVE desde los importes totales (NO inventar precios)
     
