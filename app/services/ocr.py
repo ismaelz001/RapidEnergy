@@ -8,7 +8,7 @@ from google.oauth2 import service_account
 from google.cloud import vision
 import pypdf
 import google.generativeai as genai
-from openai import OpenAI
+# from openai import OpenAI  # NO USADO - solo pypdf + Vision API
 import logging
 import traceback
 
@@ -178,7 +178,7 @@ def _sanity_energy(result: dict) -> dict:
         max_potencia = max(filter(None, [potencia_p1, potencia_p2])) if any([potencia_p1, potencia_p2]) else None
         if max_potencia and max_potencia < 15:
             logging.warning(
-                f"🛡️ [SANITY] Anti-lecturas: consumo_kwh={consumo_kwh:.0f} (>5000) + "
+                f"[SANITY] Anti-lecturas: consumo_kwh={consumo_kwh:.0f} (>5000) + "
                 f"max_potencia={max_potencia} (<15 kW) = probable lectura acumulada del contador. "
                 f"Descartando consumo_kwh por sospechoso."
             )
@@ -189,7 +189,7 @@ def _sanity_energy(result: dict) -> dict:
     if consumo_kwh:
         if 19 <= consumo_kwh <= 23 or 9 <= consumo_kwh <= 11:
             logging.warning(
-                f"🛡️ [SANITY] Anti-IVA: consumo_kwh={consumo_kwh} ≈ %impuesto. "
+                f"[SANITY] Anti-IVA: consumo_kwh={consumo_kwh} ≈ %impuesto. "
                 f"Descartando por probable confusión con porcentaje de IVA."
             )
             result["consumo_kwh"] = None
@@ -198,7 +198,7 @@ def _sanity_energy(result: dict) -> dict:
     # Check 3: Anti-potencia confusion (consumo_kwh muy pequeño = probable potencia mal asignada)
     if consumo_kwh and consumo_kwh < 0.5:
         logging.warning(
-            f"🛡️ [SANITY] Consumo mínimo: consumo_kwh={consumo_kwh} < 0.5 kWh. "
+            f"[SANITY] Consumo minimo: consumo_kwh={consumo_kwh} < 0.5 kWh. "
             f"Probable confusión con potencia. Descartando."
         )
         result["consumo_kwh"] = None
@@ -211,7 +211,7 @@ def _sanity_energy(result: dict) -> dict:
             dias_int = int(dias)
             if dias_int < 15 or dias_int > 370:
                 logging.warning(
-                    f"🛡️ [SANITY] dias_facturados fuera de rango: {dias_int}. "
+                    f"[SANITY] dias_facturados fuera de rango: {dias_int}. "
                     f"Descartando (rango válido 15-370 días)."
                 )
                 result["dias_facturados"] = None
@@ -233,11 +233,11 @@ def _sanity_energy(result: dict) -> dict:
         # Si hay datos en periodos, verificar coherencia
         if suma_periodos > 0:
             diferencia = abs(suma_periodos - consumo_total)
-            tolerancia = max(consumo_total * 0.02, 1.0)  # 2% o 1 kWh mínimo
+            tolerancia = max(consumo_total * 0.10, 1.0)  # 10% o 1 kWh mínimo (pérdidas, estimaciones)
             
             if diferencia > tolerancia:
                 logging.warning(
-                    f"🛡️ [SANITY] Incoherencia consumos: "
+                    f"[SANITY] Incoherencia consumos: "
                     f"suma_periodos={suma_periodos:.2f} kWh ≠ consumo_total={consumo_total:.2f} kWh "
                     f"(diferencia={diferencia:.2f} > tolerancia={tolerancia:.2f}). "
                     f"Probable error OCR - descartando consumos por periodo."
@@ -296,13 +296,28 @@ def extract_atr(text: str):
     if not text:
         return None
     normalized = normalize_text(text).upper()
-    # Broaden the search
+    
+    # Pattern 1: Directo "2.0TD" o "3.0TD"
     if re.search(r"2\s*[.,]?\s*[0O]\s*TD", normalized) or "USO LUZ" in normalized:
         return "2.0TD"
-    # Fallback: ATR phrase - allow up to 60 chars of any type including newline
-    match = re.search(r"PEAJE[\s\S]{0,60}?([23]\.?[0O]\s*TD)", normalized, re.IGNORECASE)
+    if re.search(r"3\s*[.,]?\s*[0O]\s*TD", normalized):
+        return "3.0TD"
+    
+    # Pattern 2: "Tarifa 2.0" o "Acceso 2.0TD"
+    match = re.search(r"(?:tarifa|acceso|peaje)\s*[:\-]?\s*([236]\s*\.\s*[0O]\s*TD?)", normalized, re.IGNORECASE)
     if match:
-        return match.group(1).replace(" ", "").upper()
+        return match.group(1).replace(" ", "").upper().replace("O", "0")
+    
+    # Pattern 3: Fallback - buscar en contexto de PEAJE
+    match = re.search(r"PEAJE[\s\S]{0,100}?([236]\.?[0O]\s*TD)", normalized, re.IGNORECASE)
+    if match:
+        return match.group(1).replace(" ", "").upper().replace("O", "0")
+    
+    # Pattern 4: Buscar "2.0" seguido de "TD" en diferentes líneas
+    match = re.search(r"([236])\s*\.\s*[0O][\s\n]{0,20}TD", normalized, re.IGNORECASE)
+    if match:
+        return f"{match.group(1)}.0TD"
+    
     return None
 
 
@@ -411,6 +426,7 @@ def _empty_result(raw_text: str = None) -> dict:
         "fecha_fin_consumo": None,
         "dias_facturados": None,  # Added field in result dict (even if not in DB, useful for raw_data)
         "titular": None,
+        "cliente": None,  # Alias de titular para compatibilidad
         "dni": None,
         "direccion": None,
         "telefono": None,
@@ -644,16 +660,26 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
         detected_pf["cups"] = data["cups"] is not None
 
         # 2. Fechas range - MEJORADO (Múltiples estrategias)
-        # Format 1: "31 de agosto de 2025 a 30 de septiembre de 2025"
         meses = "enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre"
-        rango_text = re.search(
-            rf"(\d{{1,2}}[\s\w]{{1,8}}(?:{meses})[\s\w]{{1,8}}\d{{4}})[\s\S]{{0,100}}?\b(?:a|al|hasta)\b[\s\S]{{0,100}}?(\d{{1,2}}[\s\w]{{1,8}}(?:{meses})[\s\w]{{1,8}}\d{{4}})",
-            raw_text,
-            re.IGNORECASE,
-        )
-        if rango_text:
-            data["fecha_inicio_consumo"] = rango_text.group(1)
-            data["fecha_fin_consumo"] = rango_text.group(2)
+        
+        # PRIORIDAD Format 5: FASE 5 - "05 de agosto de 2025 - 01 de septiembre de 2025" (HC_Energia)
+        # Ejecutar PRIMERO para evitar que dd.mm.yyyy incorrecto matchee antes
+        hc_pattern = r'(\d{1,2}\s+de\s+(' + meses + r')\s+de\s+\d{4})\s*-\s*(\d{1,2}\s+de\s+(' + meses + r')\s+de\s+\d{4})'
+        match_hc = re.search(hc_pattern, raw_text, re.IGNORECASE)
+        if match_hc:
+            data["fecha_inicio_consumo"] = match_hc.group(1).strip()
+            data["fecha_fin_consumo"] = match_hc.group(3).strip()  # Group 3 (grupo 2 es el mes)
+        
+        # Format 1: "31 de agosto de 2025 a 30 de septiembre de 2025"
+        if not data["fecha_inicio_consumo"]:
+            rango_text = re.search(
+                rf"(\d{{1,2}}[\s\w]{{1,8}}(?:{meses})[\s\w]{{1,8}}\d{{4}})[\s\S]{{0,100}}?\b(?:a|al|hasta)\b[\s\S]{{0,100}}?(\d{{1,2}}[\s\w]{{1,8}}(?:{meses})[\s\w]{{1,8}}\d{{4}})",
+                raw_text,
+                re.IGNORECASE,
+            )
+            if rango_text:
+                data["fecha_inicio_consumo"] = rango_text.group(1)
+                data["fecha_fin_consumo"] = rango_text.group(2)
 
         # Format 2: "dd/mm/yyyy - dd/mm/yyyy" o "dd.mm.yyyy a dd.mm.yyyy"
         if not data["fecha_inicio_consumo"]:
@@ -730,7 +756,7 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
                 d_ini = _parse_date_flexible(data["fecha_inicio_consumo"])
                 d_fin = _parse_date_flexible(data["fecha_fin_consumo"])
                 if d_ini and d_fin and d_fin >= d_ini:
-                    dias_calculados = (d_fin - d_ini).days + 1  # +1 incluye inicio y fin
+                    dias_calculados = (d_fin - d_ini).days  # SIN +1 - facturas cuentan periodos 24h completos
                     if 1 <= dias_calculados <= 370:
                         dias_facturados = dias_calculados
             except Exception as e:
@@ -797,6 +823,8 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
 
         consume_patterns = {
             "p1": [
+                # PRIORITY 0: Frase larga Iberdrola "consumos desagregados han sido punta: X kWh"
+                r"(?i)consumos\s+desagregados\s+han\s+sido\s+punta[:\s]+([\d.,]+)\s*kwh",
                 # PRIORITY 1: Consumos desagregados + punta (Iberdrola format)
                 r"(?i)consumos\s+desagregados.*?punta[:\s]+([\d.,]+)",
                 # PRIORITY 2: Consumo punta explícito (with "consumo" keyword)
@@ -813,6 +841,8 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
                 r"\bP1\b\s+([\d.,]+)(?:\s|$)",
             ],
             "p2": [
+                # PRIORITY 0: Frase larga Iberdrola "consumos desagregados han sido... llano: X kWh"
+                r"(?i)consumos\s+desagregados\s+han\s+sido.*?llano[:\s]+([\d.,]+)\s*kwh",
                 # PRIORITY 1: Consumos desagregados + llano (Iberdrola format)
                 r"(?i)consumos\s+desagregados.*?llano[:\s]+([\d.,]+)",
                 # PRIORITY 2: Consumo llano explícito
@@ -829,6 +859,8 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
                 r"\bP2\b\s+([\d.,]+)(?:\s|$)",
             ],
             "p3": [
+                # PRIORITY 0: Frase larga Iberdrola "consumos desagregados han sido... valle X kWh"
+                r"(?i)consumos\s+desagregados\s+han\s+sido.*?valle[:\s]+([\d.,]+)\s*kwh",
                 # PRIORITY 1: Consumos desagregados + valle (Iberdrola format)
                 r"(?i)consumos\s+desagregados.*?valle[:\s]+([\d.,]+)",
                 # PRIORITY 2: Consumo valle explícito
@@ -1035,6 +1067,12 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
     # Generic total consumption - VERY STRICT to avoid period-specific values
     consumo_match = re.search(r"(?i)(?:consumo\s+total|total\s+consumo|consumo\s+(?:facturado|del\s+periodo))[^0-9\n]{0,50}([\d.,]+)\s*kwh", full_text)
     
+    # FASE 5: HC_Energia - Pattern alternativo "XXX,XX kWh x precio" (línea de facturación)
+    if not consumo_match:
+        hc_consumo_match = re.search(r"\(\d{2}\.\d{2}\.\d{4}\s*-\s*\d{2}\.\d{2}\.\d{4}\)\s*([\d.,]+)\s*kWh\s*x\s*[\d.,]+\s*€/kWh", full_text)
+        if hc_consumo_match:
+            consumo_match = hc_consumo_match
+    
     if consumo_match:
         # [P0] Use safe extraction with priority patterns A→B→C
         safe_result = _extract_consumo_safe(full_text)
@@ -1168,47 +1206,86 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
 
     raw_lines = [ln.strip() for ln in full_text.splitlines() if ln.strip()]
     
-    # Strategy 1: Buscar "Titular" seguido de nombre en sección DATOS DEL CONTRATO (Iberdrola)
-    # Patrón: DATOS DEL CONTRATO ... Titular: NOMBRE o "Titular\nNOMBRE"
-    datos_contrato_match = re.search(
-        r"datos\s+del\s+contrato[\s\S]{0,500}?titular[:\s]+([A-ZÁÉÍÓÚÜÑ][A-ZÁÉÍÓÚÜÑ ,.'´`\-]{10,80})",
-        full_text,
-        re.IGNORECASE
-    )
-    if datos_contrato_match:
-        candidate = _clean_name(datos_contrato_match.group(1))
-        # Filtrar keywords que NO son nombres
-        if not re.search(r"\b(potencia|direccion|contrato|plan|datos|del|de|la|el|en)\b", candidate, re.IGNORECASE):
+    # === ESTRATEGIA ROBUSTA MULTI-FORMATO ===
+    # Análisis: Iberdrola (línea 11), Naturgy (línea 1), Endesa (línea 2), HC Energía (línea 4)
+    # El titular está SIEMPRE en primeras 15 líneas, ANTES de dirección
+    
+    # Strategy 1: Buscar en primeras 15 líneas - UNIVERSAL
+    # INCLUIR línea 1 (Naturgy la usa), pero con filtros estrictos
+    if not titular:
+        for idx in range(0, min(15, len(raw_lines))):  # Líneas 1-15
+            candidate = _clean_name(raw_lines[idx])
+            
+            if not candidate or len(candidate) < 10:
+                continue
+            
+            # Validar formato nombre: Palabras con primera letra mayúscula
+            words = candidate.split()
+            if len(words) < 2 or len(words) > 6:
+                continue
+            
+            # Cada palabra debe empezar con mayúscula (permite "López", "García")
+            if not all(w[0].isupper() for w in words if len(w) > 0):
+                continue
+            
+            # BLACKLIST estricta: NO capturar texto empresarial/técnico
+            blacklist_keywords = [
+                # Empresas
+                'iberdrola', 'naturgy', 'endesa', 'repsol', 'totalenergies', 'enel', 'viesgo',
+                'hcenergía', 'cide', 'energia', 'clientes', 'energía',
+                # Legal
+                'registro', 'mercantil', 'madrid', 'barcelona', 'inscrita', 'tomo', 'libro', 
+                'folio', 'sección', 'hoja', 'domicilio', 'social', 'unipersonal',
+                # Técnico factura
+                'factura', 'electricidad', 'suministro', 'contrato', 'datos', 'resumen',
+                'periodo', 'total', 'pagar', 'importe', 'consumo', 'potencia', 'tarifa',
+                'emisión', 'cargo', 'pago', 'referencia', 'código', 'evolución',
+                # Localidades comunes
+                'almería', 'sevilla', 'málaga', 'valencia', 'zaragoza',
+                # Otros
+                'cif', 'nif', 'apartado', 'correos', 'web', 'http', 'www', 'email',
+                'telefono', 'teléfono', 'atencion', 'atención', 'oficina'
+            ]
+            
+            candidate_lower = candidate.lower()
+            if any(keyword in candidate_lower for keyword in blacklist_keywords):
+                # FASE 5: HC_Energia - Si línea actual es empresa, probar siguiente línea
+                if idx+1 < len(raw_lines) and any(x in candidate_lower for x in ['cide', 'hcenergía', 's.a', 's.l', 'sociedad']):
+                    next_candidate = _clean_name(raw_lines[idx+1])
+                    if next_candidate and len(next_candidate) >= 10:
+                        next_words = next_candidate.split()
+                        if len(next_words) >= 2 and all(w[0].isupper() for w in next_words if len(w) > 0):
+                            # Validar que NO sea dirección (no debe tener "Calle", números al inicio, etc.)
+                            if not re.match(r'^(Calle|C/|AV|Paseo|Plaza|\d)', next_candidate):
+                                if _is_valid_name(next_candidate):
+                                    titular = next_candidate
+                                    name_line_index = idx+1
+                                    break
+                continue
+            
+            # Validación adicional: NO debe tener números (excepto "Sª", "3º" al final)
+            if re.search(r'\d', candidate) and not re.search(r'[Ss]ª|[0-9]º$', candidate):
+                continue
+            
+            # VALIDACIÓN FINAL: Debe ser nombre válido
             if _is_valid_name(candidate):
                 titular = candidate
+                name_line_index = idx
+                break
     
-    # Strategy 2: Buscar patrón "Titular:" o "Nombre del titular:"
+    # Strategy 2 (FALLBACK): Buscar patrón explícito "Titular:" o "Cliente:"
     if not titular:
-        titular_block_match = re.search(
-            r"(?:nombre\s+del\s+titular|titular|cliente)\s*[:\-]?\s*([A-ZÁÉÍÓÚÜÑ][A-Za-zÁÉÍÓÚÜÑáéíóúüñ ,.'´`\-]{10,80})",
+        titular_pattern = re.search(
+            r"(?:titular|nombre\s+del\s+titular|cliente|nombre\s+y\s+apellidos)[:\s]+([A-ZÁÉÍÓÚÜÑ][A-Za-zÁÉÍÓÚÜÑáéíóúüñ ,.'´`\-]{10,80})",
             full_text,
-            re.IGNORECASE,
+            re.IGNORECASE
         )
-        if titular_block_match:
-            linea = _clean_name(titular_block_match.group(1))
-            if _is_valid_name(linea):
-                if not re.search(r"(iberdrola|naturgy|endesa|direccion|codigo|cups)", linea, re.IGNORECASE):
-                    titular = linea
-    
-    # Strategy 3: Buscar en primeras 10 líneas (nombre suele estar al inicio) - MÁS ESTRICTO
-    if not titular:
-        for idx in range(min(10, len(raw_lines))):
-            candidate = _clean_name(raw_lines[idx])
-            # Validar que sea nombre válido (2+ palabras, todas con primera letra mayúscula)
-            if _is_valid_name(candidate) and len(candidate) > 15:
-                # Debe tener formato "NOMBRE APELLIDO APELLIDO" (mayúsculas)
-                words = candidate.split()
-                if len(words) >= 2 and all(w[0].isupper() for w in words if w):
-                    # Filtros MUY estrictos para primeras líneas
-                    if not re.search(r"(iberdrola|naturgy|endesa|repsol|enel|registro|mercantil|madrid|barcelona|telefono|email|web|http|www|factura|importe|periodo|domicilio|social|inscrita|tomo|libro|folio)", candidate, re.IGNORECASE):
-                        titular = candidate
-                        name_line_index = idx
-                        break
+        if titular_pattern:
+            candidate = _clean_name(titular_pattern.group(1))
+            # Validar que NO sea keyword empresarial
+            if not re.search(r"\b(potencia|direccion|contrato|plan|datos|del|de|www)\b", candidate, re.IGNORECASE):
+                if _is_valid_name(candidate):
+                    titular = candidate
 
     result["titular"] = titular
 
@@ -1216,20 +1293,156 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
     if match_dni:
         result["dni"] = re.sub(r"\s+", "", match_dni.group(1)).strip()
 
-    # Updated regex to handle "Dirección" with accent
-    dir_patterns = [
-        r"direcci[oó]n(?:\s+de\s+suministro)?\s*[:\-]?\s*([A-Za-z0-9ÁÉÍÓÚÜÑáéíóúüñ ,.'´`-]{5,120})",
-        r"domicilio\s*[:\-]?\s*([A-Za-z0-9ÁÉÍÓÚÜÑáéíóúüñ ,.'´`-]{5,120})",
-    ]
-    for pattern in dir_patterns:
-        match_dir = re.search(pattern, full_text, re.IGNORECASE)
-        if match_dir:
-            result["direccion"] = match_dir.group(1).strip()
-            break
+    # FASE 1: Extracción robusta de dirección (línea por línea)
+    result["direccion"] = None
+    raw_lines = [ln.strip() for ln in full_text.splitlines() if ln.strip()]
+    
+    for i, line in enumerate(raw_lines):
+        line_lower = line.lower()
+        
+        # Buscar "Dirección de suministro" o similar
+        if re.search(r'direcci[oó]n\s+(?:de\s+)?suministro', line_lower):
+            # Estrategia 1: Capturar después de ":" en misma línea
+            match_same = re.search(r'direcci[oó]n[^:]*:\s*(.+)$', line, re.IGNORECASE)
+            if match_same:
+                addr = match_same.group(1).strip()
+                
+                # CASO ESPECIAL NATURGY: "VELAZQUEZ" solo, número en siguiente línea
+                if re.match(r'^[A-ZÁÉÍÓÚÜÑ]{3,}$', addr) and i+1 < len(raw_lines):
+                    next_line = raw_lines[i+1].strip()
+                    # Si siguiente línea empieza con número: combinar
+                    number_match = re.match(r'^(\d{1,4})\s', next_line)
+                    if number_match:
+                        result["direccion"] = f"{addr} {number_match.group(1)}"
+                        break
+                    else:
+                        result["direccion"] = addr  # Solo nombre calle
+                        break
+                
+                # Validar que no sea basura (mínimo 5 chars, no keywords)
+                elif len(addr) > 5 and not re.search(r'Plan\s+A\s+Tu\s+Medida|Contratado|Mercantil|Tarifa\s+One|mercado\s+libre', addr, re.IGNORECASE):
+                    # Limpiar código postal al final: "C/ GALICIA, 7 04430" -> "C/ GALICIA, 7"
+                    addr_clean = re.sub(r'\s+\d{5}.*$', '', addr).strip()
+                    if len(addr_clean) > 5:
+                        result["direccion"] = addr_clean
+                        break
             
-    # Enable heuristic search for Address/Name for both Image and PDF (text)
-    # The 'is_image' check was preventing this logic for digital PDFs where pypdf returns lines.
-    if result["direccion"] is None and name_line_index is not None:
+            # Estrategia 2: Siguiente línea (común en Iberdrola)
+            if i+1 < len(raw_lines):
+                next_line = raw_lines[i+1].strip()
+                
+                # Caso A: Siguiente línea es solo número (Naturgy: "21")
+                if re.match(r'^\d{1,3}\s*$', next_line) and i+2 < len(raw_lines):
+                    # Buscar nombre de calle en línea ANTERIOR o contexto
+                    street_name = None
+                    # Buscar hacia atrás palabra en mayúsculas que sea calle
+                    for j in range(max(0, i-3), i):
+                        prev = raw_lines[j].strip()
+                        if re.match(r'^[A-ZÁÉÍÓÚ]{3,}$', prev):  # "VELAZQUEZ"
+                            street_name = prev
+                            break
+                    
+                    if street_name:
+                        result["direccion"] = f"{street_name} {next_line}"
+                        break
+                    else:
+                        # Si no encontramos, usar número + siguiente línea (CP + Ciudad)
+                        if i+2 < len(raw_lines):
+                            loc_line = raw_lines[i+2].strip()
+                            # Extraer solo número sin CP ni ciudad
+                            result["direccion"] = next_line  # Al menos el número
+                
+                # Caso B: Siguiente línea es dirección completa
+                elif len(next_line) > 5 and not re.search(r'N\\.?º|Fecha|Contrato|Tipo|factura', next_line, re.IGNORECASE):
+                    # Limpiar código postal al final
+                    addr_clean = re.sub(r'\s+\d{5}.*$', '', next_line).strip()
+                    if len(addr_clean) > 5:
+                        result["direccion"] = addr_clean
+                        break
+        
+        # Fallback: "Dirección:" sin "de suministro" (HC Energía)
+        elif re.search(r'^direcci[oó]n\s*:', line_lower) and not result.get("direccion"):
+            match_same = re.search(r'direcci[oó]n\s*:\s*(.+)$', line, re.IGNORECASE)
+            if match_same:
+                addr = match_same.group(1).strip()
+                # Limpiar código postal: "Calle Minerva 35 - 2 C 04770" -> "Calle Minerva 35 - 2 C"
+                addr_clean = re.sub(r'\s+\d{5}.*$', '', addr).strip()
+                if len(addr_clean) > 5:
+                    result["direccion"] = addr_clean
+                    break
+    
+    # FALLBACK ENDESA: Si no encontramos direccion, buscar después de titular/cliente
+    if not result.get("direccion") and result.get("titular"):
+        titular_name = result["titular"]
+        for i, line in enumerate(raw_lines):
+            # Encontrar línea con titular
+            if titular_name[:20] in line and i+1 < len(raw_lines):
+                next_line = raw_lines[i+1].strip()
+                # Validar que sea dirección (inicia con C/, AV, CALLE, etc. o palabra + número)
+                if re.match(r'^(C/|AV|CALLE|PASEO|PLAZA|[A-ZÁÉÍÓÚ]+ [A-ZÁÉÍÓÚ]+.*\d|[A-ZÁÉÍÓÚ].*\d{1,4})', next_line, re.IGNORECASE):
+                    # Limpiar CP
+                    addr_clean = re.sub(r'\s+\d{5}.*$', '', next_line).strip()
+                    if len(addr_clean) > 5:
+                        result["direccion"] = addr_clean
+                        break
+    
+    # FASE 2: Extracción robusta de localidad (línea por línea después de direccion)
+    if result.get("direccion"):
+        direccion_text = result["direccion"]
+        
+        # Buscar en raw_lines la línea con direccion y capturar siguientes
+        for i, line in enumerate(raw_lines):
+            if direccion_text[:15] in line:  # Match primeros 15 chars direccion
+                # Siguiente línea normalmente tiene CP + Ciudad
+                if i+1 < len(raw_lines):
+                    next_line = raw_lines[i+1].strip()
+                    
+                    # Pattern: "04738 Vícar" o "21 04738 Vícar" (puede incluir número al inicio)
+                    cp_match = re.search(r'(\d{5}\s+[A-ZÁÉÍÓÚÜÑa-záéíóúüñ][^\n]{2,40})', next_line)
+                    if cp_match:
+                        localidad = cp_match.group(1).strip()
+                        
+                        # Si línea siguiente tiene solo provincia (Almería, Granada, etc.)
+                        if i+2 < len(raw_lines):
+                            provincia_line = raw_lines[i+2].strip()
+                            # Validar que sea provincia (palabra sola, 5-15 chars)
+                            if re.match(r'^[A-ZÁÉÍÓÚÜÑa-záéíóúüñ]{5,15}$', provincia_line):
+                                localidad = f"{localidad} {provincia_line}"
+                        
+                        # Normalizar: quitar acentos, unificar formato
+                        localidad = localidad.replace('Í', 'I').replace('í', 'i')
+                        localidad = localidad.replace('Á', 'A').replace('á', 'a')
+                        localidad = localidad.replace('É', 'E').replace('é', 'e')
+                        localidad = localidad.replace('Ó', 'O').replace('ó', 'o')
+                        localidad = localidad.replace('Ú', 'U').replace('ú', 'u')
+                        
+                        # Unificar espacios y saltos de línea
+                        localidad = ' '.join(localidad.split())
+                        
+                        result["localidad"] = localidad
+                        break
+    
+    # Fallback: buscar patrón "CP + Localidad + Provincia" en full_text
+    if not result.get("localidad"):
+        localidad_patterns = [
+            r"(\d{5}\s+[A-ZÁÉÍÓÚÜÑ][A-Za-zÁÉÍÓÚÜÑáéíóúüñ\s]{3,40}(?:ALMERIA|ALMERÍA|GRANADA|MADRID|BARCELONA))",
+            r"\n\s*(\d{5}\s+[A-Za-zÁÉÍÓÚÜÑáéíóúüñ][^\n]{5,50})\s*$"
+        ]
+        for pattern in localidad_patterns:
+            match = re.search(pattern, full_text, re.IGNORECASE | re.MULTILINE)
+            if match:
+                localidad = match.group(1).strip()
+                # Normalizar acentos
+                localidad = localidad.replace('Í', 'I').replace('í', 'i')
+                localidad = localidad.replace('Á', 'A').replace('á', 'a')
+                localidad = localidad.replace('É', 'E').replace('é', 'e')
+                localidad = localidad.replace('Ó', 'O').replace('ó', 'o')
+                localidad = localidad.replace('Ú', 'U').replace('ú', 'u')
+                localidad = ' '.join(localidad.split())
+                result["localidad"] = localidad
+                break
+            
+    # Enprint(f"[DEBUG] Entering heuristic address search (name_line_index={name_line_index})")
         raw_lines = [ln.strip() for ln in full_text.splitlines() if ln.strip()]
         for forward in range(1, 3):
             if name_line_index + forward < len(raw_lines):
@@ -1271,6 +1484,12 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
         result["potencia_p2_kw"] = _extract_number(
             [r"potencia\s*p2[^0-9]{0,10}([\d.,]+)\s*k?w", r"potencia\s+valle[^0-9]{0,10}([\d.,]+)\s*k?w"]
         )
+    
+    # Fallback: En tarifa 2.0TD con solo P1, asumir P2 = P1 (potencia simétrica común)
+    if result.get("atr") == "2.0TD" and result.get("potencia_p1_kw") and not result.get("potencia_p2_kw"):
+        result["potencia_p2_kw"] = result["potencia_p1_kw"]
+        logging.debug(f"[OCR] Fallback P2=P1 ({result['potencia_p1_kw']} kW) para tarifa 2.0TD")
+    
     detected["potencia_p1_kw"] = result["potencia_p1_kw"] is not None
     detected["potencia_p2_kw"] = result["potencia_p2_kw"] is not None
 
@@ -1290,8 +1509,10 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
     result["servicios_vinculados"] = True if sv_match else None
     detected["servicios_vinculados"] = sv_match is not None
 
+    # FASE 3: Alquiler contador - Incluir "SERVICIOS Y OTROS CONCEPTOS" (Iberdrola)
     result["alquiler_contador"] = _extract_number(
         [
+            r"SERVICIOS\s+Y\s+OTROS\s+CONCEPTOS[^\d]+([\d.,]+)\s*€",  # Iberdrola - PRIMERO
             r"alquiler\s+(?:de\s+)?(?:equipos|contador|medida)[^0-9]{0,20}([\d.,]+)", 
             r"equipos\s+de\s+medida[^0-9]{0,20}([\d.,]+)",
             r"contador\s+alquiler[^0-9]{0,10}([\d.,]+)"
@@ -1376,7 +1597,7 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
         d_ini = _parse_date_flexible(result["fecha_inicio_consumo"])
         d_fin = _parse_date_flexible(result["fecha_fin_consumo"])
         if d_ini and d_fin:
-            dias = (d_fin - d_ini).days + 1
+            dias = (d_fin - d_ini).days  # SIN +1 - períodos 24h completos
             if dias > 0:
                 result["dias_facturados"] = dias
                 result["detected_por_ocr"]["dias_facturados"] = True
@@ -1387,7 +1608,7 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
             d_ini = _parse_date_flexible(result["fecha_inicio_consumo"])
             d_fin = _parse_date_flexible(result["fecha_fin_consumo"])
             if d_ini and d_fin and d_fin >= d_ini:
-                dias = (d_fin - d_ini).days + 1  # +1 to include both start and end dates
+                dias = (d_fin - d_ini).days  # SIN +1 - facturas cuentan periodos 24h completos
                 if 1 <= dias <= 370:
                     result["dias_facturados"] = dias
                     result["detected_por_ocr"]["dias_facturados"] = True
@@ -1411,22 +1632,20 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
     
     # EXCEPCIÓN: Si sum_periodos es 0, no es "absurda", es simplemente "missing"
     if (has_crazy_sum or has_absurdly_huge_sum) and sum_periodos > 0:
-        import logging
-        logging.warning(f"🛡️ [OCR] Coherencia fallida (P1+P2+P3={sum_periodos}, Total={consumo_tot}). Seteando consumos a NULL para corrección manual.")
+        logging.warning(f"[OCR] Coherencia fallida (P1+P2+P3={sum_periodos}, Total={consumo_tot}). Seteando consumos a NULL para correccion manual.")
         for i in range(1, 7):
             result[f"consumo_p{i}_kwh"] = None
             result["detected_por_ocr"][f"consumo_p{i}_kwh"] = False
     
     # [PATCH BUG E] Monetary Guards
-    if result.get("alquiler_contador") and result["alquiler_contador"] > 10:
-        import logging
-        logging.warning(f"🛡️ [OCR] Alquiler contador {result['alquiler_contador']} > 10. Descartando por sospechoso.")
+    if result.get("alquiler_contador") and result["alquiler_contador"] > 30:
+        logging.warning(f"[OCR] Alquiler contador {result['alquiler_contador']} > 30€. Descartando por sospechoso.")
         result["alquiler_contador"] = None
 
     if result.get("impuesto_electrico") and result.get("total_factura"):
-        # If tax > 15% of total, it's garbage (should be 5% max usually)
-        if result["impuesto_electrico"] > result["total_factura"] * 0.15:
-             logging.warning(f"🛡️ [OCR] Impuesto eléctrico {result['impuesto_electrico']} > 15% de total {result['total_factura']}. Descartando.")
+        # Validación más flexible: descartamos solo si es > 50% del total (claramente erróneo)
+        if result["impuesto_electrico"] > result["total_factura"] * 0.5:
+             logging.warning(f"[OCR] Impuesto electrico {result['impuesto_electrico']} > 50% de total {result['total_factura']}. Descartando.")
              result["impuesto_electrico"] = None
 
     # [PATCH BUG D] Concept Shield
@@ -1605,7 +1824,7 @@ def extract_data_with_gemini(file_bytes: bytes, is_pdf: bool = True) -> dict:
             d_ini = _parse_date_flexible(result["fecha_inicio_consumo"])
             d_fin = _parse_date_flexible(result["fecha_fin_consumo"])
             if d_ini and d_fin:
-                dias = (d_fin - d_ini).days + 1
+                dias = (d_fin - d_ini).days  # SIN +1
                 if dias > 0:
                     result["dias_facturados"] = dias
                     print(f"[GEMINI] Calculado periodo_dias fallback: {dias}")
@@ -1616,7 +1835,7 @@ def extract_data_with_gemini(file_bytes: bytes, is_pdf: bool = True) -> dict:
         return result
 
     except Exception as e:
-        logging.error(f"❌ Error en Gemini Extraction: {str(e)}")
+        logging.error(f"ERROR en Gemini Extraction: {str(e)}")
         logging.error(traceback.format_exc())
         return None
 
@@ -1734,7 +1953,7 @@ Procesa TODAS las páginas de la factura si es multipágina."""
             d_ini = _parse_date_flexible(result["fecha_inicio"])
             d_fin = _parse_date_flexible(result["fecha_fin"])
             if d_ini and d_fin:
-                dias = (d_fin - d_ini).days + 1
+                dias = (d_fin - d_ini).days  # SIN +1
                 if dias > 0:
                     result["dias_facturados"] = dias
                     print(f"[OPENAI] Calculado periodo_dias: {dias}")
@@ -1747,11 +1966,11 @@ Procesa TODAS las páginas de la factura si es multipágina."""
         result["detection_method"] = "openai-gpt-4o"
         result["parsed_fields"] = {k: v is not None for k, v in result.items()}
         
-        print(f"[OPENAI] ✅ Extracción completada - {sum(1 for v in result.values() if v)} campos extraídos")
+        print(f"[OPENAI] OK Extraccion completada - {sum(1 for v in result.values() if v)} campos extraidos")
         return result
         
     except Exception as e:
-        logging.error(f"❌ Error en OpenAI Extraction: {str(e)}")
+        logging.error(f"ERROR en OpenAI Extraction: {str(e)}")
         logging.error(traceback.format_exc())
         return None
 
@@ -1762,7 +1981,7 @@ def extract_data_from_pdf(file_bytes: bytes) -> dict:
     # [CUPS-AUDIT] LOG #1: Motor OCR previsto
     import os
     print(f"""
-[OCR] Motor: pypdf → Vision API (Gemini/OpenAI desactivados)
+[OCR] Motor: pypdf + Vision API (Gemini/OpenAI desactivados)
   Tipo archivo: {'PDF' if is_pdf else 'IMAGE'}
 """)
 
@@ -1796,7 +2015,13 @@ def extract_data_from_pdf(file_bytes: bytes) -> dict:
                 print(f"[pypdf] Extraídos {critical_count}/5 campos críticos")
                 
                 if critical_count >= 4:
-                    print(f"[pypdf] ✅ Suficientes campos, omitiendo Vision API")
+                    print(f"[pypdf] OK Suficientes campos, omitiendo Vision API")
+                    # Mapear titular → cliente para compatibilidad
+                    if pypdf_result.get("titular"):
+                        pypdf_result["cliente"] = pypdf_result["titular"]
+                    # Mapear consumo_kwh → consumo_total_kwh
+                    if pypdf_result.get("consumo_kwh"):
+                        pypdf_result["consumo_total_kwh"] = pypdf_result["consumo_kwh"]
                     return pypdf_result
                 else:
                     print(f"[pypdf] ⚠️ Incompleto ({critical_count}/5), intentando Vision API...")
@@ -1806,7 +2031,7 @@ def extract_data_from_pdf(file_bytes: bytes) -> dict:
     # STEP 2: Vision API (fallback para PDFs escaneados)
     client, auth_log = get_vision_client()
     if not client:
-        print(f"[Vision] ❌ Credenciales no disponibles")
+        print(f"[Vision] ERROR Credenciales no disponibles")
         if pypdf_result:
             print(f"[Vision] Devolviendo pypdf parcial ({critical_count}/5 campos)")
             return pypdf_result
@@ -1825,7 +2050,7 @@ def extract_data_from_pdf(file_bytes: bytes) -> dict:
             images = convert_from_bytes(file_bytes, first_page=1, last_page=1, dpi=200)
             
             if not images:
-                print("[Vision] ❌ No se pudo convertir PDF a imagen")
+                print("[Vision] ERROR No se pudo convertir PDF a imagen")
                 if pypdf_result:
                     return pypdf_result
                 return _empty_result("No se pudo convertir PDF para Vision API")
@@ -1836,9 +2061,9 @@ def extract_data_from_pdf(file_bytes: bytes) -> dict:
             img_byte_arr = img_byte_arr.getvalue()
             
             image = vision.Image(content=img_byte_arr)
-            print("[Vision] ✅ PDF convertido a imagen PNG")
+            print("[Vision] OK PDF convertido a imagen PNG")
         except Exception as e:
-            print(f"[Vision] ❌ Error convirtiendo PDF: {e}")
+            print(f"[Vision] ERROR convirtiendo PDF: {e}")
             if pypdf_result:
                 print(f"[Vision] Devolviendo pypdf parcial ({critical_count}/5 campos)")
                 return pypdf_result
@@ -1852,7 +2077,7 @@ def extract_data_from_pdf(file_bytes: bytes) -> dict:
         
         # Debug: verificar respuesta de Vision API
         if response.error and response.error.message:
-            print(f"[Vision] ❌ Error de API: {response.error.message}")
+            print(f"[Vision] ERROR de API: {response.error.message}")
             if pypdf_result:
                 print(f"[Vision] Devolviendo pypdf parcial ({critical_count}/5 campos)")
                 return pypdf_result
@@ -1861,7 +2086,7 @@ def extract_data_from_pdf(file_bytes: bytes) -> dict:
         texts = response.text_annotations
 
         if not texts:
-            print("[Vision] ❌ No se detectó texto")
+            print("[Vision] ERROR No se detecto texto")
             if pypdf_result:
                 print(f"[Vision] Devolviendo pypdf parcial ({critical_count}/5 campos)")
                 return pypdf_result
@@ -1889,19 +2114,31 @@ def extract_data_from_pdf(file_bytes: bytes) -> dict:
                 if pypdf_val:
                     vision_result[field] = pypdf_val
                     if not vision_result.get(field) or vision_result.get(field) != pypdf_val:
-                        print(f"[Vision] ✅ {field} recuperado/forzado desde pypdf")
+                        print(f"[Vision] OK {field} recuperado/forzado desde pypdf")
         
         # Validación final
         consumo = vision_result.get('consumo_kwh')
         if consumo and consumo < 10:
             print(f"[Vision] ⚠️ Consumo sospechoso: {consumo} kWh")
         
-        print(f"[Vision] ✅ Extracción completada")
+        print(f"[Vision] OK Extraccion completada")
+        # Mapear titular → cliente para compatibilidad con frontend
+        if vision_result.get("titular"):
+            vision_result["cliente"] = vision_result["titular"]
+        # Mapear consumo_kwh → consumo_total_kwh
+        if vision_result.get("consumo_kwh"):
+            vision_result["consumo_total_kwh"] = vision_result["consumo_kwh"]
         return vision_result
 
     except Exception as e:
-        print(f"[Vision] ❌ Error: {e}")
+        print(f"[Vision] ERROR: {e}")
         if pypdf_result:
             print(f"[Vision] Devolviendo pypdf parcial ({critical_count}/4 campos)")
+            # Mapear titular → cliente
+            if pypdf_result.get("titular"):
+                pypdf_result["cliente"] = pypdf_result["titular"]
+            # Mapear consumo_kwh → consumo_total_kwh
+            if pypdf_result.get("consumo_kwh"):
+                pypdf_result["consumo_total_kwh"] = pypdf_result["consumo_kwh"]
             return pypdf_result
         return _empty_result(f"Error procesando OCR: {str(e)}")
