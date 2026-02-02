@@ -1166,31 +1166,44 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
     titular = None
     name_line_index = None
 
-    # ⭐ CAMBIO: Buscar el nombre en las PRIMERAS líneas (cliente/remitente está al inicio)
-    # NO por proximidad al DNI (que está al final de la factura)
     raw_lines = [ln.strip() for ln in full_text.splitlines() if ln.strip()]
     
-    # Strategy 1: Buscar en las primeras 30 líneas (zona de encabezado)
-    for idx in range(min(30, len(raw_lines))):
-        candidate = _clean_name(raw_lines[idx])
+    # Strategy 1: Buscar en sección "DATOS DEL CONTRATO" (Naturgy, Iberdrola)
+    datos_contrato_match = re.search(
+        r"datos\s+del\s+contrato[\s\S]{0,500}?([A-ZÁÉÍÓÚÜÑ][A-Za-zÁÉÍÓÚÜÑáéíóúüñ ,.'´`\-]{10,80})",
+        full_text,
+        re.IGNORECASE
+    )
+    if datos_contrato_match:
+        candidate = _clean_name(datos_contrato_match.group(1))
         if _is_valid_name(candidate):
-            # Validar que NO sea nombre de empresa (Iberdrola, Naturgy, etc.)
-            if not re.search(r"(iberdrola|naturgy|endesa|repsol|enel|viesgo|telefonica)", candidate, re.IGNORECASE):
+            # Validar que NO sea etiqueta o nombre comercializadora
+            if not re.search(r"(iberdrola|naturgy|endesa|repsol|enel|viesgo|telefonica|direccion|codigo|cups|datos|contrato|titular|nombre|cliente)", candidate, re.IGNORECASE):
                 titular = candidate
-                name_line_index = idx
-                break
     
-    # Strategy 2: Si no encontró, buscar patrón "NIF titular:" más específicamente
+    # Strategy 2: Buscar patrón "Titular:" o "Nombre del titular:"
     if not titular:
         titular_block_match = re.search(
-            r"(?:nif\s+titular|nombre\s+del\s+titular|titular)\s*[:\-]?\s*([A-Za-zÁÉÍÓÚÜÑáéíóúüñ ,.'´`\-]{3,80})",
+            r"(?:nombre\s+del\s+titular|titular|cliente)\s*[:\-]?\s*([A-ZÁÉÍÓÚÜÑ][A-Za-zÁÉÍÓÚÜÑáéíóúüñ ,.'´`\-]{10,80})",
             full_text,
             re.IGNORECASE,
         )
         if titular_block_match:
             linea = _clean_name(titular_block_match.group(1))
             if _is_valid_name(linea):
-                titular = linea
+                if not re.search(r"(iberdrola|naturgy|endesa|direccion|codigo|cups)", linea, re.IGNORECASE):
+                    titular = linea
+    
+    # Strategy 3: Buscar en primeras 50 líneas (fallback conservador)
+    if not titular:
+        for idx in range(min(50, len(raw_lines))):
+            candidate = _clean_name(raw_lines[idx])
+            if _is_valid_name(candidate) and len(candidate) > 10:
+                # Filtros más estrictos
+                if not re.search(r"(iberdrola|naturgy|endesa|repsol|enel|registro|mercantil|madrid|barcelona|telefono|email|web|http|www|factura|importe|periodo)", candidate, re.IGNORECASE):
+                    titular = candidate
+                    name_line_index = idx
+                    break
 
     result["titular"] = titular
 
@@ -1857,7 +1870,7 @@ def extract_data_from_pdf(file_bytes: bytes) -> dict:
         
         vision_result = parse_invoice_text(full_text, is_image=True)
         
-        # FUSIÓN: pypdf + Vision (priorizar pypdf)
+        # FUSIÓN: pypdf + Vision (PRIORIZAR pypdf siempre que tenga valor válido)
         if pypdf_result:
             print("[Vision] Fusionando pypdf + Vision...")
             all_fields = ['cups', 'atr', 'consumo_kwh', 'dias_facturados', 'fecha_inicio', 'fecha_fin',
@@ -1867,9 +1880,11 @@ def extract_data_from_pdf(file_bytes: bytes) -> dict:
             
             for field in all_fields:
                 pypdf_val = pypdf_result.get(field)
-                if pypdf_val and not vision_result.get(field):
+                # Si pypdf tiene valor, SIEMPRE usar pypdf (más confiable que Vision)
+                if pypdf_val:
                     vision_result[field] = pypdf_val
-                    print(f"[Vision] ✅ {field} recuperado desde pypdf")
+                    if not vision_result.get(field) or vision_result.get(field) != pypdf_val:
+                        print(f"[Vision] ✅ {field} recuperado/forzado desde pypdf")
         
         # Validación final
         consumo = vision_result.get('consumo_kwh')
