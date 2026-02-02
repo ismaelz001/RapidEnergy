@@ -1717,37 +1717,15 @@ def extract_data_from_pdf(file_bytes: bytes) -> dict:
     
     # [CUPS-AUDIT] LOG #1: Motor OCR previsto
     import os
-    gemini_key_present = bool(os.getenv("GEMINI_API_KEY"))
-    openai_key_present = bool(os.getenv("OPENAI_API_KEY"))
-    app_version = os.getenv("APP_VERSION", "unknown")
     print(f"""
-[CUPS-AUDIT] #1 - OCR ENGINE SELECTION
-  Motor previsto: {'OPENAI-GPT-4O' if openai_key_present else 'GEMINI-1.5-FLASH' if gemini_key_present else 'PYPDF/VISION'}
-  OPENAI_API_KEY presente: {openai_key_present}
-  GEMINI_API_KEY presente: {gemini_key_present}
-  APP_VERSION: {app_version}
+[OCR] Motor: pypdf → Vision API (Gemini/OpenAI desactivados)
   Tipo archivo: {'PDF' if is_pdf else 'IMAGE'}
 """)
-    
-    # INTENTAR OPENAI GPT-4O PRIMERO (Premium, 95-99% accuracy)
-    if openai_key_present:
-        print("[OCR] Intentando extracción premium con GPT-4o Vision...")
-        openai_result = extract_data_with_openai(file_bytes, is_pdf=is_pdf)
-        if openai_result:
-            return openai_result
-        print("[OCR] Fallo OpenAI, intentando método tradicional...")
-    
-    # FALLBACK: Gemini (desactivado por error 404)
-    api_key = os.getenv("GEMINI_API_KEY")
-    if False and api_key:  # Desactivado temporalmente
-        print("Intentando extracción premium con Gemini 1.5 Flash...")
-        gemini_result = extract_data_with_gemini(file_bytes, is_pdf=is_pdf)
-        if gemini_result:
-            return gemini_result
-        print("Fallo Gemini, reintentando con método tradicional...")
 
-    # STEP 1: Intentar pypdf primero (rápido, gratis, 95% accuracy en PDFs digitales)
+    # STEP 1: pypdf primero (rápido, gratis, 95% accuracy en PDFs digitales)
     pypdf_result = None
+    critical_count = 0
+    
     if is_pdf:
         try:
             reader = pypdf.PdfReader(io.BytesIO(file_bytes))
@@ -1758,35 +1736,38 @@ def extract_data_from_pdf(file_bytes: bytes) -> dict:
                     full_text += text + "\n"
 
             if len(full_text.strip()) > 50:
-                print("[HYBRID OCR] Intentando pypdf primero...")
+                print("[pypdf] Extrayendo texto...")
                 pypdf_result = parse_invoice_text(full_text)
                 
-                # Validación cruzada: si pypdf extrajo campos críticos, úsalo
+                # Validación: campos críticos extraídos
                 critical_fields = [
+                    pypdf_result.get('cups'),
                     pypdf_result.get('consumo_kwh'),
                     pypdf_result.get('dias_facturados'),
-                    pypdf_result.get('fecha_inicio'),
-                    pypdf_result.get('fecha_fin')
+                    pypdf_result.get('total_factura')
                 ]
                 
                 critical_count = sum(1 for f in critical_fields if f)
+                print(f"[pypdf] Extraídos {critical_count}/4 campos críticos")
+                
                 if critical_count >= 3:
-                    print(f"[HYBRID OCR] ✅ pypdf exitoso ({critical_count}/4 campos críticos). Omitiendo Vision API.")
+                    print(f"[pypdf] ✅ Suficientes campos, omitiendo Vision API")
                     return pypdf_result
                 else:
-                    print(f"[HYBRID OCR] ⚠️ pypdf incompleto ({critical_count}/4 campos). Fallback a Vision API...")
+                    print(f"[pypdf] ⚠️ Incompleto, intentando Vision API...")
         except Exception as e:
-            print(f"[HYBRID OCR] Error en pypdf: {e}. Fallback a Vision API...")
+            print(f"[pypdf] Error: {e}")
 
-    # STEP 2: Vision API como fallback (para PDFs escaneados o cuando pypdf falla)
+    # STEP 2: Vision API (fallback para PDFs escaneados)
     client, auth_log = get_vision_client()
     if not client:
-        print(f"[HYBRID OCR] ❌ Vision API credenciales no disponibles.")
+        print(f"[Vision] ❌ Credenciales no disponibles")
         if pypdf_result:
-            print(f"[HYBRID OCR] Devolviendo resultado parcial de pypdf ({critical_count}/4 campos).")
+            print(f"[Vision] Devolviendo pypdf parcial ({critical_count}/4 campos)")
             return pypdf_result
         return _empty_result(f"Error configuracion credenciales:\n{auth_log}")
 
+    print("[Vision] Procesando con Google Vision API...")
     image = vision.Image(content=file_bytes)
 
     try:
@@ -1794,40 +1775,45 @@ def extract_data_from_pdf(file_bytes: bytes) -> dict:
         texts = response.text_annotations
 
         if not texts:
-            return _empty_result(
-                "El OCR no detecto texto. Si es un PDF, asegurate de subirlo como imagen (JPG/PNG)."
-            )
+            print("[Vision] ❌ No se detectó texto")
+            if pypdf_result:
+                print(f"[Vision] Devolviendo pypdf parcial ({critical_count}/4 campos)")
+                return pypdf_result
+            return _empty_result("El OCR no detecto texto.")
 
         full_text = texts[0].description
         
-        # PREPROCESADO: Unir números fragmentados antes de parsear
+        # PREPROCESADO: Unir números fragmentados
         full_text = _preprocess_fragmented_text(full_text)
-        print("[HYBRID OCR] Vision API con preprocesado aplicado.")
+        print("[Vision] Preprocesado aplicado")
         
         vision_result = parse_invoice_text(full_text, is_image=True)
         
-        # VALIDACIÓN CRUZADA: Si pypdf extrajo datos, comparar con Vision
+        # FUSIÓN: pypdf + Vision (priorizar pypdf)
         if pypdf_result:
-            print("[HYBRID OCR] Fusionando pypdf + Vision API (prioritando pypdf)...")
-            # Priorizar pypdf para TODOS los campos si están presentes
-            critical_fields = ['cups', 'atr', 'consumo_kwh', 'dias_facturados', 'fecha_inicio', 'fecha_fin',
-                             'total_factura', 'cliente', 'potencia_p1_kw', 'potencia_p2_kw']
-            for field in critical_fields:
-                if pypdf_result.get(field) and not vision_result.get(field):
-                    vision_result[field] = pypdf_result[field]
-                    print(f"[HYBRID OCR] Recuperado {field} desde pypdf: {pypdf_result[field]}")
+            print("[Vision] Fusionando pypdf + Vision...")
+            all_fields = ['cups', 'atr', 'consumo_kwh', 'dias_facturados', 'fecha_inicio', 'fecha_fin',
+                         'total_factura', 'cliente', 'potencia_p1_kw', 'potencia_p2_kw', 
+                         'consumo_p1_kwh', 'consumo_p2_kwh', 'consumo_p3_kwh',
+                         'iva', 'iva_porcentaje', 'impuesto_electrico', 'alquiler_contador']
+            
+            for field in all_fields:
+                pypdf_val = pypdf_result.get(field)
+                if pypdf_val and not vision_result.get(field):
+                    vision_result[field] = pypdf_val
+                    print(f"[Vision] ✅ {field} recuperado desde pypdf")
         
-        # Validación final: Rechazar resultados absurdos
+        # Validación final
         consumo = vision_result.get('consumo_kwh')
         if consumo and consumo < 10:
-            print(f"[HYBRID OCR] ⚠️ Consumo sospechoso ({consumo} kWh < 10). Verificar.")
+            print(f"[Vision] ⚠️ Consumo sospechoso: {consumo} kWh")
         
+        print(f"[Vision] ✅ Extracción completada")
         return vision_result
 
     except Exception as e:
-        print(f"Error en Vision API: {e}")
-        # Si Vision falla pero pypdf tuvo algo, devolver pypdf aunque sea incompleto
+        print(f"[Vision] ❌ Error: {e}")
         if pypdf_result:
-            print("[HYBRID OCR] Vision API falló, devolviendo resultado parcial de pypdf.")
+            print(f"[Vision] Devolviendo pypdf parcial ({critical_count}/4 campos)")
             return pypdf_result
-        return _empty_result(f"Error procesando OCR: {str(e)}\n\n--- DEBUG LOG ---\n{auth_log}")
+        return _empty_result(f"Error procesando OCR: {str(e)}")
