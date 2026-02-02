@@ -1795,7 +1795,39 @@ def extract_data_from_pdf(file_bytes: bytes) -> dict:
         return _empty_result(f"Error configuracion credenciales:\n{auth_log}")
 
     print("[Vision] Procesando con Google Vision API...")
-    image = vision.Image(content=file_bytes)
+    
+    # Si es PDF, convertir a imagen primero (Vision API solo acepta imágenes)
+    if is_pdf:
+        try:
+            from pdf2image import convert_from_bytes
+            from PIL import Image
+            import io as io_module
+            
+            print("[Vision] Convirtiendo PDF a imagen...")
+            images = convert_from_bytes(file_bytes, first_page=1, last_page=1, dpi=200)
+            
+            if not images:
+                print("[Vision] ❌ No se pudo convertir PDF a imagen")
+                if pypdf_result:
+                    return pypdf_result
+                return _empty_result("No se pudo convertir PDF para Vision API")
+            
+            # Convertir PIL Image a bytes
+            img_byte_arr = io_module.BytesIO()
+            images[0].save(img_byte_arr, format='PNG')
+            img_byte_arr = img_byte_arr.getvalue()
+            
+            image = vision.Image(content=img_byte_arr)
+            print("[Vision] ✅ PDF convertido a imagen PNG")
+        except Exception as e:
+            print(f"[Vision] ❌ Error convirtiendo PDF: {e}")
+            if pypdf_result:
+                print(f"[Vision] Devolviendo pypdf parcial ({critical_count}/5 campos)")
+                return pypdf_result
+            return _empty_result(f"Error convirtiendo PDF: {str(e)}")
+    else:
+        # Ya es imagen, usar directamente
+        image = vision.Image(content=file_bytes)
 
     try:
         response = client.text_detection(image=image)
