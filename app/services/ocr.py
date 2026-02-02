@@ -2179,7 +2179,7 @@ def extract_data_from_pdf(file_bytes: bytes) -> dict:
         # FUSIÓN: pypdf + Vision (PRIORIZAR pypdf siempre que tenga valor válido)
         if pypdf_result:
             print("[Vision] Fusionando pypdf + Vision...")
-            all_fields = ['cups', 'atr', 'consumo_kwh', 'dias_facturados', 'fecha_inicio', 'fecha_fin',
+            all_fields = ['cups', 'atr', 'consumo_kwh', 'dias_facturados', 'fecha_inicio_consumo', 'fecha_fin_consumo',
                          'total_factura', 'cliente', 'potencia_p1_kw', 'potencia_p2_kw', 
                          'consumo_p1_kwh', 'consumo_p2_kwh', 'consumo_p3_kwh',
                          'iva', 'iva_porcentaje', 'impuesto_electrico', 'alquiler_contador']
@@ -2191,6 +2191,18 @@ def extract_data_from_pdf(file_bytes: bytes) -> dict:
                     vision_result[field] = pypdf_val
                     if not vision_result.get(field) or vision_result.get(field) != pypdf_val:
                         print(f"[Vision] OK {field} recuperado/forzado desde pypdf")
+            
+            # Mapeo de aliases: Vision trae 'fecha_inicio'/'fecha_fin', mapear a 'fecha_inicio_consumo'/'fecha_fin_consumo'
+            if pypdf_result.get('fecha_inicio_consumo') and not vision_result.get('fecha_inicio_consumo'):
+                vision_result['fecha_inicio_consumo'] = pypdf_result['fecha_inicio_consumo']
+            if pypdf_result.get('fecha_fin_consumo') and not vision_result.get('fecha_fin_consumo'):
+                vision_result['fecha_fin_consumo'] = pypdf_result['fecha_fin_consumo']
+            
+            # También mapear desde Vision aliases si existen
+            if vision_result.get('fecha_inicio') and not vision_result.get('fecha_inicio_consumo'):
+                vision_result['fecha_inicio_consumo'] = vision_result['fecha_inicio']
+            if vision_result.get('fecha_fin') and not vision_result.get('fecha_fin_consumo'):
+                vision_result['fecha_fin_consumo'] = vision_result['fecha_fin']
         
         # Validación final
         consumo = vision_result.get('consumo_kwh')
