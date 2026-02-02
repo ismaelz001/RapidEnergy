@@ -1739,22 +1739,23 @@ def extract_data_from_pdf(file_bytes: bytes) -> dict:
                 print("[pypdf] Extrayendo texto...")
                 pypdf_result = parse_invoice_text(full_text)
                 
-                # Validación: campos críticos extraídos
+                # Validación: campos críticos extraídos (ATR añadido - esencial para comparador)
                 critical_fields = [
                     pypdf_result.get('cups'),
+                    pypdf_result.get('atr'),
                     pypdf_result.get('consumo_kwh'),
                     pypdf_result.get('dias_facturados'),
                     pypdf_result.get('total_factura')
                 ]
                 
                 critical_count = sum(1 for f in critical_fields if f)
-                print(f"[pypdf] Extraídos {critical_count}/4 campos críticos")
+                print(f"[pypdf] Extraídos {critical_count}/5 campos críticos")
                 
-                if critical_count >= 3:
+                if critical_count >= 4:
                     print(f"[pypdf] ✅ Suficientes campos, omitiendo Vision API")
                     return pypdf_result
                 else:
-                    print(f"[pypdf] ⚠️ Incompleto, intentando Vision API...")
+                    print(f"[pypdf] ⚠️ Incompleto ({critical_count}/5), intentando Vision API...")
         except Exception as e:
             print(f"[pypdf] Error: {e}")
 
@@ -1763,7 +1764,7 @@ def extract_data_from_pdf(file_bytes: bytes) -> dict:
     if not client:
         print(f"[Vision] ❌ Credenciales no disponibles")
         if pypdf_result:
-            print(f"[Vision] Devolviendo pypdf parcial ({critical_count}/4 campos)")
+            print(f"[Vision] Devolviendo pypdf parcial ({critical_count}/5 campos)")
             return pypdf_result
         return _empty_result(f"Error configuracion credenciales:\n{auth_log}")
 
