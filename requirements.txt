@@ -13,5 +13,6 @@ google-generativeai==0.8.3  # Gemini 1.5 Flash (usar modelo base "gemini-1.5-fla
 openai==1.58.1  # GPT-4o Vision para OCR facturas
 pandas>=2.2.3
 openpyxl==3.1.2
+email-validator==2.1.1  # Required for Pydantic EmailStr validation
 
 # Force Rebuild Cache v4 - Fix Vision API "Bad image data"
