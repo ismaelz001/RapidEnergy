@@ -22,6 +22,8 @@ export default function Step2ValidarPage({ params }) {
   const [serverMissingFields, setServerMissingFields] = useState([]);
   const [serverErrors, setServerErrors] = useState({});
   const [rawOcrData, setRawOcrData] = useState(null); // Para el panel de debug
+  const [comerciales, setComerciales] = useState([]); // Lista de comerciales
+  const [selectedComercial, setSelectedComercial] = useState(''); // Comercial seleccionado
 
   const isTestMode = process.env.NEXT_PUBLIC_TEST_MODE === 'true';
 
@@ -32,6 +34,20 @@ export default function Step2ValidarPage({ params }) {
       router.replace('/dashboard');
     }
   }, [params.id]);
+
+  // Cargar lista de comerciales
+  useEffect(() => {
+    async function loadComerciales() {
+      try {
+        const { listUsers } = await import('@/lib/apiClient');
+        const users = await listUsers({ role: 'comercial', is_active: true });
+        setComerciales(users || []);
+      } catch (error) {
+        console.error('Error cargando comerciales:', error);
+      }
+    }
+    loadComerciales();
+  }, []);
 
   // QA: Carga de Datos Real y Auditoría
   useEffect(() => {
@@ -255,6 +271,11 @@ export default function Step2ValidarPage({ params }) {
         const { updateFactura, validarFacturaComercialmente } = await import('@/lib/apiClient');
         const payload = buildPayload(formData);
         
+        // 🆕 Agregar comercial_id si está seleccionado
+        if (selectedComercial) {
+          payload.comercial_id = parseInt(selectedComercial);
+        }
+        
         // PASO 1: Actualizar campos de la factura
         const result = await updateFactura(params.id, payload);
         
@@ -289,7 +310,7 @@ export default function Step2ValidarPage({ params }) {
     }, 1000);
 
     return () => clearTimeout(timer);
-  }, [formData, params.id, loading]);
+  }, [formData, params.id, loading, selectedComercial]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -586,6 +607,33 @@ export default function Step2ValidarPage({ params }) {
                 validated={isValid(form.cliente)}
                 placeholder="---"
               />
+            </div>
+
+            {/* 🆕 Selector de Comercial Responsable */}
+            <div className="pt-4 border-t border-[rgba(255,255,255,0.05)]">
+              <label htmlFor="comercial" className="label text-white">
+                Comercial Responsable
+                <span className="text-[#94A3B8] font-normal text-xs ml-2">(Gestiona este cliente)</span>
+              </label>
+              <select
+                id="comercial"
+                name="comercial"
+                value={selectedComercial}
+                onChange={(e) => setSelectedComercial(e.target.value)}
+                className="w-full px-4 py-3 bg-[#1E293B] border border-[rgba(255,255,255,0.1)] rounded-lg text-[#F1F5F9] focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
+              >
+                <option value="">Seleccionar comercial...</option>
+                {comerciales.map((comercial) => (
+                  <option key={comercial.id} value={comercial.id}>
+                    {comercial.name} ({comercial.email})
+                  </option>
+                ))}
+              </select>
+              {comerciales.length === 0 && (
+                <p className="text-xs text-ambar-alerta mt-1">
+                  No hay comerciales disponibles. Crea uno en Panel CEO → Colaboradores.
+                </p>
+              )}
             </div>
 
             <div className="pt-4 border-t border-[rgba(255,255,255,0.05)]">

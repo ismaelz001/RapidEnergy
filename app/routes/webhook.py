@@ -151,6 +151,7 @@ class FacturaUpdate(BaseModel):
     cups: Optional[str] = None
     numero_factura: Optional[str] = None
     periodo_dias: Optional[int] = None
+    comercial_id: Optional[int] = None  # 🆕 Comercial responsable del cliente
 
 
 class OfferSelection(BaseModel):
@@ -553,6 +554,15 @@ def update_factura(factura_id: int, factura_update: FacturaUpdate, db: Session =
         raise HTTPException(status_code=404, detail="Factura no encontrada")
 
     update_data = factura_update.dict(exclude_unset=True)
+    
+    # 🆕 Si viene comercial_id, actualizar el cliente asociado
+    if 'comercial_id' in update_data and factura.cliente_id:
+        comercial_id = update_data.pop('comercial_id')  # Extraer del dict
+        cliente = db.query(Cliente).filter(Cliente.id == factura.cliente_id).first()
+        if cliente:
+            cliente.comercial_id = comercial_id
+            logger.info(f"✅ Cliente {cliente.id} asignado a comercial {comercial_id}")
+    
     logger.info(
         "🔍 [AUDIT STEP2] Payload RECIBIDO factura_id=%s: periodo_dias=%s (type=%s), iva_porc=%s, iva_eur=%s (type=%s), iee_eur=%s (type=%s), alquiler=%s (type=%s)",
         factura_id,
