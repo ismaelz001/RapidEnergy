@@ -1,13 +1,14 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { getUserRole, canAccessGestion } from '@/lib/auth';
 
 export default function GestionLink() {
   const [canAccess, setCanAccess] = useState(false);
 
   useEffect(() => {
-    const userRole = localStorage.getItem('user_role') || '';
-    setCanAccess(['dev', 'ceo'].includes(userRole));
+    const role = getUserRole();
+    setCanAccess(canAccessGestion(role));
   }, []);
 
   if (!canAccess) {
