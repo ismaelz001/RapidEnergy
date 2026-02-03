@@ -516,6 +516,51 @@ def _extract_table_consumos(raw_text: str) -> dict:
     
     lines = raw_text.split('\n')
     
+    # Strategy 0A: Look for "Consumo P1:", "Consumo P2:", "Consumo P3:" directly (table format)
+    # Handles multiple formats:
+    # 1. "Consumo P1:     17 kWh" (separate line)
+    # 2. "Punta: 1111 kWh ... Consumo P1: 17 kWh" (same line)
+    # 3. "Lectura Punta: 1111 Consumo: 17" (adjacent text)
+    for line in lines:
+        lower_line = line.lower()
+        
+        for p_num in range(1, 7):
+            period_aliases = {
+                1: ["p1", "punta"],
+                2: ["p2", "llano"],
+                3: ["p3", "valle"],
+                4: ["p4"],
+                5: ["p5"],
+                6: ["p6"],
+            }
+            
+            for alias in period_aliases.get(p_num, []):
+                # Pattern 1: "Consumo P1: 17" or "Consumo Punta: 17" (explicit consumo)
+                pattern1 = rf"(?:consumo|lectora?)\s+(?:{alias}|p{p_num})\s*[:\-]?\s*([\d.,]+)"
+                # Pattern 2: "Punta: 1111 ... Consumo: 17" (punta line followed by consumo value)
+                pattern2 = rf"(?:{alias})\s*[:\-]?\s*[\d.,]+\s+.*?(?:consumo)\s*[:\-]?\s*([\d.,]+)"
+                # Pattern 3: Just "Consumo: 17" after we detect the section is about this period
+                pattern3 = rf"consumo\s*[:\-]?\s*([\d.,]+)(?:\s*kWh)?" if alias in lower_line else None
+                # Pattern 4: Simple table "P1: 123" or "P1 123 kWh" (Naturgy format)
+                pattern4 = rf"\b(?:{alias}|p{p_num})\s*[:\-]?\s*([\d.,]+)\s*(?:kWh)?" if len(alias) <= 6 else None
+                
+                for pattern in [pattern1, pattern2, pattern3, pattern4]:
+                    if not pattern:
+                        continue
+                    m = re.search(pattern, lower_line)
+                    if m:
+                        try:
+                            val = parse_es_number(m.group(1))
+                            if val is not None and 0 <= val <= 5000:
+                                result[f"consumo_p{p_num}_kwh"] = val
+                                break  # Found this period, move to next
+                        except:
+                            pass
+    
+    # If we found all P1/P2/P3 in this strategy, return early
+    if all(result[f"consumo_p{i}_kwh"] is not None for i in range(1, 4)):
+        return result
+    
     # Strategy 0: Look for "Consumos desagregados:" line with inline values
     # Pattern: "Consumos desagregados: punta: 59 kWh; llano: 55,99 kWh; valle 166,72 kWh"
     for line in lines:
@@ -1597,9 +1642,10 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
 
     result["impuesto_electrico"] = _extract_number(
         [
-            r"impuesto\s+.*?\b([\d.,]+)\s*€\s*$",
             r"impuesto\s+(?:sobre\s+la\s+)?electricidad[^0-9]{0,40}([\d.,]+)",
-            r"impuesto\s+el[eé]ctrico[^0-9]{0,40}([\d.,]+)"
+            r"impuesto\s+(?:eléctrico|el[eé]ctrico)[^0-9]{0,40}([\d.,]+)",
+            r"(?:IEE|impuesto\s+sobre\s+electricidad)[^0-9]{0,40}([\d.,]+)",
+            r"impuesto\s+.*?\b([\d.,]+)\s*€\s*$",
         ]
     )
     detected["impuesto_electrico"] = result["impuesto_electrico"] is not None
@@ -1723,6 +1769,15 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
         if total_val is not None and result["impuesto_electrico"] > total_val * 0.5:
              logging.warning(f"[OCR] Impuesto electrico {result['impuesto_electrico']} > 50% de total {result['total_factura']}. Descartando.")
              result["impuesto_electrico"] = None
+
+    # ⚡ Check 6: AUTO-CALCULAR IEE SI FALTA (DESPUÉS del guard)
+    # IEE (Impuesto Eléctrico) = consumo_kwh × 0.051126963 SIEMPRE
+    consumo_kwh = result.get("consumo_kwh")
+    if result.get("impuesto_electrico") is None and consumo_kwh is not None and consumo_kwh > 0:
+        calculated_iee = consumo_kwh * 0.051126963
+        result["impuesto_electrico"] = round(calculated_iee, 2)
+        result["detected_por_ocr"]["impuesto_electrico"] = True
+        logging.info(f"[IEE-CALC] Auto-calculado: {consumo_kwh:.2f} kWh × 0.051126963 = {calculated_iee:.2f} €")
 
     # [PATCH BUG D] Concept Shield
     result = _shield_concepts(result)
