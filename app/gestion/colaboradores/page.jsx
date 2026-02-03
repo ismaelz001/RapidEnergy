@@ -110,7 +110,8 @@ export default function ColaboradoresPage() {
         await updateColaborador(editingColaborador.id, data);
         alert('✅ Colaborador actualizado');
       } else {
-        await createColaborador({ ...data, company_id: 1 });
+        // Usar company_id del formulario
+        await createColaborador(data);
         alert('✅ Colaborador creado');
       }
       setModalColaborador(false);
@@ -466,6 +467,7 @@ function ModalFormColaborador({ isOpen, onClose, onSave, editing }) {
     email: editing?.email || '',
     telefono: editing?.telefono || '',
     notas: editing?.notas || '',
+    company_id: editing?.company_id || 1,
   });
 
   const handleSubmit = (e) => {
@@ -519,6 +521,19 @@ function ModalFormColaborador({ isOpen, onClose, onSave, editing }) {
             placeholder="Información adicional..."
             rows={3}
           />
+        </div>
+
+        <div>
+          <label className="text-xs text-[#94A3B8] mb-2 block">Company ID</label>
+          <input
+            type="number"
+            required
+            value={formData.company_id}
+            onChange={(e) => setFormData({ ...formData, company_id: parseInt(e.target.value) })}
+            className="w-full bg-[#1E293B] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-[#0073EC]"
+            placeholder="1"
+          />
+          <p className="text-xs text-[#64748B] mt-1">ID de la empresa asociada</p>
         </div>
 
         <div className="flex gap-3 pt-4">
