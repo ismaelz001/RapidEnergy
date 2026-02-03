@@ -582,6 +582,31 @@ def _extract_table_consumos(raw_text: str) -> dict:
                 except:
                     pass
     
+    # Strategy 0C: Endesa table format "Punta 168,46 190,22 1,00 0,00 21,76"
+    # Buscar líneas con "Punta", "Llano", "Valle" seguido de 5 números (último = consumo)
+    for line in lines:
+        lower_line = line.lower()
+        if "punta" in lower_line or "llano" in lower_line or "valle" in lower_line:
+            # Extraer todos los números de la línea
+            numbers = re.findall(r"([\d.,]+)", line)
+            if len(numbers) >= 5:
+                # Último número = consumo
+                try:
+                    consumo_val = parse_es_number(numbers[-1])
+                    if consumo_val is not None and 0 <= consumo_val <= 5000:
+                        if "punta" in lower_line or "p1" in lower_line:
+                            result["consumo_p1_kwh"] = consumo_val
+                        elif "llano" in lower_line or "p2" in lower_line:
+                            result["consumo_p2_kwh"] = consumo_val
+                        elif "valle" in lower_line or "p3" in lower_line:
+                            result["consumo_p3_kwh"] = consumo_val
+                except:
+                    pass
+    
+    # Si encontramos los 3, retornamos
+    if all(result[f"consumo_p{i}_kwh"] is not None for i in range(1, 4)):
+        return result
+    
     # Strategy 0: Look for "Consumos desagregados:" line with inline values
     # Pattern: "Consumos desagregados: punta: 59 kWh; llano: 55,99 kWh; valle 166,72 kWh"
     for line in lines:
