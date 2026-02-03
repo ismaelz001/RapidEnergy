@@ -9,6 +9,7 @@ from typing import Optional
 import json
 import logging
 import inspect
+from datetime import datetime, timedelta
 
 
 # Logger para el módulo
@@ -954,7 +955,6 @@ def guardar_seleccion_oferta(factura_id: int, offer: OfferSelection, db: Session
                     asesor_id, company_id = cliente_data
                     
                     # Calcular fecha prevista pago (hoy + 30 días)
-                    from datetime import timedelta
                     fecha_prevista = datetime.now().date() + timedelta(days=30)
                     
                     # Insertar comisión (con ON CONFLICT para evitar duplicados)
