@@ -1,5 +1,7 @@
 import "./globals.css";
 import { Poppins } from "next/font/google"; // EnergyLuz Font
+import AlertasBadge from "./components/AlertasBadge";
+import GestionLink from "./components/GestionLink";
 /* eslint-disable @next/next/no-img-element */ // Using img for logo since it's in public
 
 const poppins = Poppins({
@@ -67,30 +69,5 @@ export default function RootLayout({ children }) {
         </main>
       </body>
     </html>
-  );
-}
-
-// Componente del lado del cliente para el link condicional
-function GestionLink() {
-  // Este componente será client-side
-  if (typeof window === 'undefined') {
-    return null; // SSR: no renderizar
-  }
-  
-  // Importar getUserRole del lado del cliente
-  const userRole = typeof window !== 'undefined' 
-    ? (localStorage.getItem('user_role') || 'ceo') 
-    : 'comercial';
-  
-  const canAccess = ['dev', 'ceo'].includes(userRole);
-  
-  if (!canAccess) {
-    return null;
-  }
-  
-  return (
-    <a href="/gestion" className="text-sm font-medium text-[#94A3B8] hover:text-white transition">
-      Gestión
-    </a>
   );
 }
