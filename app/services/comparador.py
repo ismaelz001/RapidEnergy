@@ -585,11 +585,28 @@ def compare_factura(factura, db) -> Dict[str, Any]:
     iee_importe = _to_float(getattr(factura, 'impuesto_electrico', None))
     alquiler_importe = _to_float(getattr(factura, 'alquiler_contador', None)) or 0.0
     
+    # 🔍 LOGGING: Tipos de inputs para debugging
+    logger.info(
+        f"[PO-INPUTS] factura_id={factura.id}: iva={iva_importe} (raw_type={type(getattr(factura, 'iva', None)).__name__}), "
+        f"iee={iee_importe} (raw_type={type(getattr(factura, 'impuesto_electrico', None)).__name__}), "
+        f"alquiler={alquiler_importe} (raw_type={type(getattr(factura, 'alquiler_contador', None)).__name__}), "
+        f"periodo_dias={getattr(factura, 'periodo_dias', None)} (raw_type={type(getattr(factura, 'periodo_dias', None)).__name__})"
+    )
+    
     # Determinar IVA %
     if hasattr(factura, 'iva_porcentaje') and factura.iva_porcentaje is not None:
         iva_pct_reconstruccion = float(factura.iva_porcentaje) / 100.0
     else:
         iva_pct_reconstruccion = 0.21  # 21% por defecto
+    
+    # ✅ VALIDACIÓN: periodo_dias obligatorio para cálculos de comparador
+    periodo_dias = getattr(factura, 'periodo_dias', None)
+    if not periodo_dias or periodo_dias <= 0:
+        logger.error(f"[PO-ERROR] factura_id={factura.id}: periodo_dias inválido ({periodo_dias}), no se puede calcular comparador")
+        raise DomainError(
+            "PERIOD_INVALID",
+            "El período de facturación (días) es obligatorio y debe ser mayor a 0 para calcular el comparador"
+        )
     
     # BACKSOLVE: Calcular subtotal sin impuestos
     baseline_method = "backsolve_subtotal_si"

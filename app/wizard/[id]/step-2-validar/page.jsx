@@ -74,7 +74,7 @@ export default function Step2ValidarPage({ params }) {
           cups: data.cups || '',
           atr: data.atr || '',
           total_factura: data.total_factura || data.importe || 0,
-          periodo_dias: periodo_dias_calculado ?? '',  // ⭐ IMPORTANTE: persistir periodo
+          periodo_dias: periodo_dias_calculado || 0,  // ✅ FIX: 0 si null (número identificable como inválido)
           cliente: data.cliente?.nombre || data.titular || '',
           consumo_total: data.consumo_kwh || 0,
           potencia_p1: data.potencia_p1_kw || 0,
@@ -85,12 +85,12 @@ export default function Step2ValidarPage({ params }) {
           consumo_p4: data.consumo_p4_kwh || 0,
           consumo_p5: data.consumo_p5_kwh || 0,
           consumo_p6: data.consumo_p6_kwh || 0,
-          iva: data.iva ?? '',  // ⚠️ NO default 0 (evitar confusión con porcentaje)
+          iva: data.iva ?? 0,  // ✅ FIX: 0 si null (número, no string)
           iva_porcentaje: data.iva_porcentaje != null
             ? (Number(data.iva_porcentaje) <= 1 ? Number(data.iva_porcentaje) * 100 : data.iva_porcentaje)
             : 21,  // Default 21%
-          impuesto_electrico: data.impuesto_electrico ?? '',  // ⚠️ NO default 0
-          alquiler_contador: data.alquiler_contador ?? '',  // ⭐ Para backsolve
+          impuesto_electrico: data.impuesto_electrico ?? 0,  // ✅ FIX: 0 si null (número)
+          alquiler_contador: data.alquiler_contador ?? 0,  // ✅ FIX: 0 si null
           coste_energia_actual: data.coste_energia_actual ?? '',
           coste_potencia_actual: data.coste_potencia_actual ?? ''
         };
@@ -310,7 +310,11 @@ export default function Step2ValidarPage({ params }) {
   };
 
   // P6: Validación estricta y de negocio
-  const isValid = (val) => val !== null && val !== undefined && String(val).trim().length > 0;
+  const isValid = (val) => {
+    if (val === null || val === undefined) return false;
+    if (typeof val === 'number') return val > 0;  // Para números, > 0 es válido (excluye 0)
+    return String(val).trim().length > 0;  // Para strings, no vacíos
+  };
 
   // --- HELPERS VALIDACIÓN CUPS (MVP FLEXIBLE) ---
   const normalizeCUPS = (raw) => {
@@ -350,7 +354,14 @@ export default function Step2ValidarPage({ params }) {
         : null,
     };
     
-    console.log("%c [STEP2-PAYLOAD] ", "background: #10b981; color: #fff;", payload);
+    // ✅ DEBUG LOG con tipos
+    console.log("%c [STEP2-PAYLOAD-NORMALIZED] ", "background: #10b981; color: #fff; padding: 2px 6px; border-radius: 3px;", {
+      periodo_dias: { value: payload.periodo_dias, type: typeof payload.periodo_dias },
+      iva: { value: payload.iva, type: typeof payload.iva },
+      iva_porcentaje: { value: payload.iva_porcentaje, type: typeof payload.iva_porcentaje },
+      impuesto_electrico: { value: payload.impuesto_electrico, type: typeof payload.impuesto_electrico },
+      alquiler_contador: { value: payload.alquiler_contador, type: typeof payload.alquiler_contador },
+    });
     return payload;
   };
 

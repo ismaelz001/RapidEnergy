@@ -80,6 +80,33 @@ export default function Step3ComparerPage({ params }) {
         };
 
         // C) VALIDACIÓN PREVIA (Solo período es obligatorio)
+        // ✅ VALIDACIÓN MEJORADA: Verificar campos críticos antes de enviar al backend
+        if (!payload.periodo_dias || payload.periodo_dias <= 0) {
+          console.error("[STEP3-VALIDATION] periodo_dias inválido:", { 
+            raw: d.periodo_dias, 
+            parsed: payload.periodo_dias,
+            type: typeof d.periodo_dias 
+          });
+          throw new Error("El período de facturación (días) es obligatorio y debe ser mayor a 0.");
+        }
+        
+        if (!payload.consumo_kwh || payload.consumo_kwh <= 0) {
+          console.error("[STEP3-VALIDATION] consumo_kwh inválido:", {
+            consumo_total: d.consumo_total,
+            consumoFinal: payload.consumo_kwh,
+            periodos: { p1: d.consumo_p1, p2: d.consumo_p2, p3: d.consumo_p3 }
+          });
+          throw new Error("El consumo total (kWh) es obligatorio para generar ofertas.");
+        }
+        
+        if (!payload.iva_porcentaje || payload.iva_porcentaje <= 0) {
+          console.warn("[STEP3-VALIDATION] iva_porcentaje inválido, usando 21% por defecto:", {
+            raw: d.iva_porcentaje,
+            parsed: payload.iva_porcentaje
+          });
+          payload.iva_porcentaje = 21;
+        }
+        
         // ⭐ CAMBIO: Permitir que el backend infiera el ATR si falta
         if (!payload.periodo_dias) {
           throw new Error("Falta el período en días para la comparación.");
@@ -90,6 +117,20 @@ export default function Step3ComparerPage({ params }) {
           throw new Error("Necesitamos el ATR o la Potencia P1 para hacer la comparación.");
         }
 
+        // 🔍 LOGGING: Payload pre-comparación con tipos para debugging
+        console.log("[STEP3-COMPARE] Enviando payload al backend:", {
+          factura_id: params.id,
+          periodo_dias: payload.periodo_dias,
+          periodo_type: typeof payload.periodo_dias,
+          consumo_kwh: payload.consumo_kwh,
+          consumo_type: typeof payload.consumo_kwh,
+          iva_porcentaje: payload.iva_porcentaje,
+          iva_type: typeof payload.iva_porcentaje,
+          total_factura: payload.total_factura,
+          atr: payload.atr,
+          cups: payload.cups
+        });
+        
         // Llamada al backend pasando el payload actualizado
         const result = await compareFactura(params.id, payload);
         
@@ -104,8 +145,26 @@ export default function Step3ComparerPage({ params }) {
         setOffers(normalizedOffers);
         setCurrentTotal(result.current_total || parseFloat(formData.total_factura || 0));
       } catch (err) {
-        console.error("Error fetching offers:", err);
-        setError(err.message || "No se pudieron generar ofertas. Verifica los datos del Paso 2.");
+        console.error("[STEP3-ERROR] Error fetching offers:", {
+          message: err.message,
+          response: err.response?.data,
+          status: err.response?.status,
+          factura_id: params.id,
+          formData_periodo: formData.periodo_dias,
+          formData_consumo: formData.consumo_total
+        });
+        
+        // Mensaje de error contextual
+        let errorMsg = "No se pudieron generar ofertas. ";
+        if (err.message?.includes("periodo") || err.message?.includes("PERIOD")) {
+          errorMsg += "El período de facturación es inválido. Por favor, verifica los datos en el Paso 2.";
+        } else if (err.message?.includes("consumo")) {
+          errorMsg += "El consumo total es inválido. Por favor, verifica los datos en el Paso 2.";
+        } else {
+          errorMsg += err.message || "Verifica los datos del Paso 2.";
+        }
+        
+        setError(errorMsg);
       } finally {
         setLoading(false);
       }

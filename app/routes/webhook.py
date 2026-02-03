@@ -82,6 +82,52 @@ def calcular_precio_medio_estructural(factura):
         return None
 
 
+def _normalize_iva_porcentaje(value):
+    """Normaliza IVA % a float [0-100]"""
+    if value is None or value == '':
+        return 21.0  # Default 21%
+    try:
+        val = float(value)
+        if 0 < val <= 100:
+            return val
+        logger.warning(f"[STEP2-WARN] IVA % rechazado: {val} (fuera rango 0-100)")
+        return None
+    except (ValueError, TypeError):
+        logger.warning(f"[STEP2-WARN] IVA % no convertible: {value}")
+        return None
+
+
+def _normalize_periodo_dias(value):
+    """Normaliza periodo_dias a int [1-366]"""
+    if value is None or value == '' or value == 0:
+        logger.debug(f"[STEP2-WARN] periodo_dias nulo/cero: {value}")
+        return None
+    try:
+        val = int(value)
+        if 1 <= val <= 366:
+            return val
+        logger.warning(f"[STEP2-WARN] periodo_dias fuera rango: {val} (requiere 1-366)")
+        return None
+    except (ValueError, TypeError):
+        logger.warning(f"[STEP2-WARN] periodo_dias no convertible a int: {value}")
+        return None
+
+
+def _normalize_numeric_field(name: str, value, min_val=0.0, max_val=9999.99):
+    """Normaliza campos numéricos (IVA €, IEE, alquiler, etc)"""
+    if value is None or value == '':
+        return None
+    try:
+        val = float(value)
+        if min_val <= val <= max_val:
+            return val
+        logger.warning(f"[STEP2-WARN] {name}={val} fuera rango [{min_val}, {max_val}]")
+        return None
+    except (ValueError, TypeError):
+        logger.warning(f"[STEP2-WARN] {name}={value} no convertible a float")
+        return None
+
+
 class FacturaUpdate(BaseModel):
     atr: Optional[str] = None
     potencia_p1_kw: Optional[float] = None
@@ -508,13 +554,17 @@ def update_factura(factura_id: int, factura_update: FacturaUpdate, db: Session =
 
     update_data = factura_update.dict(exclude_unset=True)
     logger.info(
-        "🔍 [AUDIT STEP2] Payload recibido factura_id=%s: periodo_dias=%s, iva_porc=%s, iva_eur=%s, iee_eur=%s, alquiler=%s",
+        "🔍 [AUDIT STEP2] Payload RECIBIDO factura_id=%s: periodo_dias=%s (type=%s), iva_porc=%s, iva_eur=%s (type=%s), iee_eur=%s (type=%s), alquiler=%s (type=%s)",
         factura_id,
         update_data.get("periodo_dias"),
+        type(update_data.get("periodo_dias")).__name__,
         update_data.get("iva_porcentaje"),
         update_data.get("iva"),
+        type(update_data.get("iva")).__name__,
         update_data.get("impuesto_electrico"),
-        update_data.get("alquiler_contador")
+        type(update_data.get("impuesto_electrico")).__name__,
+        update_data.get("alquiler_contador"),
+        type(update_data.get("alquiler_contador")).__name__,
     )
     for key, value in update_data.items():
         if key == 'cups' and value:
@@ -535,6 +585,16 @@ def update_factura(factura_id: int, factura_update: FacturaUpdate, db: Session =
             value = _normalize_iva_porcentaje(value)
         if key == "periodo_dias":
             value = _normalize_periodo_dias(value)
+        # ✅ NEW: Normalizar campos numéricos
+        if key == "iva":
+            value = _normalize_numeric_field("iva", value, min_val=0, max_val=500)
+        if key == "impuesto_electrico":
+            value = _normalize_numeric_field("impuesto_electrico", value, min_val=0, max_val=200)
+        if key == "alquiler_contador":
+            val = _normalize_numeric_field("alquiler_contador", value, min_val=0, max_val=50)
+            if val and val > 1:
+                logger.warning(f"[STEP2-WARN] alquiler_contador={val}€ > 1, asumiendo estimado para período")
+            value = val
         setattr(factura, key, value)
 
     # Validacion de completitud
@@ -561,12 +621,19 @@ def update_factura(factura_id: int, factura_update: FacturaUpdate, db: Session =
     db.refresh(factura)
 
     logger.info(
-        "✅ [AUDIT STEP2] Guardado final factura_id=%s: periodo_dias=%s, iva_porc=%s, iva_eur=%s, iee_eur=%s, estado=%s",
+        "✅ [AUDIT STEP2] Guardado FINAL factura_id=%s: periodo_dias=%s (type=%s, valid=%s), "
+        "iva_porc=%s, iva_eur=%s (type=%s), iee_eur=%s (type=%s), alquiler=%s (type=%s), estado=%s",
         factura.id,
         factura.periodo_dias,
+        type(factura.periodo_dias).__name__ if factura.periodo_dias else 'None',
+        1 <= (factura.periodo_dias or 0) <= 366 if factura.periodo_dias else False,
         factura.iva_porcentaje,
         factura.iva,
+        type(factura.iva).__name__ if factura.iva else 'None',
         factura.impuesto_electrico,
+        type(factura.impuesto_electrico).__name__ if factura.impuesto_electrico else 'None',
+        factura.alquiler_contador,
+        type(factura.alquiler_contador).__name__ if factura.alquiler_contador else 'None',
         factura.estado_factura
     )
 
