@@ -1606,9 +1606,22 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
         )
     
     # Fallback: En tarifa 2.0TD con solo P1, asumir P2 = P1 (potencia simétrica común)
-    if result.get("atr") == "2.0TD" and result.get("potencia_p1_kw") and not result.get("potencia_p2_kw"):
-        result["potencia_p2_kw"] = result["potencia_p1_kw"]
-        logging.debug(f"[OCR] Fallback P2=P1 ({result['potencia_p1_kw']} kW) para tarifa 2.0TD")
+    if result.get("atr") == "2.0TD":
+        if result.get("potencia_p1_kw") and not result.get("potencia_p2_kw"):
+            result["potencia_p2_kw"] = result["potencia_p1_kw"]
+            logging.debug(f"[OCR] Fallback P2=P1 ({result['potencia_p1_kw']} kW) para tarifa 2.0TD")
+    
+    # Fallback: Si NO hay ATR pero hay potencia_p1, inferir 2.0TD (tarifa doméstica más común)
+    if not result.get("atr") and result.get("potencia_p1_kw"):
+        pot_p1 = result.get("potencia_p1_kw")
+        # Si potencia < 15 kW, probablemente sea 2.0TD (doméstico)
+        if pot_p1 < 15:
+            result["atr"] = "2.0TD"
+            result["detected_por_ocr"]["atr"] = True
+            logging.info(f"[OCR] Inferido ATR=2.0TD desde potencia_p1={pot_p1} kW (tarifa doméstica)")
+            # Aplicar fallback P2=P1
+            if not result.get("potencia_p2_kw"):
+                result["potencia_p2_kw"] = pot_p1
     
     detected["potencia_p1_kw"] = result["potencia_p1_kw"] is not None
     detected["potencia_p2_kw"] = result["potencia_p2_kw"] is not None
@@ -1769,6 +1782,14 @@ def parse_invoice_text(full_text: str, is_image: bool = False) -> dict:
         if total_val is not None and result["impuesto_electrico"] > total_val * 0.5:
              logging.warning(f"[OCR] Impuesto electrico {result['impuesto_electrico']} > 50% de total {result['total_factura']}. Descartando.")
              result["impuesto_electrico"] = None
+    
+    # Guard adicional: Descartar si IEE es el coeficiente (5.11% o 0.051) en vez del importe
+    if result.get("impuesto_electrico"):
+        iee_val = result["impuesto_electrico"]
+        # Si es muy cercano a 5.11 o 0.051, es el coeficiente, no el importe
+        if (4.5 <= iee_val <= 6.0) or (0.04 <= iee_val <= 0.06):
+            logging.warning(f"[OCR] IEE={iee_val} parece ser el coeficiente (5.11%), no el importe. Descartando.")
+            result["impuesto_electrico"] = None
 
     # ⚡ Check 6: AUTO-CALCULAR IEE SI FALTA (DESPUÉS del guard)
     # IEE (Impuesto Eléctrico) = consumo_kwh × 0.051126963 SIEMPRE
