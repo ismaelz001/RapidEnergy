@@ -1,0 +1,300 @@
+VX10O020-D-28/10/25 N0031657LNNNN
+ANTONIO RUIZ MORENO
+AV CAMARA DE COMERCIO 43 4 C
+04720 AGUADULCE
+ALMERÍA
+Endesa Energía, S.A. Unipersonal. Inscrita en el Registro Mercantil de Madrid. Tomo 12.797, Libro 0, Folio 208,
+ Sección 8ª, Hoja M-205.381, CIF A81948077. Domicilio Social: C/Ribera del Loira, nº60 28042 - Madrid.
+Endesa Energía, S.A. Unipersonal.
+CIF A81948077.
+C/Ribera del Loira, nº 60 28042 - Madrid.
+DATOS DE LA FACTURA
+Nº factura:
+P25CON049766428
+Referencia:
+504974902582
+Fecha emisión factura:
+25/1
+0/2025
+Periodo de facturación: del
+1
+7/09/2025 a 1
+9/1
+0/2025 (32 días)
+Fecha de cargo:
+01 de noviembre de 2025
+....................................................................................................................................................................
+RESUMEN DE LA FACTURA Y DATOS DE PAGO
+Potencia
+18,38 €
+Energía
+16,43 €
+Descuentos
+-3,29 €
+Otros
+1,26 €
+Impuestos
+8,86 €
+...........................................................................................................................................
+Total
+41,64 €
+(Detalle de la factura en el reverso)
+Forma de pago:
+Domiciliación bancaria
+IBAN:
+ES07302305041065668*****
+Cod.Mandato:
+E00020920365393700010001
+Versión:
+0000
+Su pago se justifica con el correspondiente apunte bancario
+...................................................
+INFORMACIÓN DEL CONSUMO ELÉCTRICO
+De 17/09/2025 a 19/10/2025 (32 días)
+.........................................................................................................................................
+Consumo Total
+83,895
+kWh
+En esta factura el consumo
+ha salido a
+0.1
+56624 €/kWh
+..................................................................................................
+Evolución del consumo
+kWh
+280
+240
+200
+160
+120
+80
+40
+0
+MAY
+24
+JUL
+24
+SEP
+24
+NOV
+24
+ENE
+25
+MAR
+25
+ABR
+25
+ABR
+25
+MAY
+25
+JUN
+25
+JUL
+25
+AGO
+25
+SEP
+25
+OCT
+25
+Consumo Real
+Media
+Coste en esta factura 1,30 €/día
+Coste últimos 14 meses 1,46 €/día
+Consumo último año
+622 kWh
+Las potencias máximas demandadas en el último año han sido 5,190 kW en P1 (punta) y
+3,900 kW en P3 (valle).
+Esta información está disponible desde 01/06/2021
+El consumo medio mensual de los consumidores que están en su mismo código postal
+y tienen potencias contratadas inferiores o iguales a 15 kW, para su periodo de
+facturación es de 123,280 kWh.
+ANTONIO, ¿sabes que este año llevas
+consumido 1 kWh?
+Entra en
+ infoEnergía,
+ tu herramienta de
+asesoramiento energético gratuita, y
+ahorra en tu factura.
+Infórmate en endesa.com/infoenergia
+DATOS DEL CONTRATO
+Titular del contrato:
+ ANTONIO RUIZ MORENO
+NIF:
+ 54099727R
+Dirección de suministro:
+ ESTACION 9, 18470 VALOR, GRANADA
+Contrato de mercado libre: Tarifa One Luz
+Referencia de contrato de suministro: 130
+088054224
+Potencias contratadas: punta-llano 4,0
+0
+0 kW; valle 4,0
+0
+0 kW
+Fin de contrato de suministro:
+ 09/04/2026 (renovación anual
+automática)
+Permanencia:
+ No
+CUPS:
+ ES0031103294400001JA0F
+Distribuidora:
+ EDISTRIBUCION REDES DIGITALES
+Referencia del contrato de acceso:
+ 500014528826
+Peaje de transporte y distribución:
+ 2.0TD
+Segmento de cargos:
+ 1
+Nº contador:
+ 304521839
+..................................................
+DESTINO DEL IMPORTE DE LA FACTURA
+El importe total de su factura tiene este destino:
+>
+47,17% Energía. Incluye, entre otros, el coste de la energía en el mercado, los pagos por
+capacidad y la retribución al Operador del Sistema (REE) y al Operador de Mercado (OMIE).
+>
+2,04% Alquiler de contador
+>
+21,28% Impuestos
+>
+22,14% Peajes de transporte y distribución. Retribuyen las redes de transporte y distribución.
+>
+7,37% Cargos: Incluyen la retribución a las renovables, cogeneración y residuos (RECORE)
+13,06%, las anualidades del déficit 63,92%, el sobrecoste de generación en TNP (territorios
+no peninsulares) 22,36% y otros 0,66%.
+INFORMACIÓN DEL CONSUMO ELÉCTRICO
+A efectos de facturación de los peajes y cargos
+Periodo
+17/09/2025
+19/10/2025
+Multipl.
+Ajuste
+Consumo
+Lectura
+Lectura
+real
+real
+Energía
+kWh
+Punta
+168,46
+190,22
+1,00
+0,00
+21,76
+Llano
+164,88
+181,37
+1,00
+0,00
+16,49
+Valle
+209,58
+255,22
+1,00
+0,00
+45,64
+INFORMACIÓN DE SU PRODUCTO
+Con esta tarifa disfrutarás de un mejor precio porque eres 100% digital,
+tienes factura electrónica y pago domiciliado.
+ATENCIÓN AL CLIENTE
+¿Tienes dudas?¿Necesitas asesoramiento?
+Llama a nuestro teléfono de Atención,
+contratación y reclamaciones.
+80
+07
+60909
+GRATUITO Y DISPONIBLE 24h
+www.endesaclientes.com
+atencionalcliente@endesaonline.com
+C/ Ribera del Loira 60 - 28042 Madrid (solo correo postal)
+Endesa Energía está adherida al Sistema Arbitral de Consumo. Para ampliar la
+información sobre las reclamaciones que pueden ser tratadas a través del arbitraje
+consultar www.endesaclientes.com.
+Una vez realizada la reclamación ante la compañía eléctrica, y si persiste la discrepancia
+sobre el contacto de suministro o facturaciones, también estará disponible la Oficina
+Municipal de información al Consumidor (O.M.I.C) de la localidad o, en su caso, la
+Dirección General de Consumo o de Industria de la comunidad autónoma.
+Averías / Urgencias distribuidora
+900 85 08 40 - EDISTRIBUCION REDES DIGITALES
+DETALLE DE LA FACTURA
+Potencia
+18,38 €
+.........................................................................................................................
+Pot. Punta-Llano 4,000 kW x 0,109680 Eur/kW x 32 días
+.............................
+14,04 €
+Pot. Valle 4,000 kW x 0,033892 Eur/kW x 32 días
+.............................................
+4,34 €
+Energía
+16,43 €
+...........................................................................................................................
+Consumo 83,895 kWh x 0,195818 Eur/kWh
+......................................................
+16,43 €
+Descuentos
+-3,29 €
+....................................................................................................................
+Descuento Indefinido 16,43 Eur x -20 % DTO
+...................................................
+-3,29 €
+Varios
+1,26 €
+................................................................................................................................
+Financiación Bono Social 32  días x 0,012742 Eur/día
+.....................................
+0,41 €
+Alquiler del contador ( 32  días x 0,026630  Eur/día )
+........................................
+0,85 €
+Impuestos
+8,86 €
+........................................................................................................................
+Impuesto electricidad ( 31,93 Eur X 5,1126963  %)
+...........................................
+1,63 €
+IVA normal 21 %    s/ 34,41
+......................................................................................
+7,23 €
+TOTAL
+41,64 €
+Incluido en el importe facturado está el coste del peaje de transporte y distribución, que ha sido
+de 9,22 € (8,21 € potencia, 1,01 € por energía activa), y de los cargos, que ha sido de 3,07 €
+(1,48 € potencia, 1,59 € por energía activa). Los precios de peajes de transporte y distribución
+han sido publicados en la Resolución de 4 de diciembre de 2024 de la CNMC (BOE 16-12-2024)
+y los de los cargos en la Orden TED 1487/2024 (BOE 28-12-2024). El precio del alquiler del
+contador ha sido publicado en la Orden IET 1491/2013 de 3 de agosto.
+INFORMACIÓN PARA EL CONSUMIDOR
+Código QR y enlace
+https://comparador.cnmc.gob.es
+para acceder al
+Comparador de Ofertas de la CNMC:
+AHEEEHAPCGOIFKLBMBPIENKJKJPLCOKHMNFOILMIDKCOBMJCMJOEHODFKBIBOJDEENMPIDJJDPMMANGDGPAHEEEHA
+BNFFFNBPMOILBHBKFCMGILFOJPMHAHFHADIHEDMGICJGJGMLBOBGAPAHFHAPMPFKNCBLELADBPNKFCMDNPBNFFFNB
+HOFBNEFBLFDPPPEILDIMELFLGBIMBAGHCJCIKLPNBKDFIBFJKDOHHPBCHGEODENOFHNHPBMJKOKKEPKODPHPJHNDC
+ODKEJBFIIFEJPFBLDDMAPAFPGNFABLPNCDIKGFAGMONGOLOMFIGGMJIMGEDKIHOHLBAMIECMAPOFMAMEMKIJEFBHJ
+KOEGDAFCHBONHBIPNNLHDIMHJGGKBMMOHCEDMGFEKNOIDCAOMPMGOMAOONIHEBHMBENOAPJDPIAKFEACBCCMPAOJH
+OBNBBBFHDAIEFPLFHDIGJJAIMLCJJMNHAFHEKGHLHBJDMAFJOEPNFPKCGAHOIECMCPLFDBNOGELLLODOLEGCJDHPD
+BIAGBAFEECDMDJGOIFCODODBHPBMGNOHEDJKFOAJKBGDJNPADGIFILDADMAIKMOCMJHIJEAOAPKDPJAFKPAPEABKB
+NPBMAHFHALLGCEJNOONIHPGKHEHHAHFHAOOEKPONLDOBJIACMAEKIIAHFHADIBMCOEBKAHBDNILKOEGDAHFHAEKKK
+FCGHFBFDGEMAFGGHHILEFDMDLFAHDFABDBBILPOFFHJLMJMDNEOJBGFEHGDMNFMIAPOFDBHMIEBODPKFHAEDBBFHP
+JIBBECFIBKLHELMPOOPFPJJFKGIECMLMEDHCFAINIKEJKDFDHAJHJPCABGMKFPGHPJFMCFBILHNDLAMAFOFCCODFI
+KPLJGIFEILMKMKLELGOIDKOKMIEMJIALCCCLIINNIDOJGIAMIPNJKCJHIIBDIAEKNFLPDMNDNJPMAEANMDDPIDEFH
+DFIOJOFJKNJMKJILNFJOICFMIOCPJKKNCBCKKMOCCHJNKPKOKBMADJPMALPLNEAKMBBBIJDOFMIMIPCCHGMDKIBLK
+LGIGAGFPNAPGJGNJGABKPPPCLNELOCOLGMKNFGICMGPOMKHBDGIBMMAFJDIKOHBHPIMINNMPNPKDIBNNJLFPCDHEI
+BJMCEJFJEKFEKPOANMCHEKDDLJOHENBNEHKKODEAIMOLDDLMIAECLBIJBFMFDBMOJFAKHHEHPJHIDNPAEBFJMFKBP
+DGIIBMFNBLMCELMGIDJFPKNOMDEMANENAAGFKNNJBFJOJBMJPHPDDEBNENBMCHLKMGBDPJLMNMMLFGLNBMFMALHMC
+FBFKDAFGDIMBMLOFCDJLJPOGJKCEIAGHMHFGDIJNMAMBIFOAJDJJOKPMPIDOAOGHOBIPEMLOPHNHHJLJHOLNPPBLJ
+IEMDEDFJNMMNBMDJFFLDIIBILBMIGDILDGBILONKIAPPEIBHOAGNKKKOAHOCMIGLOPGOCHCFHJHMDMLODJPMFFKBH
+KPFHHFFJFMLCDKKJCNGLACEOIDGDLCECNINGEBFADNJJOMFGOIPKHAOEADPKIFAIOOGDLJBMJNKMLPKDFNBEDPDMC
+BLNNOEFAPHBNOGHNMHCMDLEHPEEDOFKONAGADIBGMONNKJNPHMJDIKGICEIKLOKHKBPMNGOKOPEHKAMJBAIDOEDNB
+AGDNKCFDJJOFNNDKLNFNLACDCDBINLHCALIAMDFAOCBEAFIHMDMNODEOMFLFHHMLFFMKEGPHPBDMLOHPDFPNECOCL
+ENNFNNEPAPOHDOCLGDGHOOIDLPDIAHFHAMCMKLNKDDJCMHENKFPPFKAHFHAMAMLKPOGHLJAOFMIKGHJAAHFHAIDLD
+APBBBPAPJDOCHEBBKBGNBMEKIOAGDECADNAIHJBEIAEAONPGDMAEMODEFCGKMPLCKJGMFNNOLGAGMBDIACFBHEHGN
+HHHHHHHPHPPPHPPPHPPPPPPPPPHPPHHPHHPPPHHHPHHPHHPPPHHHPPHHHPPHPHHPPPPPPPHHHHPPPPHPHHHHPHPHP
+VX10O020-D-28/10/25 S0031658LNNNN

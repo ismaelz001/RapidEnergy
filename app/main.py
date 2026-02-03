@@ -7,6 +7,10 @@ from app.routes.webhook import router as webhook_router
 from app.routes.clientes import router as clientes_router
 from app.routes.debug import router as debug_router
 from app.routes.comisiones import router as comisiones_router  # ⭐ Carga masiva de comisiones
+from app.routes.stats import router as stats_router  # ⭐ Stats CEO
+from app.routes.comisiones_generadas import router as comisiones_generadas_router  # ⭐ Comisiones generadas
+from app.routes.users import router as users_router  # ⭐ Gestión users/comerciales
+from app.routes.colaboradores import router as colaboradores_router  # ⭐ Gestión colaboradores externos
 
 from app.db.conn import Base, engine
 from app.db import models
@@ -121,5 +125,9 @@ def debug_gemini():
 app.include_router(webhook_router)
 app.include_router(clientes_router)
 app.include_router(debug_router)
-app.include_router(comisiones_router)  # ⭐ Comisiones
+app.include_router(comisiones_router)  # ⭐ Comisiones (upload CSV)
+app.include_router(stats_router)  # ⭐ Stats CEO
+app.include_router(comisiones_generadas_router)  # ⭐ Gestión comisiones generadas
+app.include_router(users_router)  # ⭐ Gestión users/comerciales
+app.include_router(colaboradores_router)  # ⭐ Gestión colaboradores externos
 

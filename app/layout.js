@@ -47,6 +47,13 @@ export default function RootLayout({ children }) {
               <a href="/facturas" className="text-sm font-medium text-[#94A3B8] hover:text-white transition">
                 Facturas
               </a>
+              
+              {/* 🆕 LINK GESTIÓN (visible solo para CEO/DEV) */}
+              <GestionLink />
+              
+              {/* 🔔 Alertas */}
+              <AlertasBadge />
+              
               <a href="/wizard/new/step-1-factura" className="inline-flex items-center justify-center h-10 px-5 text-sm font-bold text-white bg-[#0073EC] hover:bg-blue-600 rounded-lg shadow-lg shadow-blue-500/40 transition-all hover:scale-105 active:scale-95">
                 + Nueva Factura
               </a>
@@ -60,5 +67,30 @@ export default function RootLayout({ children }) {
         </main>
       </body>
     </html>
+  );
+}
+
+// Componente del lado del cliente para el link condicional
+function GestionLink() {
+  // Este componente será client-side
+  if (typeof window === 'undefined') {
+    return null; // SSR: no renderizar
+  }
+  
+  // Importar getUserRole del lado del cliente
+  const userRole = typeof window !== 'undefined' 
+    ? (localStorage.getItem('user_role') || 'ceo') 
+    : 'comercial';
+  
+  const canAccess = ['dev', 'ceo'].includes(userRole);
+  
+  if (!canAccess) {
+    return null;
+  }
+  
+  return (
+    <a href="/gestion" className="text-sm font-medium text-[#94A3B8] hover:text-white transition">
+      Gestión
+    </a>
   );
 }

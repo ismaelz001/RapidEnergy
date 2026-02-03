@@ -1,0 +1,115 @@
+﻿python : WARNING:root:[SANITY] dias_facturados fuera de rango: 7. Descartando (rango v├ílido 
+15-370 d├¡as).
+En línea: 1 Carácter: 32
++ $env:PYTHONIOENCODING="utf-8"; python test_all_fixes.py 2>&1 | Out-Fi ...
++                                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (WARNING:root:[S... 15-370 d├¡as).:String) [], Re 
+   moteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+WARNING:root:[SANITY] Incoherencia consumos: suma_periodos=63.00 kWh Ôëá consumo_total=304.00 
+kWh (diferencia=241.00 > tolerancia=30.40). Probable error OCR - descartando consumos por 
+periodo.
+WARNING:root:[OCR] Impuesto electrico 49.67 > 50% de total 64.08. Descartando.
+WARNING:root:[SANITY] Incoherencia consumos: suma_periodos=12.00 kWh Ôëá consumo_total=83.89 
+kWh (diferencia=71.89 > tolerancia=8.39). Probable error OCR - descartando consumos por 
+periodo.
+WARNING:root:[OCR] Impuesto electrico 31.93 > 50% de total 41.64. Descartando.
+WARNING:root:[SANITY] dias_facturados fuera de rango: 7. Descartando (rango v├ílido 15-370 
+d├¡as).
+WARNING:root:[SANITY] Incoherencia consumos: suma_periodos=9.00 kWh Ôëá consumo_total=505.00 
+kWh (diferencia=496.00 > tolerancia=50.50). Probable error OCR - descartando consumos por 
+periodo.
+================================================================================
+TEST DE LOS 5 FIXES CONTRA GROUND TRUTH
+================================================================================
+
+================================================================================
+TESTING: IBERDROLA
+PDF: temp_facturas/Factura Iberdrola.pdf
+================================================================================
+
+[OCR] Motor: pypdf + Vision API (Gemini/OpenAI desactivados)
+  Tipo archivo: PDF
+
+[pypdf] Extrayendo texto...
+[CUPS] CANDIDATE (STRICT): ES0031103378680001TE (raw match: ES 0031 1033 7868 0001 TE)
+[OK] VALID CUPS FOUND: ES0031103378680001TE
+[FINAL] CUPS VALUE: ES0031103378680001TE
+[pypdf] Extra├¡dos 5/5 campos cr├¡ticos
+[pypdf] OK Suficientes campos, omitiendo Vision API
+Ô£à Cliente: JOSE ANTONIO RODRIGUEZ UROZ
+Ô£à D├¡as facturados: 30 (FIX #1 funcion├│)
+Ô£à Consumos por periodo: P1: 59.00Ô£ô, P2: 55.99Ô£ô, P3: 166.72Ô£ô (FIX #3 funcion├│)
+Ô£à ATR: 2.0TD (FIX #4 funcion├│)
+ÔÜá´©Å  Alquiler contador: OCR=2.1 vs GT=0.8
+Ô£à Consumo total: 263.14 kWh (coherencia 0.0%)
+
+================================================================================
+TESTING: NATURGY
+PDF: temp_facturas/factura Naturgy.pdf
+================================================================================
+
+[OCR] Motor: pypdf + Vision API (Gemini/OpenAI desactivados)
+  Tipo archivo: PDF
+
+[pypdf] Extrayendo texto...
+[CUPS] CANDIDATE (STRICT): ES0031103444766001FF (raw match: ES0031103444766001FF)
+[OK] VALID CUPS FOUND: ES0031103444766001FF
+[FINAL] CUPS VALUE: ES0031103444766001FF
+[pypdf] Extra├¡dos 4/5 campos cr├¡ticos
+[pypdf] OK Suficientes campos, omitiendo Vision API
+ÔØî Cliente: OCR='ENCARNACI├ôN LINARES L├ôPEZ' vs GT='ENCARNACION LINARES LOPEZ'
+Ô£à ATR: 2.0TD (FIX #4 funcion├│)
+Ô£à Consumo total: 304.00 kWh (coherencia 0.0%)
+
+================================================================================
+TESTING: ENDESA
+PDF: temp_facturas/Factura.pdf
+================================================================================
+
+[OCR] Motor: pypdf + Vision API (Gemini/OpenAI desactivados)
+  Tipo archivo: PDF
+
+[pypdf] Extrayendo texto...
+[CUPS] CANDIDATE (STRICT): ES0031103294400001JA (raw match: ES0031103294400001JA)
+[OK] VALID CUPS FOUND: ES0031103294400001JA
+[FINAL] CUPS VALUE: ES0031103294400001JA
+[pypdf] Extra├¡dos 5/5 campos cr├¡ticos
+[pypdf] OK Suficientes campos, omitiendo Vision API
+Ô£à Cliente: ANTONIO RUIZ MORENO
+Ô£à D├¡as facturados: 32 (FIX #1 funcion├│)
+Ô£à ATR: 2.0TD (FIX #4 funcion├│)
+Ô£à Consumo total: 83.89 kWh (coherencia 0.0%)
+
+================================================================================
+TESTING: HC_ENERGIA
+PDF: temp_facturas/Fra Agosto.pdf
+================================================================================
+
+[OCR] Motor: pypdf + Vision API (Gemini/OpenAI desactivados)
+  Tipo archivo: PDF
+
+[pypdf] Extrayendo texto...
+[CUPS] CANDIDATE (STRICT): ES4000494934082316XX (raw match: ES4000494934082316XX)
+[FAIL] MOD529 validation failed for: ES4000494934082316XX
+[CUPS] CANDIDATE (STRICT): ES0031104755974005PE (raw match: ES0031104755974005PE)
+[OK] VALID CUPS FOUND: ES0031104755974005PE
+[FINAL] CUPS VALUE: ES0031104755974005PE
+[pypdf] Extra├¡dos 3/5 campos cr├¡ticos
+[pypdf] ÔÜá´©Å Incompleto (3/5), intentando Vision API...
+[Vision] ERROR Credenciales no disponibles
+[Vision] Devolviendo pypdf parcial (3/5 campos)
+ÔØî Cliente: OCR='None' vs GT='Vygantas Kaminskas'
+ÔØî D├¡as facturados: OCR=None vs GT=27 (diff: N/A)
+Ô£à Alquiler contador: 0.69Ôé¼
+ÔØî Consumo total: OCR=None vs GT=505.0
+
+================================================================================
+RESUMEN FINAL
+================================================================================
+Total tests: 17
+Ô£à Passed: 13 (76.5%)
+ÔØî Failed: 4 (23.5%)
+
+ÔÜá´©Å  4 tests fallaron - revisar

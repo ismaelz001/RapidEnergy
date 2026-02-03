@@ -168,3 +168,61 @@ class OfertaCalculada(Base):
     
     # Relación: Una oferta pertenece a una comparativa
     comparativa = relationship("Comparativa", back_populates="ofertas")
+
+
+class ComisionGenerada(Base):
+    """Comisiones generadas al seleccionar ofertas"""
+    __tablename__ = "comisiones_generadas"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    company_id = Column(Integer, ForeignKey("companies.id"), nullable=False)
+    factura_id = Column(Integer, ForeignKey("facturas.id"), nullable=False, unique=True, index=True)
+    cliente_id = Column(Integer, ForeignKey("clientes.id"), nullable=False)
+    comercial_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    tarifa_id = Column(Integer, nullable=False)
+    comision_total_eur = Column(Float, nullable=False)
+    estado = Column(String, nullable=False, default="pendiente", index=True)  # pendiente, validada, pagada, anulada
+    fecha_generacion = Column(DateTime(timezone=True), server_default=func.now())
+    fecha_prevista_pago = Column(DateTime(timezone=True), nullable=True)
+    fecha_validacion = Column(DateTime(timezone=True), nullable=True)
+    fecha_pago = Column(DateTime(timezone=True), nullable=True)
+    validado_por_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    notas = Column(Text, nullable=True)
+    
+    # Relaciones
+    factura = relationship("Factura")
+    cliente = relationship("Cliente")
+    comercial = relationship("User", foreign_keys=[comercial_id])
+    repartos = relationship("RepartoComision", back_populates="comision", cascade="all, delete-orphan")
+
+
+class RepartoComision(Base):
+    """Desglose de repartos de una comisión (útil para splits comercial/manager/company)"""
+    __tablename__ = "repartos_comision"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    comision_generada_id = Column(Integer, ForeignKey("comisiones_generadas.id"), nullable=False, index=True)
+    receptor_tipo = Column(String, nullable=False)  # comercial, manager, company
+    receptor_id = Column(Integer, nullable=True)  # ID del user si aplica
+    porcentaje = Column(Float, nullable=False)
+    importe_eur = Column(Float, nullable=False)
+    
+    # Relación
+    comision = relationship("ComisionGenerada", back_populates="repartos")
+
+
+class Colaborador(Base):
+    """Colaboradores externos (personas que reciben comisión sin acceso al sistema)"""
+    __tablename__ = "colaboradores"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    company_id = Column(Integer, ForeignKey("companies.id"), nullable=False, index=True)
+    nombre = Column(String, nullable=False)
+    email = Column(String, nullable=True)
+    telefono = Column(String, nullable=True)
+    notas = Column(Text, nullable=True)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Relación
+    company = relationship("Company")
