@@ -59,7 +59,8 @@ export default function ColaboradoresPage() {
         await updateUser(editingAsesor.id, data);
         alert('✅ Asesor actualizado');
       } else {
-        await createUser({ ...data, role: 'comercial', company_id: 1 });
+        // Al crear, usar los datos del formulario (ya incluyen role y company_id)
+        await createUser(data);
         alert('✅ Asesor creado');
       }
       setModalAsesor(false);
@@ -378,6 +379,8 @@ function ModalFormAsesor({ isOpen, onClose, onSave, editing }) {
   const [formData, setFormData] = useState({
     name: editing?.name || '',
     email: editing?.email || '',
+    role: editing?.role || 'comercial',
+    company_id: editing?.company_id || 1,
   });
 
   const handleSubmit = (e) => {
@@ -410,6 +413,34 @@ function ModalFormAsesor({ isOpen, onClose, onSave, editing }) {
             className="w-full bg-[#1E293B] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-[#0073EC]"
             placeholder="juan@ejemplo.com"
           />
+        </div>
+
+        <div>
+          <label className="text-xs text-[#94A3B8] mb-2 block">Rol</label>
+          <select
+            required
+            value={formData.role}
+            onChange={(e) => setFormData({ ...formData, role: e.target.value })}
+            className="w-full bg-[#1E293B] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-[#0073EC]"
+          >
+            <option value="comercial">Comercial</option>
+            <option value="manager">Manager</option>
+            <option value="ceo">CEO</option>
+            <option value="dev">Desarrollador</option>
+          </select>
+        </div>
+
+        <div>
+          <label className="text-xs text-[#94A3B8] mb-2 block">Company ID</label>
+          <input
+            type="number"
+            required
+            value={formData.company_id}
+            onChange={(e) => setFormData({ ...formData, company_id: parseInt(e.target.value) })}
+            className="w-full bg-[#1E293B] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-[#0073EC]"
+            placeholder="1"
+          />
+          <p className="text-xs text-[#64748B] mt-1">Por defecto: 1 (empresa principal)</p>
         </div>
 
         <div className="flex gap-3 pt-4">
