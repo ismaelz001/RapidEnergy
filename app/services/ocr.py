@@ -561,6 +561,27 @@ def _extract_table_consumos(raw_text: str) -> dict:
     if all(result[f"consumo_p{i}_kwh"] is not None for i in range(1, 4)):
         return result
     
+    # Strategy 0B: HC Energía table format "Consumo(kWh) 101,00 129,00 275,00 505,00"
+    # Buscar línea que contenga "consumo" + "kwh" + 3-4 números seguidos
+    for line in lines:
+        lower_line = line.lower()
+        if "consumo" in lower_line and "kwh" in lower_line:
+            # Pattern: "Consumo(kWh) 101,00 129,00 275,00 505,00"
+            # Extraer todos los números de la línea
+            numbers = re.findall(r"([\d.,]+)", line)
+            if len(numbers) >= 3:
+                # Parsear los primeros 3-4 números como P1, P2, P3 (ignorar TOTAL)
+                try:
+                    vals = [parse_es_number(n) for n in numbers[:3]]
+                    if all(v is not None and 0 <= v <= 5000 for v in vals):
+                        result["consumo_p1_kwh"] = vals[0]
+                        result["consumo_p2_kwh"] = vals[1]
+                        result["consumo_p3_kwh"] = vals[2]
+                        # Si encontramos los 3, retornamos
+                        return result
+                except:
+                    pass
+    
     # Strategy 0: Look for "Consumos desagregados:" line with inline values
     # Pattern: "Consumos desagregados: punta: 59 kWh; llano: 55,99 kWh; valle 166,72 kWh"
     for line in lines:
