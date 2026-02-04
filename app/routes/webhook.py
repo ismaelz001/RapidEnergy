@@ -942,9 +942,9 @@ def guardar_seleccion_oferta(factura_id: int, offer: OfferSelection, db: Session
             oferta_data = db.execute(query_oferta, {"oferta_id": factura.selected_oferta_id}).fetchone()
             
             if oferta_data and factura.cliente_id:
-                # Obtener company_id y asesor_id del cliente
+                # Obtener comercial_id del cliente
                 query_cliente = text("""
-                    SELECT comercial_id, company_id
+                    SELECT comercial_id
                     FROM clientes
                     WHERE id = :cliente_id
                 """)
@@ -952,49 +952,62 @@ def guardar_seleccion_oferta(factura_id: int, offer: OfferSelection, db: Session
                 
                 if cliente_data and cliente_data[0]:  # Si tiene asesor asignado
                     tarifa_id, comision_eur, comision_source = oferta_data
-                    asesor_id, company_id = cliente_data
+                    asesor_id = cliente_data[0]
                     
-                    # Calcular fecha prevista pago (hoy + 30 días)
-                    fecha_prevista = datetime.now().date() + timedelta(days=30)
-                    
-                    # Insertar comisión (con ON CONFLICT para evitar duplicados)
-                    query_insert_comision = text("""
-                        INSERT INTO comisiones_generadas (
-                            factura_id, cliente_id, company_id, asesor_id,
-                            oferta_id, tarifa_id, comision_total_eur,
-                            comision_source, estado, fecha_prevista_pago
-                        )
-                        VALUES (
-                            :factura_id, :cliente_id, :company_id, :asesor_id,
-                            :oferta_id, :tarifa_id, :comision_eur,
-                            :comision_source, 'pendiente', :fecha_prevista
-                        )
-                        ON CONFLICT (factura_id) DO NOTHING
-                        RETURNING id
+                    # Obtener company_id del asesor
+                    query_asesor = text("""
+                        SELECT company_id
+                        FROM users
+                        WHERE id = :asesor_id
                     """)
+                    asesor_data = db.execute(query_asesor, {"asesor_id": asesor_id}).fetchone()
+                    company_id = asesor_data[0] if asesor_data else None
                     
-                    result_comision = db.execute(query_insert_comision, {
-                        "factura_id": factura_id,
-                        "cliente_id": factura.cliente_id,
-                        "company_id": company_id,
-                        "asesor_id": asesor_id,
-                        "oferta_id": factura.selected_oferta_id,
-                        "tarifa_id": tarifa_id,
-                        "comision_eur": float(comision_eur),
-                        "comision_source": comision_source,
-                        "fecha_prevista": fecha_prevista
-                    }).fetchone()
-                    
-                    if result_comision:
-                        comision_generada = {
-                            "comision_id": result_comision[0],
-                            "comision_eur": float(comision_eur),
-                            "estado": "pendiente"
-                        }
-                        db.commit()
-                        logger.info(f"[COMISION-AUTO] ✅ Generada comision_id={result_comision[0]} para factura_id={factura_id}, €{comision_eur}")
+                    # Validar que tenemos company_id
+                    if not company_id:
+                        logger.warning(f"[COMISION-AUTO] Asesor {asesor_id} sin company_id, no se puede generar comisión")
                     else:
-                        logger.warning(f"[COMISION-AUTO] Comisión ya existía para factura_id={factura_id}")
+                        # Calcular fecha prevista pago (hoy + 30 días)
+                        fecha_prevista = datetime.now().date() + timedelta(days=30)
+                        
+                        # Insertar comisión (con ON CONFLICT para evitar duplicados)
+                        query_insert_comision = text("""
+                            INSERT INTO comisiones_generadas (
+                                factura_id, cliente_id, company_id, asesor_id,
+                                oferta_id, tarifa_id, comision_total_eur,
+                                comision_source, estado, fecha_prevista_pago
+                            )
+                            VALUES (
+                                :factura_id, :cliente_id, :company_id, :asesor_id,
+                                :oferta_id, :tarifa_id, :comision_eur,
+                                :comision_source, 'pendiente', :fecha_prevista
+                            )
+                            ON CONFLICT (factura_id) DO NOTHING
+                            RETURNING id
+                        """)
+                        
+                        result_comision = db.execute(query_insert_comision, {
+                            "factura_id": factura_id,
+                            "cliente_id": factura.cliente_id,
+                            "company_id": company_id,
+                            "asesor_id": asesor_id,
+                            "oferta_id": factura.selected_oferta_id,
+                            "tarifa_id": tarifa_id,
+                            "comision_eur": float(comision_eur),
+                            "comision_source": comision_source,
+                            "fecha_prevista": fecha_prevista
+                        }).fetchone()
+                        
+                        if result_comision:
+                            comision_generada = {
+                                "comision_id": result_comision[0],
+                                "comision_eur": float(comision_eur),
+                                "estado": "pendiente"
+                            }
+                            db.commit()
+                            logger.info(f"[COMISION-AUTO] ✅ Generada comision_id={result_comision[0]} para factura_id={factura_id}, €{comision_eur}")
+                        else:
+                            logger.warning(f"[COMISION-AUTO] Comisión ya existía para factura_id={factura_id}")
                 else:
                     logger.warning(f"[COMISION-AUTO] Cliente {factura.cliente_id} sin asesor asignado")
         except Exception as e:
