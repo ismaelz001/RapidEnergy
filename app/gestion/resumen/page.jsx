@@ -60,6 +60,12 @@ export default function ResumenPage() {
       color: 'text-yellow-400'
     },
     { 
+      label: 'Comisiones pagadas', 
+      value: `€${(stats?.comisiones_pagadas_eur || 0).toLocaleString('es-ES')}`, 
+      icon: '✅',
+      color: 'text-emerald-400'
+    },
+    { 
       label: 'Asesores activos', 
       value: stats?.asesores_activos || 0, 
       icon: '👥',
@@ -70,7 +76,7 @@ export default function ResumenPage() {
   return (
     <div className="space-y-8">
       {/* KPI Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
         {kpiCards.map((kpi, i) => (
           <div key={i} className="card p-6 hover:border-[#1E3A8A]/50 transition-colors">
             <div className="flex items-start justify-between mb-4">

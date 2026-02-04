@@ -74,6 +74,33 @@ def get_ceo_stats(
         comisiones_pendientes_count = result_comisiones[0] if result_comisiones else 0
         comisiones_pendientes_eur = float(result_comisiones[1] if result_comisiones else 0)
         
+        # KPI 3.5: Comisiones pagadas
+        query_pagadas = text("""
+            SELECT 
+                COUNT(*) as count,
+                COALESCE(SUM(comision_total_eur), 0) as total
+            FROM comisiones_generadas
+            WHERE estado = 'pagada'
+        """)
+        if company_id:
+            query_pagadas = text("""
+                SELECT 
+                    COUNT(*) as count,
+                    COALESCE(SUM(comision_total_eur), 0) as total
+                FROM comisiones_generadas
+                WHERE estado = 'pagada'
+                  AND company_id = :company_id
+            """)
+            result_pagadas = db.execute(query_pagadas, {"company_id": company_id}).fetchone()
+        else:
+            result_pagadas = db.execute(query_pagadas).fetchone()
+        
+        comisiones_pagadas_count = result_pagadas[0] if result_pagadas else 0
+        comisiones_pagadas_eur = float(result_pagadas[1] if result_pagadas else 0)
+        
+        # Total comisiones generadas (todas)
+        total_comisiones_eur = comisiones_pendientes_eur + comisiones_pagadas_eur
+        
         # KPI 4: Asesores activos
         query_asesores = text("""
             SELECT COUNT(*) as count
@@ -153,6 +180,9 @@ def get_ceo_stats(
                 "ahorro_total_eur": round(ahorro_total_eur, 2),
                 "comisiones_pendientes_eur": round(comisiones_pendientes_eur, 2),
                 "comisiones_pendientes_count": comisiones_pendientes_count,
+                "comisiones_pagadas_eur": round(comisiones_pagadas_eur, 2),
+                "comisiones_pagadas_count": comisiones_pagadas_count,
+                "total_comisiones_eur": round(total_comisiones_eur, 2),
                 "asesores_activos": asesores_activos
             },
             "alertas": alertas
