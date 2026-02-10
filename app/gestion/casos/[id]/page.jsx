@@ -138,15 +138,7 @@ export default function CasoDetallePage() {
     return <div className="text-center py-12 text-[#94A3B8]">Cargando caso...</div>;
   }
 
-  if (!caso) div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold text-white">Cliente</h2>
-              <button
-                onClick={abrirEdicionCliente}
-                className="px-3 py-1 bg-[rgba(255,255,255,0.05)] hover:bg-[rgba(255,255,255,0.1)] text-white text-sm rounded-lg transition-colors"
-              >
-                ✏️ Editar
-              </button>
-            </div
+  if (!caso) {
     return <div className="text-center py-12 text-red-400">Caso no encontrado</div>;
   }
 
