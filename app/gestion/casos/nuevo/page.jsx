@@ -33,22 +33,47 @@ export default function NuevoCasoPage() {
 
   const fetchData = async () => {
     try {
-      const [resClientes, resUsers, resColabs] = await Promise.all([
-        fetch(`${API_BASE}/api/clientes`),
-        fetch(`${API_BASE}/api/users`),
-        fetch(`${API_BASE}/api/colaboradores`)
-      ]);
-      
-      const dataClientes = await resClientes.json();
-      const dataUsers = await resUsers.json();
-      const dataColabs = await resColabs.json();
-      
-      setClientes(Array.isArray(dataClientes) ? dataClientes : []);
-      setColaboradores(Array.isArray(dataColabs) ? dataColabs : []);
-      setAsesores(Array.isArray(dataUsers) ? dataUsers.filter(u => ["asesor", "gestor", "ceo"].includes(u.rol)) : []);
+      // Cargar clientes
+      const resClientes = await fetch(`${API_BASE}/api/clientes`);
+      if (resClientes.ok) {
+        const dataClientes = await resClientes.json();
+        console.log("✅ Clientes:", dataClientes);
+        setClientes(Array.isArray(dataClientes) ? dataClientes : []);
+      } else {
+        console.error("❌ Error clientes:", resClientes.status);
+      }
+
+      // Cargar users (asesores)
+      const resUsers = await fetch(`${API_BASE}/api/users`);
+      if (resUsers.ok) {
+        const dataUsers = await resUsers.json();
+        console.log("✅ Users:", dataUsers);
+        const filteredAsesores = Array.isArray(dataUsers) 
+          ? dataUsers.filter(u => ["asesor", "gestor", "ceo"].includes(u.rol)) 
+          : [];
+        console.log("✅ Asesores filtrados:", filteredAsesores);
+        setAsesores(filteredAsesores);
+      } else {
+        console.error("❌ Error users:", resUsers.status);
+      }
+
+      // Cargar colaboradores (opcional, puede fallar)
+      try {
+        const resColabs = await fetch(`${API_BASE}/api/colaboradores`);
+        if (resColabs.ok) {
+          const dataColabs = await resColabs.json();
+          console.log("✅ Colaboradores:", dataColabs);
+          setColaboradores(Array.isArray(dataColabs) ? dataColabs : []);
+        } else {
+          console.warn("⚠️ Colaboradores no disponibles:", resColabs.status);
+          setColaboradores([]);
+        }
+      } catch (e) {
+        console.warn("⚠️ Colaboradores error (ignorado):", e);
+        setColaboradores([]);
+      }
     } catch (error) {
-      console.error("Error cargando datos:", error);
-      alert("Error cargando clientes/colaboradores");
+      console.error("❌ Error general cargando datos:", error);
     } finally {
       setLoading(false);
     }
@@ -112,6 +137,11 @@ export default function NuevoCasoPage() {
 
       {/* Formulario */}
       <form onSubmit={handleSubmit} className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.08)] rounded-lg p-6">
+        {/* Debug info */}
+        <div className="mb-4 p-3 bg-blue-900/20 border border-blue-500/30 rounded text-xs text-blue-300">
+          📊 Datos cargados: {clientes.length} clientes, {asesores.length} asesores, {colaboradores.length} colaboradores
+        </div>
+
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {/* Cliente */}
           <div>
@@ -124,10 +154,12 @@ export default function NuevoCasoPage() {
               onChange={(e) => setFormData({ ...formData, cliente_id: e.target.value })}
               className="w-full px-3 py-2 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-white"
             >
-              <option value="">Seleccionar cliente...</option>
+              <option value="">
+                {clientes.length === 0 ? "⚠️ No hay clientes" : "Seleccionar cliente..."}
+              </option>
               {clientes.map(c => (
                 <option key={c.id} value={c.id}>
-                  {c.nombre} - {c.email}
+                  {c.nombre} {c.email ? `- ${c.email}` : ''}
                 </option>
               ))}
             </select>
@@ -144,7 +176,9 @@ export default function NuevoCasoPage() {
               onChange={(e) => setFormData({ ...formData, asesor_id: e.target.value })}
               className="w-full px-3 py-2 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-white"
             >
-              <option value="">Seleccionar asesor...</option>
+              <option value="">
+                {asesores.length === 0 ? "⚠️ No hay asesores" : "Seleccionar asesor..."}
+              </option>
               {asesores.map(a => (
                 <option key={a.id} value={a.id}>
                   {a.nombre} ({a.rol})
