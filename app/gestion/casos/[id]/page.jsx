@@ -45,6 +45,8 @@ export default function CasoDetallePage() {
   const [cambiandoEstado, setCambiandoEstado] = useState(false);
   const [estadoNuevo, setEstadoNuevo] = useState("");
   const [notasCambio, setNotasCambio] = useState("");
+  const [editandoCliente, setEditandoCliente] = useState(false);
+  const [clienteEditado, setClienteEditado] = useState({});
 
   useEffect(() => {
     fetchCaso();
@@ -91,6 +93,42 @@ export default function CasoDetallePage() {
     }
   };
 
+  const guardarCliente = async () => {
+    if (!caso.cliente?.id) return;
+    
+    try {
+      const res = await fetch(`${API_BASE}/api/clientes/${caso.cliente.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(clienteEditado)
+      });
+      
+      if (res.ok) {
+        setEditandoCliente(false);
+        fetchCaso();
+      } else {
+        const error = await res.json();
+        alert(`Error: ${error.detail || 'Error al actualizar cliente'}`);
+      }
+    } catch (error) {
+      console.error("Error actualizando cliente:", error);
+      alert("Error al actualizar cliente");
+    }
+  };
+
+  const abrirEdicionCliente = () => {
+    setClienteEditado({
+      nombre: caso.cliente?.nombre || "",
+      email: caso.cliente?.email || "",
+      telefono: caso.cliente?.telefono || "",
+      dni: caso.cliente?.dni || "",
+      cups: caso.cups || "",
+      direccion: caso.cliente?.direccion || "",
+      provincia: caso.cliente?.provincia || ""
+    });
+    setEditandoCliente(true);
+  };
+
   const formatFecha = (fecha) => {
     if (!fecha) return "-";
     return new Date(fecha).toLocaleString("es-ES");
@@ -100,7 +138,15 @@ export default function CasoDetallePage() {
     return <div className="text-center py-12 text-[#94A3B8]">Cargando caso...</div>;
   }
 
-  if (!caso) {
+  if (!caso) div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold text-white">Cliente</h2>
+              <button
+                onClick={abrirEdicionCliente}
+                className="px-3 py-1 bg-[rgba(255,255,255,0.05)] hover:bg-[rgba(255,255,255,0.1)] text-white text-sm rounded-lg transition-colors"
+              >
+                ✏️ Editar
+              </button>
+            </div
     return <div className="text-center py-12 text-red-400">Caso no encontrado</div>;
   }
 
@@ -290,7 +336,7 @@ export default function CasoDetallePage() {
                 <label className="block text-sm text-[#94A3B8] mb-2">Estado Actual</label>
                 <div className="px-3 py-2 bg-[rgba(255,255,255,0.05)] rounded-lg text-white">
                   {ESTADOS_LABELS[caso.estado_comercial]}
-                </div>
+                </div> [&>option]:bg-slate-800 [&>option]:text-white
               </div>
 
               <div>
@@ -339,6 +385,103 @@ export default function CasoDetallePage() {
                   Confirmar
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal editar cliente */}
+      {editandoCliente && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setEditandoCliente(false)}>
+          <div className="bg-[#0F172A] border border-[rgba(255,255,255,0.1)] rounded-lg p-6 max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-xl font-semibold text-white mb-4">Editar Cliente</h3>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm text-[#94A3B8] mb-2">Nombre *</label>
+                <input
+                  type="text"
+                  value={clienteEditado.nombre}
+                  onChange={(e) => setClienteEditado({ ...clienteEditado, nombre: e.target.value })}
+                  className="w-full px-3 py-2 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-white"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm text-[#94A3B8] mb-2">DNI/NIF *</label>
+                <input
+                  type="text"
+                  value={clienteEditado.dni}
+                  onChange={(e) => setClienteEditado({ ...clienteEditado, dni: e.target.value })}
+                  className="w-full px-3 py-2 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-white"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm text-[#94A3B8] mb-2">Email</label>
+                <input
+                  type="email"
+                  value={clienteEditado.email}
+                  onChange={(e) => setClienteEditado({ ...clienteEditado, email: e.target.value })}
+                  className="w-full px-3 py-2 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-white"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm text-[#94A3B8] mb-2">Teléfono</label>
+                <input
+                  type="text"
+                  value={clienteEditado.telefono}
+                  onChange={(e) => setClienteEditado({ ...clienteEditado, telefono: e.target.value })}
+                  className="w-full px-3 py-2 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-white"
+                />
+              </div>
+
+              <div className="md:col-span-2">
+                <label className="block text-sm text-[#94A3B8] mb-2">CUPS</label>
+                <input
+                  type="text"
+                  value={clienteEditado.cups}
+                  onChange={(e) => setClienteEditado({ ...clienteEditado, cups: e.target.value })}
+                  className="w-full px-3 py-2 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-white font-mono text-sm"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm text-[#94A3B8] mb-2">Dirección</label>
+                <input
+                  type="text"
+                  value={clienteEditado.direccion}
+                  onChange={(e) => setClienteEditado({ ...clienteEditado, direccion: e.target.value })}
+                  className="w-full px-3 py-2 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-white"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm text-[#94A3B8] mb-2">Provincia</label>
+                <input
+                  type="text"
+                  value={clienteEditado.provincia}
+                  onChange={(e) => setClienteEditado({ ...clienteEditado, provincia: e.target.value })}
+                  className="w-full px-3 py-2 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-white"
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-3 mt-6">
+              <button
+                onClick={() => setEditandoCliente(false)}
+                className="flex-1 px-4 py-2 bg-[rgba(255,255,255,0.05)] hover:bg-[rgba(255,255,255,0.1)] text-white rounded-lg transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={guardarCliente}
+                disabled={!clienteEditado.nombre || !clienteEditado.dni}
+                className="flex-1 px-4 py-2 bg-[#1E3A8A] hover:bg-[#1E40AF] text-white rounded-lg font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Guardar Cambios
+              </button>
             </div>
           </div>
         </div>
