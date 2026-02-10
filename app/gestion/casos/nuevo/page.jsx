@@ -17,7 +17,7 @@ export default function NuevoCasoPage() {
     cliente_id: "",
     asesor_id: "",
     colaborador_id: "",
-    servicio: "contrato_luz_gas",
+    servicio: "contrato_luz",
     cups: "",
     nueva_compania_text: "",
     antigua_compania_text: "",
@@ -47,9 +47,19 @@ export default function NuevoCasoPage() {
       const resUsers = await fetch(`${API_BASE}/api/users`);
       if (resUsers.ok) {
         const dataUsers = await resUsers.json();
-        console.log("✅ Users:", dataUsers);
+        console.log("✅ Users RAW:", dataUsers);
+        
+        // Log detallado de roles
+        if (Array.isArray(dataUsers)) {
+          dataUsers.forEach(u => console.log(`  - ${u.nombre}: rol="${u.rol}"`));
+        }
+        
         const filteredAsesores = Array.isArray(dataUsers) 
-          ? dataUsers.filter(u => ["asesor", "gestor", "ceo"].includes(u.rol)) 
+          ? dataUsers.filter(u => {
+              const included = ["asesor", "gestor", "ceo", "comercial"].includes(u.rol);
+              console.log(`  Filtro ${u.nombre} (${u.rol}): ${included ? "✅" : "❌"}`);
+              return included;
+            })
           : [];
         console.log("✅ Asesores filtrados:", filteredAsesores);
         setAsesores(filteredAsesores);
@@ -88,11 +98,17 @@ export default function NuevoCasoPage() {
     }
 
     const payload = {
-      ...formData,
       cliente_id: parseInt(formData.cliente_id),
-      asesor_id: parseInt(formData.asesor_id),
+      asesor_user_id: parseInt(formData.asesor_id),
       colaborador_id: formData.colaborador_id ? parseInt(formData.colaborador_id) : null,
+      servicio: formData.servicio,
+      cups: formData.cups || null,
+      nueva_compania_text: formData.nueva_compania_text || null,
+      antigua_compania_text: formData.antigua_compania_text || null,
+      tarifa_nombre_text: formData.tarifa_nombre_text || null,
       ahorro_estimado_anual: formData.ahorro_estimado_anual ? parseFloat(formData.ahorro_estimado_anual) : null,
+      canal: formData.canal || null,
+      notas: formData.notas || null,
     };
 
     try {
@@ -159,7 +175,7 @@ export default function NuevoCasoPage() {
               </option>
               {clientes.map(c => (
                 <option key={c.id} value={c.id}>
-                  {c.nombre} {c.email ? `- ${c.email}` : ''}
+                  {c.nombre}{c.telefono ? ` (${c.telefono})` : ''}
                 </option>
               ))}
             </select>
