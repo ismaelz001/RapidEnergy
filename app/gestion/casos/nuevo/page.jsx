@@ -138,19 +138,7 @@ export default function NuevoCasoPage() {
 
       {/* Formulario */}
       <form onSubmit={handleSubmit} className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.08)] rounded-lg p-6">
-        {/* Debug info */}
-        <div className="mb-4 p-3 bg-blue-900/20 border border-blue-500/30 rounded text-xs">
-          <div className="text-blue-300">
-            📊 Clientes: {clientes.length} | Colaboradores: {colaboradores.length}
-          </div>
-          <div className="text-blue-300 mt-1">
-            Clientes array: {JSON.stringify(clientes.slice(0,1))}
-          </div>
-          <div className="text-blue-300 mt-1">
-            Colaboradores array: {JSON.stringify(colaboradores.slice(0,1))}
-          </div>
-        </div>
-
+        
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {/* Cliente */}
           <div>
@@ -160,21 +148,15 @@ export default function NuevoCasoPage() {
             <select
               required
               value={formData.cliente_id}
-              onChange={(e) => {
-                console.log("Cliente seleccionado:", e.target.value);
-                setFormData({ ...formData, cliente_id: e.target.value });
-              }}
+              onChange={(e) => setFormData({ ...formData, cliente_id: e.target.value })}
               className="w-full px-3 py-2 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-white"
             >
-              <option value="">Seleccionar cliente... ({clientes.length})</option>
-              {clientes.map((c, idx) => {
-                console.log(`Renderizando cliente ${idx}:`, c);
-                return (
-                  <option key={c.id} value={c.id}>
-                    {c.nombre || 'Sin nombre'}{c.telefono ? ` (${c.telefono})` : ''}
-                  </option>
-                );
-              })}
+              <option value="" disabled>Seleccionar cliente...</option>
+              {clientes.map((cliente) => (
+                <option key={`cliente-${cliente.id}`} value={cliente.id}>
+                  {cliente.nombre || 'Sin nombre'}
+                </option>
+              ))}
             </select>
           </div>
 
@@ -186,21 +168,15 @@ export default function NuevoCasoPage() {
             <select
               required
               value={formData.colaborador_id}
-              onChange={(e) => {
-                console.log("Colaborador seleccionado:", e.target.value);
-                setFormData({ ...formData, colaborador_id: e.target.value });
-              }}
+              onChange={(e) => setFormData({ ...formData, colaborador_id: e.target.value })}
               className="w-full px-3 py-2 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-white"
             >
-              <option value="">Seleccionar colaborador... ({colaboradores.length})</option>
-              {colaboradores.map((c, idx) => {
-                console.log(`Renderizando colaborador ${idx}:`, c);
-                return (
-                  <option key={c.id} value={c.id}>
-                    {c.nombre || 'Sin nombre'} ({c.rol || 'sin rol'})
-                  </option>
-                );
-              })}
+              <option value="" disabled>Seleccionar colaborador...</option>
+              {colaboradores.map((colab) => (
+                <option key={`colab-${colab.id}`} value={colab.id}>
+                  {colab.nombre || 'Sin nombre'} - {colab.rol || 'sin rol'}
+                </option>
+              ))}
             </select>
           </div>
 
