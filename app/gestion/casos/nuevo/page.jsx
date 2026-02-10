@@ -123,6 +123,29 @@ export default function NuevoCasoPage() {
     return <div className="text-center py-12 text-[#94A3B8]">Cargando...</div>;
   }
 
+  // Force client-side render
+  const renderClienteOptions = () => {
+    if (!clientes || clientes.length === 0) {
+      return <option value="" disabled>No hay clientes disponibles</option>;
+    }
+    return clientes.map((cliente) => (
+      <option key={`cliente-${cliente.id}`} value={cliente.id}>
+        {cliente.nombre || 'Sin nombre'}
+      </option>
+    ));
+  };
+
+  const renderColaboradorOptions = () => {
+    if (!colaboradores || colaboradores.length === 0) {
+      return <option value="" disabled>No hay colaboradores disponibles</option>;
+    }
+    return colaboradores.map((colab) => (
+      <option key={`colab-${colab.id}`} value={colab.id}>
+        {colab.nombre || 'Sin nombre'} - {colab.rol || 'sin rol'}
+      </option>
+    ));
+  };
+
   return (
     <div className="flex flex-col gap-6 max-w-4xl">
       {/* Header */}
@@ -151,12 +174,8 @@ export default function NuevoCasoPage() {
               onChange={(e) => setFormData({ ...formData, cliente_id: e.target.value })}
               className="w-full px-3 py-2 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-white"
             >
-              <option value="" disabled>Seleccionar cliente...</option>
-              {clientes.map((cliente) => (
-                <option key={`cliente-${cliente.id}`} value={cliente.id}>
-                  {cliente.nombre || 'Sin nombre'}
-                </option>
-              ))}
+              <option value="">-- Seleccionar cliente --</option>
+              {renderClienteOptions()}
             </select>
           </div>
 
@@ -171,12 +190,8 @@ export default function NuevoCasoPage() {
               onChange={(e) => setFormData({ ...formData, colaborador_id: e.target.value })}
               className="w-full px-3 py-2 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-white"
             >
-              <option value="" disabled>Seleccionar colaborador...</option>
-              {colaboradores.map((colab) => (
-                <option key={`colab-${colab.id}`} value={colab.id}>
-                  {colab.nombre || 'Sin nombre'} - {colab.rol || 'sin rol'}
-                </option>
-              ))}
+              <option value="">-- Seleccionar colaborador --</option>
+              {renderColaboradorOptions()}
             </select>
           </div>
 
