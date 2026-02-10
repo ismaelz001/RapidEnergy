@@ -11,6 +11,18 @@ export default function NuevoCasoPage() {
   const [colaboradores, setColaboradores] = useState([]);
   const [loading, setLoading] = useState(true);
   const [guardando, setGuardando] = useState(false);
+  const [mostrarModalCliente, setMostrarModalCliente] = useState(false);
+  const [guardandoCliente, setGuardandoCliente] = useState(false);
+
+  const [nuevoCliente, setNuevoCliente] = useState({
+    nombre: "",
+    email: "",
+    telefono: "",
+    dni: "",
+    cups: "",
+    direccion: "",
+    provincia: "",
+  });
 
   const [formData, setFormData] = useState({
     cliente_id: "",
@@ -70,6 +82,45 @@ export default function NuevoCasoPage() {
       setColaboradores([]);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const crearNuevoCliente = async () => {
+    if (!nuevoCliente.nombre || !nuevoCliente.dni) {
+      alert("Nombre y DNI son obligatorios");
+      return;
+    }
+
+    try {
+      setGuardandoCliente(true);
+      const res = await fetch(`${API_BASE}/api/clientes`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(nuevoCliente)
+      });
+
+      if (res.ok) {
+        const clienteCreado = await res.json();
+        console.log("✅ Cliente creado:", clienteCreado);
+        
+        // Actualizar lista de clientes
+        setClientes([...clientes, clienteCreado]);
+        
+        // Seleccionar automáticamente el nuevo cliente
+        setFormData({ ...formData, cliente_id: clienteCreado.id });
+        
+        // Resetear formulario y cerrar modal
+        setNuevoCliente({ nombre: "", email: "", telefono: "", dni: "", cups: "", direccion: "", provincia: "" });
+        setMostrarModalCliente(false);
+      } else {
+        const error = await res.json();
+        alert(`Error: ${error.detail || 'Error al crear cliente'}`);
+      }
+    } catch (error) {
+      console.error("Error creando cliente:", error);
+      alert("Error al crear cliente");
+    } finally {
+      setGuardandoCliente(false);
     }
   };
 
@@ -168,15 +219,24 @@ export default function NuevoCasoPage() {
             <label className="block text-sm font-semibold text-[#94A3B8] mb-2">
               Cliente *
             </label>
-            <select
-              required
-              value={formData.cliente_id}
-              onChange={(e) => setFormData({ ...formData, cliente_id: e.target.value })}
-              className="w-full px-3 py-2 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-white"
-            >
-              <option value="">-- Seleccionar cliente --</option>
-              {renderClienteOptions()}
-            </select>
+            <div className="flex gap-2">
+              <select
+                required
+                value={formData.cliente_id}
+                onChange={(e) => setFormData({ ...formData, cliente_id: e.target.value })}
+                className="flex-1 px-3 py-2 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-white"
+              >
+                <option value="">-- Seleccionar cliente --</option>
+                {renderClienteOptions()}
+              </select>
+              <button
+                type="button"
+                onClick={() => setMostrarModalCliente(true)}
+                className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-semibold transition-colors whitespace-nowrap"
+              >
+                + Nuevo
+              </button>
+            </div>
           </div>
 
           {/* Colaborador */}
@@ -335,6 +395,125 @@ export default function NuevoCasoPage() {
           </button>
         </div>
       </form>
+
+      {/* Modal Crear Cliente */}
+      {mostrarModalCliente && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setMostrarModalCliente(false)}>
+          <div className="bg-[#0F172A] border border-[rgba(255,255,255,0.1)] rounded-lg p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-xl font-semibold text-white mb-4">Crear Nuevo Cliente</h3>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Nombre */}
+              <div className="md:col-span-2">
+                <label className="block text-sm font-semibold text-[#94A3B8] mb-2">Nombre Completo *</label>
+                <input
+                  type="text"
+                  required
+                  value={nuevoCliente.nombre}
+                  onChange={(e) => setNuevoCliente({ ...nuevoCliente, nombre: e.target.value })}
+                  placeholder="Juan Pérez García"
+                  className="w-full px-3 py-2 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-white"
+                />
+              </div>
+
+              {/* DNI */}
+              <div>
+                <label className="block text-sm font-semibold text-[#94A3B8] mb-2">DNI/NIE *</label>
+                <input
+                  type="text"
+                  required
+                  value={nuevoCliente.dni}
+                  onChange={(e) => setNuevoCliente({ ...nuevoCliente, dni: e.target.value })}
+                  placeholder="12345678A"
+                  className="w-full px-3 py-2 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-white"
+                />
+              </div>
+
+              {/* Teléfono */}
+              <div>
+                <label className="block text-sm font-semibold text-[#94A3B8] mb-2">Teléfono</label>
+                <input
+                  type="tel"
+                  value={nuevoCliente.telefono}
+                  onChange={(e) => setNuevoCliente({ ...nuevoCliente, telefono: e.target.value })}
+                  placeholder="600123456"
+                  className="w-full px-3 py-2 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-white"
+                />
+              </div>
+
+              {/* Email */}
+              <div className="md:col-span-2">
+                <label className="block text-sm font-semibold text-[#94A3B8] mb-2">Email</label>
+                <input
+                  type="email"
+                  value={nuevoCliente.email}
+                  onChange={(e) => setNuevoCliente({ ...nuevoCliente, email: e.target.value })}
+                  placeholder="cliente@ejemplo.com"
+                  className="w-full px-3 py-2 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-white"
+                />
+              </div>
+
+              {/* CUPS */}
+              <div className="md:col-span-2">
+                <label className="block text-sm font-semibold text-[#94A3B8] mb-2">CUPS</label>
+                <input
+                  type="text"
+                  value={nuevoCliente.cups}
+                  onChange={(e) => setNuevoCliente({ ...nuevoCliente, cups: e.target.value })}
+                  placeholder="ES0031406483279001LZ0F"
+                  className="w-full px-3 py-2 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-white font-mono text-sm"
+                />
+              </div>
+
+              {/* Dirección */}
+              <div className="md:col-span-2">
+                <label className="block text-sm font-semibold text-[#94A3B8] mb-2">Dirección</label>
+                <input
+                  type="text"
+                  value={nuevoCliente.direccion}
+                  onChange={(e) => setNuevoCliente({ ...nuevoCliente, direccion: e.target.value })}
+                  placeholder="Calle Mayor 123, 1º A"
+                  className="w-full px-3 py-2 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-white"
+                />
+              </div>
+
+              {/* Provincia */}
+              <div className="md:col-span-2">
+                <label className="block text-sm font-semibold text-[#94A3B8] mb-2">Provincia</label>
+                <input
+                  type="text"
+                  value={nuevoCliente.provincia}
+                  onChange={(e) => setNuevoCliente({ ...nuevoCliente, provincia: e.target.value })}
+                  placeholder="Madrid"
+                  className="w-full px-3 py-2 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-white"
+                />
+              </div>
+            </div>
+
+            {/* Botones Modal */}
+            <div className="flex gap-3 mt-6 pt-4 border-t border-[rgba(255,255,255,0.1)]">
+              <button
+                type="button"
+                onClick={() => {
+                  setMostrarModalCliente(false);
+                  setNuevoCliente({ nombre: "", email: "", telefono: "", dni: "", cups: "", direccion: "", provincia: "" });
+                }}
+                className="flex-1 px-4 py-2 bg-[rgba(255,255,255,0.05)] hover:bg-[rgba(255,255,255,0.1)] text-white rounded-lg transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={crearNuevoCliente}
+                disabled={guardandoCliente}
+                className="flex-1 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {guardandoCliente ? "Guardando..." : "Crear Cliente"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
