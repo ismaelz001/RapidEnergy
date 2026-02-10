@@ -5,6 +5,15 @@ import { useParams, useRouter } from 'next/navigation';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
+// Helper para obtener headers con autenticación
+const getAuthHeaders = () => {
+  const userId = typeof window !== 'undefined' ? localStorage.getItem('user_id') || '1' : '1';
+  return {
+    'Content-Type': 'application/json',
+    'X-User-Id': userId,
+  };
+};
+
 const TRANSICIONES = {
   lead: ["contactado", "perdido", "cancelado"],
   contactado: ["en_estudio", "perdido", "cancelado"],
@@ -55,7 +64,9 @@ export default function CasoDetallePage() {
   const fetchCaso = async () => {
     try {
       setLoading(true);
-      const res = await fetch(`${API_BASE}/api/casos/${params.id}`);
+      const res = await fetch(`${API_BASE}/api/casos/${params.id}`, {
+        headers: getAuthHeaders()
+      });
       const data = await res.json();
       setCaso(data);
     } catch (error) {
@@ -71,7 +82,7 @@ export default function CasoDetallePage() {
     try {
       const res = await fetch(`${API_BASE}/api/casos/${params.id}/cambiar-estado`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: getAuthHeaders(),
         body: JSON.stringify({
           estado_nuevo: estadoNuevo,
           notas: notasCambio
@@ -99,7 +110,7 @@ export default function CasoDetallePage() {
     try {
       const res = await fetch(`${API_BASE}/api/clientes/${caso.cliente.id}`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: getAuthHeaders(),
         body: JSON.stringify(clienteEditado)
       });
       
@@ -339,7 +350,7 @@ export default function CasoDetallePage() {
                   className="w-full px-3 py-2 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-white [&>option]:bg-slate-800 [&>option]:text-white"
                 >
                   <option value="">Seleccionar...</option>
-                  {transicionesPosibles.map((estado) => (
+                  {Object.keys(ESTADOS_LABELS).map((estado) => (
                     <option key={estado} value={estado}>
                       {ESTADOS_LABELS[estado]}
                     </option>

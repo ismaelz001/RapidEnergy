@@ -5,6 +5,15 @@ import { useRouter } from 'next/navigation';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
+// Helper para obtener headers con autenticación
+const getAuthHeaders = () => {
+  const userId = typeof window !== 'undefined' ? localStorage.getItem('user_id') || '1' : '1';
+  return {
+    'Content-Type': 'application/json',
+    'X-User-Id': userId,
+  };
+};
+
 export default function NuevoCasoPage() {
   const router = useRouter();
   const [clientes, setClientes] = useState([]);
@@ -44,7 +53,9 @@ export default function NuevoCasoPage() {
   const fetchData = async () => {
     try {
       // Cargar clientes
-      const resClientes = await fetch(`${API_BASE}/api/clientes`);
+      const resClientes = await fetch(`${API_BASE}/api/clientes`, {
+        headers: getAuthHeaders()
+      });
       if (resClientes.ok) {
         const dataClientes = await resClientes.json();
         console.log("✅ Clientes cargados:", dataClientes.length);
@@ -55,7 +66,9 @@ export default function NuevoCasoPage() {
       }
 
       // Cargar colaboradores (users)
-      const resUsers = await fetch(`${API_BASE}/api/users`);
+      const resUsers = await fetch(`${API_BASE}/api/users`, {
+        headers: getAuthHeaders()
+      });
       if (resUsers.ok) {
         const dataUsers = await resUsers.json();
         console.log("✅ Users cargados:", dataUsers.length);
@@ -95,7 +108,7 @@ export default function NuevoCasoPage() {
       setGuardandoCliente(true);
       const res = await fetch(`${API_BASE}/api/clientes`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: getAuthHeaders(),
         body: JSON.stringify(nuevoCliente)
       });
 
@@ -151,7 +164,7 @@ export default function NuevoCasoPage() {
       setGuardando(true);
       const res = await fetch(`${API_BASE}/api/casos`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: getAuthHeaders(),
         body: JSON.stringify(payload)
       });
 

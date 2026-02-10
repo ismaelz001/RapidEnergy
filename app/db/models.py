@@ -50,15 +50,17 @@ class Cliente(Base):
     estado = Column(String, default="lead")
     origen = Column(String, default="factura_upload")
     
-    # ⭐ BLOQUE 1 MVP CRM: Asignación de comercial
-    comercial_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    # ⭐ Multi-tenant y asignación
+    company_id = Column(BigInteger, ForeignKey("companies.id"), nullable=True, index=True)
+    comercial_id = Column(BigInteger, ForeignKey("users.id"), nullable=True)
     
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
     # Relación: Un cliente tiene muchas facturas
     facturas = relationship("Factura", back_populates="cliente", cascade="all, delete-orphan")
-    # Relación: Un cliente pertenece a un comercial (User)
+    # Relación: Un cliente pertenece a una company y un comercial
+    company = relationship("Company")
     comercial = relationship("User", back_populates="clientes", foreign_keys=[comercial_id])
     # Relación: Un cliente tiene muchos casos
     casos = relationship("Caso", back_populates="cliente", cascade="all, delete-orphan")

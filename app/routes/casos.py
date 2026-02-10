@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import desc
 from app.db.conn import get_db
 from app.db.models import Caso, Cliente, User, HistorialCaso
+from app.auth import get_current_user, CurrentUser
 from pydantic import BaseModel
 from typing import Optional, List
 from datetime import datetime
@@ -61,24 +62,59 @@ def listar_casos(
     asesor_id: Optional[int] = None,
     skip: int = 0,
     limit: int = 100,
+    current_user: CurrentUser = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
+    """
+    Lista casos con filtros según rol:
+    - DEV: Ve todos los casos
+    - CEO: Ve casos de su company_id
+    - COMERCIAL: Ve solo sus propios casos
+    """
     query = db.query(Caso).options(
         joinedload(Caso.cliente),
         joinedload(Caso.asesor),
         joinedload(Caso.colaborador)
     )
     
+    # Filtros por rol
+    if current_user.role == "comercial":
+        # Comercial solo ve sus propios casos
+        query = query.filter(Caso.asesor_user_id == current_user.id)
+    elif current_user.role == "ceo":
+        # CEO ve casos de su empresa
+        if current_user.company_id:
+            query = query.filter(Caso.company_id == current_user.company_id)
+    # DEV no tiene filtros
+    
+    # Filtros adicionales opcionales
     if estado:
         query = query.filter(Caso.estado_comercial == estado)
-    if asesor_id:
-        query = query.filter(Caso.asesor_user_id == asesor_id)
+    if asesor_i
+    data: CasoCreate,
+    current_user: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Crea un caso. CEO/DEV pueden crear para cualquier asesor.
+    Comercial solo puede crear casos asignados a sí mismo.
+    """
+    # Verificar que cliente existe
+    cliente = db.query(Cliente).filter(Cliente.id == data.cliente_id).first()
+    if not cliente:
+        raise HTTPException(404, "Cliente no encontrado")
     
-    casos = query.order_by(desc(Caso.created_at)).offset(skip).limit(limit).all()
+    # Determinar company_id
+    if current_user.role == "dev":
+        company_id = 1  # Default para dev
+    elif current_user.company_id:
+        company_id = current_user.company_id
+    else:
+        raise HTTPException(400, "Usuario sin company_id asignado")
     
-    return [{
-        "id": c.id,
-        "cliente": {"id": c.cliente.id, "nombre": c.cliente.nombre} if c.cliente else None,
+    # Si es comercial, forzar que sea el asesor
+    if current_user.role == "comercial":
+        data.asesor_user_id = current_user.id {"id": c.cliente.id, "nombre": c.cliente.nombre} if c.cliente else None,
         "cups": c.cups,
         "estado_comercial": c.estado_comercial,
         "asesor": {"id": c.asesor.id, "nombre": c.asesor.name} if c.asesor else None,
