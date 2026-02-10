@@ -33,17 +33,19 @@ export default function NuevoCasoPage() {
 
   const fetchData = async () => {
     try {
-      const [resClientes, resColabs] = await Promise.all([
+      const [resClientes, resUsers, resColabs] = await Promise.all([
         fetch(`${API_BASE}/api/clientes`),
+        fetch(`${API_BASE}/api/users`),
         fetch(`${API_BASE}/api/colaboradores`)
       ]);
       
       const dataClientes = await resClientes.json();
+      const dataUsers = await resUsers.json();
       const dataColabs = await resColabs.json();
       
-      setClientes(dataClientes);
-      setColaboradores(dataColabs);
-      setAsesores(dataColabs.filter(c => c.rol === "asesor" || c.rol === "gestor" || c.rol === "ceo"));
+      setClientes(Array.isArray(dataClientes) ? dataClientes : []);
+      setColaboradores(Array.isArray(dataColabs) ? dataColabs : []);
+      setAsesores(Array.isArray(dataUsers) ? dataUsers.filter(u => ["asesor", "gestor", "ceo"].includes(u.rol)) : []);
     } catch (error) {
       console.error("Error cargando datos:", error);
       alert("Error cargando clientes/colaboradores");
@@ -162,7 +164,7 @@ export default function NuevoCasoPage() {
               className="w-full px-3 py-2 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-white"
             >
               <option value="">Sin colaborador</option>
-              {colaboradores.filter(c => c.rol === "colaborador").map(c => (
+              {colaboradores.map(c => (
                 <option key={c.id} value={c.id}>{c.nombre}</option>
               ))}
             </select>
