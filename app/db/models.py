@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, Text, ForeignKey, DateTime, Boolean, BigInteger
+from sqlalchemy import Column, Integer, String, Float, Text, ForeignKey, DateTime, Boolean, BigInteger, Numeric, Date
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.db.conn import Base
@@ -60,6 +60,8 @@ class Cliente(Base):
     facturas = relationship("Factura", back_populates="cliente", cascade="all, delete-orphan")
     # Relación: Un cliente pertenece a un comercial (User)
     comercial = relationship("User", back_populates="clientes", foreign_keys=[comercial_id])
+    # Relación: Un cliente tiene muchos casos
+    casos = relationship("Caso", back_populates="cliente", cascade="all, delete-orphan")
 
 class Factura(Base):
     __tablename__ = "facturas"
@@ -174,55 +176,125 @@ class ComisionGenerada(Base):
     """Comisiones generadas al seleccionar ofertas"""
     __tablename__ = "comisiones_generadas"
     
-    id = Column(Integer, primary_key=True, index=True)
-    company_id = Column(Integer, ForeignKey("companies.id"), nullable=False)
-    factura_id = Column(Integer, ForeignKey("facturas.id"), nullable=False, unique=True, index=True)
+    id = Column(BigInteger, primary_key=True, index=True)
+    company_id = Column(BigInteger, ForeignKey("companies.id"), nullable=False)
+    factura_id = Column(Integer, ForeignKey("facturas.id"), nullable=True, index=True)
     cliente_id = Column(Integer, ForeignKey("clientes.id"), nullable=False)
-    comercial_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    tarifa_id = Column(Integer, nullable=False)
-    comision_total_eur = Column(Float, nullable=False)
-    estado = Column(String, nullable=False, default="pendiente", index=True)  # pendiente, validada, pagada, anulada
-    fecha_generacion = Column(DateTime(timezone=True), server_default=func.now())
-    fecha_prevista_pago = Column(DateTime(timezone=True), nullable=True)
-    fecha_validacion = Column(DateTime(timezone=True), nullable=True)
-    fecha_pago = Column(DateTime(timezone=True), nullable=True)
-    validado_por_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
-    notas = Column(Text, nullable=True)
+    asesor_id = Column(BigInteger, ForeignKey("users.id"), nullable=False, index=True)
+    oferta_id = Column(BigInteger, ForeignKey("ofertas_calculadas.id"), nullable=False)
+    tarifa_id = Column(BigInteger, nullable=False)
+    caso_id = Column(BigInteger, ForeignKey("casos.id"), nullable=True, index=True)
+    comision_total_eur = Column(Numeric(12, 2), nullable=False)
+    comision_source = Column(Text, nullable=False, default="manual")
+    estado = Column(Text, nullable=False, default="pendiente", index=True)  # pendiente, validada, pagada, anulada, retenida, decomision
+    fecha_prevista_pago = Column(Date, nullable=True)
+    fecha_pago = Column(Date, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), nullable=True)
     
     # Relaciones
     factura = relationship("Factura")
     cliente = relationship("Cliente")
-    comercial = relationship("User", foreign_keys=[comercial_id])
+    asesor = relationship("User", foreign_keys=[asesor_id])
+    caso = relationship("Caso", back_populates="comisiones")
     repartos = relationship("RepartoComision", back_populates="comision", cascade="all, delete-orphan")
 
 
 class RepartoComision(Base):
-    """Desglose de repartos de una comisión (útil para splits comercial/manager/company)"""
+    """Desglose de repartos de una comisión"""
     __tablename__ = "repartos_comision"
     
-    id = Column(Integer, primary_key=True, index=True)
-    comision_generada_id = Column(Integer, ForeignKey("comisiones_generadas.id"), nullable=False, index=True)
-    receptor_tipo = Column(String, nullable=False)  # comercial, manager, company
-    receptor_id = Column(Integer, nullable=True)  # ID del user si aplica
-    porcentaje = Column(Float, nullable=False)
-    importe_eur = Column(Float, nullable=False)
+    id = Column(BigInteger, primary_key=True, index=True)
+    comision_id = Column(BigInteger, ForeignKey("comisiones_generadas.id"), nullable=False, index=True)
+    tipo_destinatario = Column(Text, nullable=False)  # asesor, ceo, colaborador
+    user_id = Column(BigInteger, ForeignKey("users.id"), nullable=True, index=True)
+    colaborador_id = Column(BigInteger, ForeignKey("colaboradores.id"), nullable=True, index=True)
+    importe_eur = Column(Numeric(12, 2), nullable=False, default=0.00)
+    porcentaje = Column(Numeric(6, 3), nullable=True)
+    estado_pago = Column(Text, nullable=False, default="pendiente")
+    fecha_pago = Column(Date, nullable=True)
+    notas = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
     
-    # Relación
+    # Relaciones
     comision = relationship("ComisionGenerada", back_populates="repartos")
+    user = relationship("User", foreign_keys=[user_id])
+    colaborador = relationship("Colaborador", foreign_keys=[colaborador_id])
 
 
 class Colaborador(Base):
     """Colaboradores externos (personas que reciben comisión sin acceso al sistema)"""
     __tablename__ = "colaboradores"
     
-    id = Column(Integer, primary_key=True, index=True)
-    company_id = Column(Integer, ForeignKey("companies.id"), nullable=False, index=True)
-    nombre = Column(String, nullable=False)
-    email = Column(String, nullable=True)
-    telefono = Column(String, nullable=True)
+    id = Column(BigInteger, primary_key=True, index=True)
+    company_id = Column(BigInteger, ForeignKey("companies.id"), nullable=False, index=True)
+    nombre = Column(Text, nullable=False)
+    telefono = Column(Text, nullable=True)
+    email = Column(Text, nullable=True)
     notas = Column(Text, nullable=True)
-    is_active = Column(Boolean, default=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     
     # Relación
     company = relationship("Company")
+
+
+class Caso(Base):
+    """Caso comercial: contrato energético en seguimiento"""
+    __tablename__ = "casos"
+    
+    id = Column(BigInteger, primary_key=True, index=True)
+    company_id = Column(BigInteger, ForeignKey("companies.id"), nullable=False, index=True)
+    cliente_id = Column(BigInteger, ForeignKey("clientes.id"), nullable=False, index=True)
+    asesor_user_id = Column(BigInteger, ForeignKey("users.id"), nullable=True, index=True)
+    colaborador_id = Column(BigInteger, ForeignKey("colaboradores.id"), nullable=True, index=True)
+    factura_id = Column(Integer, ForeignKey("facturas.id"), nullable=True, index=True)
+    comparativa_id = Column(Integer, ForeignKey("comparativas.id"), nullable=True)
+    oferta_id = Column(BigInteger, ForeignKey("ofertas_calculadas.id"), nullable=True)
+    tarifa_id = Column(BigInteger, nullable=True)
+    cups = Column(String, nullable=True, index=True)
+    servicio = Column(Text, default="luz")
+    nueva_compania_text = Column(Text, nullable=True)
+    antigua_compania_text = Column(Text, nullable=True)
+    tarifa_nombre_text = Column(Text, nullable=True)
+    canal = Column(Text, nullable=True)
+    ahorro_estimado_anual = Column(Numeric(12, 2), nullable=True)
+    notas = Column(Text, nullable=True)
+    estado_comercial = Column(Text, nullable=False, default="lead", index=True)
+    origen = Column(Text, nullable=False, default="manual")
+    fecha_contacto = Column(DateTime(timezone=True), nullable=True)
+    fecha_propuesta = Column(DateTime(timezone=True), nullable=True)
+    fecha_firma = Column(DateTime(timezone=True), nullable=True)
+    fecha_activacion = Column(DateTime(timezone=True), nullable=True)
+    fecha_baja = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), nullable=True)
+    
+    # Relaciones
+    company = relationship("Company")
+    cliente = relationship("Cliente", back_populates="casos")
+    asesor = relationship("User", foreign_keys=[asesor_user_id])
+    colaborador = relationship("Colaborador", foreign_keys=[colaborador_id])
+    factura = relationship("Factura", foreign_keys=[factura_id])
+    comparativa = relationship("Comparativa", foreign_keys=[comparativa_id])
+    oferta = relationship("OfertaCalculada", foreign_keys=[oferta_id])
+    comisiones = relationship("ComisionGenerada", back_populates="caso")
+    historial = relationship("HistorialCaso", back_populates="caso", cascade="all, delete-orphan")
+
+
+class HistorialCaso(Base):
+    """Timeline de eventos de un caso"""
+    __tablename__ = "historial_caso"
+    
+    id = Column(BigInteger, primary_key=True, index=True)
+    caso_id = Column(BigInteger, ForeignKey("casos.id"), nullable=False, index=True)
+    tipo_evento = Column(Text, nullable=False)
+    descripcion = Column(Text, nullable=False)
+    estado_anterior = Column(Text, nullable=True)
+    estado_nuevo = Column(Text, nullable=True)
+    metadata_json = Column(Text, nullable=True)  # JSON as text for compatibility
+    user_id = Column(BigInteger, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    
+    # Relaciones
+    caso = relationship("Caso", back_populates="historial")
+    user = relationship("User")
