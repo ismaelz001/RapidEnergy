@@ -174,28 +174,8 @@ export default function NuevoCasoPage() {
     return <div className="text-center py-12 text-[#94A3B8]">Cargando...</div>;
   }
 
-  // Force client-side render
-  const renderClienteOptions = () => {
-    if (!clientes || clientes.length === 0) {
-      return <option value="" disabled>No hay clientes disponibles</option>;
-    }
-    return clientes.map((cliente) => (
-      <option key={`cliente-${cliente.id}`} value={cliente.id}>
-        {cliente.nombre || 'Sin nombre'}
-      </option>
-    ));
-  };
-
-  const renderColaboradorOptions = () => {
-    if (!colaboradores || colaboradores.length === 0) {
-      return <option value="" disabled>No hay colaboradores disponibles</option>;
-    }
-    return colaboradores.map((colab) => (
-      <option key={`colab-${colab.id}`} value={colab.id}>
-        {colab.nombre || 'Sin nombre'} - {colab.rol || 'sin rol'}
-      </option>
-    ));
-  };
+  console.log("🔍 RENDER - Clientes:", clientes);
+  console.log("🔍 RENDER - Colaboradores:", colaboradores);
 
   return (
     <div className="flex flex-col gap-6 max-w-4xl">
@@ -226,8 +206,10 @@ export default function NuevoCasoPage() {
                 onChange={(e) => setFormData({ ...formData, cliente_id: e.target.value })}
                 className="flex-1 px-3 py-2 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-white"
               >
-                <option value="">-- Seleccionar cliente --</option>
-                {renderClienteOptions()}
+                <option value="">-- Seleccionar --</option>
+                {clientes && clientes.length > 0 && clientes.map((c) => (
+                  <option key={c.id} value={c.id}>{c.nombre}</option>
+                ))}
               </select>
               <button
                 type="button"
@@ -250,8 +232,10 @@ export default function NuevoCasoPage() {
               onChange={(e) => setFormData({ ...formData, colaborador_id: e.target.value })}
               className="w-full px-3 py-2 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-white"
             >
-              <option value="">-- Seleccionar colaborador --</option>
-              {renderColaboradorOptions()}
+              <option value="">-- Seleccionar --</option>
+              {colaboradores && colaboradores.length > 0 && colaboradores.map((c) => (
+                <option key={c.id} value={c.id}>{c.nombre} - {c.rol}</option>
+              ))}
             </select>
           </div>
 

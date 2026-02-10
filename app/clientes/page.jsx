@@ -16,9 +16,14 @@ export default async function ClientesPage() {
             Listado de clientes enriquecidos desde facturas y creados manualmente.
           </p>
         </div>
-        <Link href="/wizard/new/step-1-factura" className="btn-primary">
-          + Nueva factura
-        </Link>
+        <div className="flex gap-2">
+          <Link href="/clientes/nuevo" className="btn-primary">
+            + Nuevo cliente
+          </Link>
+          <Link href="/wizard/new/step-1-factura" className="btn-secondary">
+            + Nueva factura
+          </Link>
+        </div>
       </div>
 
       <div className="bg-[#0F172A] rounded-[16px] p-6">
