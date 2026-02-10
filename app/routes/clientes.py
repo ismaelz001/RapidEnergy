@@ -5,7 +5,7 @@ from app.db.models import Cliente
 from pydantic import BaseModel, Field
 from typing import Optional, List
 
-router = APIRouter(prefix="/clientes", tags=["clientes"])
+router = APIRouter(prefix="/api/clientes", tags=["clientes"])
 
 
 # --- Constantes ---
