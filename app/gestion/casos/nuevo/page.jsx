@@ -8,14 +8,12 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 export default function NuevoCasoPage() {
   const router = useRouter();
   const [clientes, setClientes] = useState([]);
-  const [asesores, setAsesores] = useState([]);
   const [colaboradores, setColaboradores] = useState([]);
   const [loading, setLoading] = useState(true);
   const [guardando, setGuardando] = useState(false);
 
   const [formData, setFormData] = useState({
     cliente_id: "",
-    asesor_id: "",
     colaborador_id: "",
     servicio: "contrato_luz",
     cups: "",
@@ -37,53 +35,39 @@ export default function NuevoCasoPage() {
       const resClientes = await fetch(`${API_BASE}/api/clientes`);
       if (resClientes.ok) {
         const dataClientes = await resClientes.json();
-        console.log("✅ Clientes:", dataClientes);
+        console.log("✅ Clientes cargados:", dataClientes.length);
         setClientes(Array.isArray(dataClientes) ? dataClientes : []);
       } else {
         console.error("❌ Error clientes:", resClientes.status);
+        setClientes([]);
       }
 
-      // Cargar users (asesores)
+      // Cargar colaboradores (users)
       const resUsers = await fetch(`${API_BASE}/api/users`);
       if (resUsers.ok) {
         const dataUsers = await resUsers.json();
-        console.log("✅ Users RAW:", dataUsers);
+        console.log("✅ Users cargados:", dataUsers.length);
         
-        // Log detallado de roles
-        if (Array.isArray(dataUsers)) {
-          dataUsers.forEach(u => console.log(`  - ${u.nombre}: rol="${u.rol}"`));
-        }
-        
-        const filteredAsesores = Array.isArray(dataUsers) 
-          ? dataUsers.filter(u => {
-              const included = ["asesor", "gestor", "ceo", "comercial"].includes(u.rol);
-              console.log(`  Filtro ${u.nombre} (${u.rol}): ${included ? "✅" : "❌"}`);
-              return included;
-            })
+        // Mapear name→nombre, role→rol para compatibilidad
+        const mappedUsers = Array.isArray(dataUsers) 
+          ? dataUsers.map(u => ({
+              id: u.id,
+              nombre: u.name || u.nombre || "Sin nombre",
+              rol: u.role || u.rol || "unknown",
+              email: u.email
+            }))
           : [];
-        console.log("✅ Asesores filtrados:", filteredAsesores);
-        setAsesores(filteredAsesores);
+        
+        console.log("✅ Colaboradores mapeados:", mappedUsers);
+        setColaboradores(mappedUsers);
       } else {
         console.error("❌ Error users:", resUsers.status);
-      }
-
-      // Cargar colaboradores (opcional, puede fallar)
-      try {
-        const resColabs = await fetch(`${API_BASE}/api/colaboradores`);
-        if (resColabs.ok) {
-          const dataColabs = await resColabs.json();
-          console.log("✅ Colaboradores:", dataColabs);
-          setColaboradores(Array.isArray(dataColabs) ? dataColabs : []);
-        } else {
-          console.warn("⚠️ Colaboradores no disponibles:", resColabs.status);
-          setColaboradores([]);
-        }
-      } catch (e) {
-        console.warn("⚠️ Colaboradores error (ignorado):", e);
         setColaboradores([]);
       }
     } catch (error) {
-      console.error("❌ Error general cargando datos:", error);
+      console.error("❌ Error general:", error);
+      setClientes([]);
+      setColaboradores([]);
     } finally {
       setLoading(false);
     }
@@ -92,15 +76,14 @@ export default function NuevoCasoPage() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     
-    if (!formData.cliente_id || !formData.asesor_id) {
-      alert("Cliente y Asesor son obligatorios");
+    if (!formData.cliente_id || !formData.colaborador_id) {
+      alert("Cliente y Colaborador son obligatorios");
       return;
     }
 
     const payload = {
       cliente_id: parseInt(formData.cliente_id),
-      asesor_user_id: parseInt(formData.asesor_id),
-      colaborador_id: formData.colaborador_id ? parseInt(formData.colaborador_id) : null,
+      asesor_user_id: parseInt(formData.colaborador_id),
       servicio: formData.servicio,
       cups: formData.cups || null,
       nueva_compania_text: formData.nueva_compania_text || null,
@@ -110,6 +93,8 @@ export default function NuevoCasoPage() {
       canal: formData.canal || null,
       notas: formData.notas || null,
     };
+
+    console.log("📤 Enviando:", payload);
 
     try {
       setGuardando(true);
@@ -154,9 +139,11 @@ export default function NuevoCasoPage() {
       {/* Formulario */}
       <form onSubmit={handleSubmit} className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.08)] rounded-lg p-6">
         {/* Debug info */}
-        <div className="mb-4 p-3 bg-blue-900/20 border border-blue-500/30 rounded text-xs text-blue-300">
-          📊 Datos cargados: {clientes.length} clientes, {asesores.length} asesores, {colaboradores.length} colaboradores
-        </div>
+        {(clientes.length === 0 || colaboradores.length === 0) && (
+          <div className="mb-4 p-3 bg-yellow-900/20 border border-yellow-500/30 rounded text-xs text-yellow-300">
+            ⚠️ {clientes.length} clientes, {colaboradores.length} colaboradores cargados
+          </div>
+        )}
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {/* Cliente */}
@@ -181,41 +168,24 @@ export default function NuevoCasoPage() {
             </select>
           </div>
 
-          {/* Asesor */}
-          <div>
-            <label className="block text-sm font-semibold text-[#94A3B8] mb-2">
-              Asesor *
-            </label>
-            <select
-              required
-              value={formData.asesor_id}
-              onChange={(e) => setFormData({ ...formData, asesor_id: e.target.value })}
-              className="w-full px-3 py-2 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-white"
-            >
-              <option value="">
-                {asesores.length === 0 ? "⚠️ No hay asesores" : "Seleccionar asesor..."}
-              </option>
-              {asesores.map(a => (
-                <option key={a.id} value={a.id}>
-                  {a.nombre} ({a.rol})
-                </option>
-              ))}
-            </select>
-          </div>
-
           {/* Colaborador */}
           <div>
             <label className="block text-sm font-semibold text-[#94A3B8] mb-2">
-              Colaborador (opcional)
+              Colaborador/Asesor *
             </label>
             <select
+              required
               value={formData.colaborador_id}
               onChange={(e) => setFormData({ ...formData, colaborador_id: e.target.value })}
               className="w-full px-3 py-2 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-white"
             >
-              <option value="">Sin colaborador</option>
+              <option value="">
+                {colaboradores.length === 0 ? "⚠️ No hay colaboradores" : "Seleccionar colaborador..."}
+              </option>
               {colaboradores.map(c => (
-                <option key={c.id} value={c.id}>{c.nombre}</option>
+                <option key={c.id} value={c.id}>
+                  {c.nombre} ({c.rol})
+                </option>
               ))}
             </select>
           </div>
@@ -223,17 +193,18 @@ export default function NuevoCasoPage() {
           {/* Servicio */}
           <div>
             <label className="block text-sm font-semibold text-[#94A3B8] mb-2">
-              Servicio
+              Servicio *
             </label>
             <select
+              required
               value={formData.servicio}
               onChange={(e) => setFormData({ ...formData, servicio: e.target.value })}
               className="w-full px-3 py-2 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-white"
             >
-              <option value="contrato_luz">Solo Luz</option>
-              <option value="contrato_gas">Solo Gas</option>
-              <option value="contrato_luz_gas">Luz + Gas</option>
-              <option value="instalacion_solar">Instalación Solar</option>
+              <option value="contrato_luz">⚡ Solo Luz</option>
+              <option value="contrato_gas">🔥 Solo Gas</option>
+              <option value="contrato_luz_gas">⚡🔥 Luz + Gas</option>
+              <option value="instalacion_solar">☀️ Instalación Solar</option>
             </select>
           </div>
 
