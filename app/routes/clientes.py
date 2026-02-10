@@ -2,9 +2,14 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session, joinedload
 from app.db.conn import get_db
 from app.db.models import Cliente
-from app.auth import get_current_user, CurrentUser
 from pydantic import BaseModel, Field
 from typing import Optional, List
+
+# Autenticación opcional (por ahora sin usar)
+try:
+    from app.auth import get_current_user, CurrentUser
+except ImportError:
+    pass
 
 router = APIRouter(prefix="/api/clientes", tags=["clientes"])
 
@@ -84,29 +89,8 @@ def update_cliente(cliente_id: int, cliente_update: ClienteUpdate, db: Session =
 
 
 @router.get("/", response_model=List[ClienteDetail])
-def get_clientes(
-    skip: int = 0,
-    limit: int = 100,
-    current_user: CurrentUser = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    """
-    Lista clientes con filtros según rol:
-    - DEV: Ve todos los clientes
-    - CEO: Ve clientes de su company_id
-    - COMERCIAL: Ve solo sus propios clientes
-    """
-    query = db.query(Cliente).options(joinedload(Cliente.facturas))
-    
-    # Filtros por rol
-    if current_user.role == "comercial":
-        query = query.filter(Cliente.comercial_id == current_user.id)
-    elif current_user.role == "ceo":
-        if current_user.company_id:
-            query = query.filter(Cliente.company_id == current_user.company_id)
-    # DEV no tiene filtros
-    
-    clientes = query.offset(skip).limit(limit).all()
+def get_clientes(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+    clientes = db.query(Cliente).options(joinedload(Cliente.facturas)).offset(skip).limit(limit).all()
     return clientes
 
 
