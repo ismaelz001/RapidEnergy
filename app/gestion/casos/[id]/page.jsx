@@ -328,7 +328,7 @@ export default function CasoDetallePage() {
                 <label className="block text-sm text-[#94A3B8] mb-2">Estado Actual</label>
                 <div className="px-3 py-2 bg-[rgba(255,255,255,0.05)] rounded-lg text-white">
                   {ESTADOS_LABELS[caso.estado_comercial]}
-                </div> [&>option]:bg-slate-800 [&>option]:text-white
+                </div>
               </div>
 
               <div>
@@ -336,7 +336,7 @@ export default function CasoDetallePage() {
                 <select
                   value={estadoNuevo}
                   onChange={(e) => setEstadoNuevo(e.target.value)}
-                  className="w-full px-3 py-2 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-white"
+                  className="w-full px-3 py-2 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-white [&>option]:bg-slate-800 [&>option]:text-white"
                 >
                   <option value="">Seleccionar...</option>
                   {transicionesPosibles.map((estado) => (
