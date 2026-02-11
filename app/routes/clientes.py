@@ -89,8 +89,24 @@ def update_cliente(cliente_id: int, cliente_update: ClienteUpdate, db: Session =
 
 
 @router.get("/", response_model=List[ClienteDetail])
-def get_clientes(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
-    clientes = db.query(Cliente).options(joinedload(Cliente.facturas)).offset(skip).limit(limit).all()
+def get_clientes(
+    skip: int = 0, 
+    limit: int = 100, 
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(get_current_user)
+):
+    query = db.query(Cliente).options(joinedload(Cliente.facturas))
+    
+    # Filtros por rol
+    if not current_user.is_dev():
+        if current_user.is_ceo():
+            # CEO ve solo clientes de su company
+            query = query.filter(Cliente.company_id == current_user.company_id)
+        elif current_user.is_comercial():
+            # COMERCIAL ve solo sus propios clientes
+            query = query.filter(Cliente.asesor_user_id == current_user.id)
+    
+    clientes = query.offset(skip).limit(limit).all()
     return clientes
 
 

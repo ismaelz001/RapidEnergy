@@ -27,6 +27,7 @@ class CasoCreate(BaseModel):
     estado_comercial: str = "lead"
 
 class CasoUpdate(BaseModel):
+    cliente_id: Optional[int] = None
     asesor_user_id: Optional[int] = None
     colaborador_id: Optional[int] = None
     cups: Optional[str] = None
@@ -35,6 +36,10 @@ class CasoUpdate(BaseModel):
     antigua_compania_text: Optional[str] = None
     tarifa_nombre_text: Optional[str] = None
     canal: Optional[str] = None
+    potencia_contratada: Optional[float] = None
+    consumo_anual: Optional[float] = None
+    precio_energia: Optional[float] = None
+    precio_potencia: Optional[float] = None
     ahorro_estimado_anual: Optional[float] = None
     notas: Optional[str] = None
     oferta_id: Optional[int] = None
@@ -67,13 +72,23 @@ def listar_casos(
     asesor_id: Optional[int] = None,
     skip: int = 0,
     limit: int = 100,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(get_current_user)
 ):
     query = db.query(Caso).options(
         joinedload(Caso.cliente),
         joinedload(Caso.asesor),
         joinedload(Caso.colaborador)
     )
+    
+    # Filtros por rol
+    if not current_user.is_dev():
+        if current_user.is_ceo():
+            # CEO ve solo casos de su company
+            query = query.filter(Caso.company_id == current_user.company_id)
+        elif current_user.is_comercial():
+            # COMERCIAL ve solo sus propios casos
+            query = query.filter(Caso.asesor_user_id == current_user.id)
     
     if estado:
         query = query.filter(Caso.estado_comercial == estado)
@@ -208,9 +223,15 @@ def cambiar_estado(caso_id: int, data: CambioEstado, db: Session = Depends(get_d
     estado_actual = caso.estado_comercial
     estado_nuevo = data.estado_nuevo
     
-    # Validar transición
-    if estado_nuevo not in TRANSICIONES.get(estado_actual, []):
-        raise HTTPException(400, f"Transición no permitida: {estado_actual} → {estado_nuevo}")
+    # Estados terminales no pueden cambiar (solo DEV podría forzar)
+    estados_terminales = ["baja", "cancelado", "perdido"]
+    if estado_actual in estados_terminales and estado_nuevo != estado_actual:
+        raise HTTPException(400, f"El estado {estado_actual} es terminal y no puede cambiarse")
+    
+    # Validar que el estado nuevo existe
+    estados_validos = list(TRANSICIONES.keys())
+    if estado_nuevo not in estados_validos:
+        raise HTTPException(400, f"Estado {estado_nuevo} no válido")
     
     # Actualizar estado
     caso.estado_comercial = estado_nuevo

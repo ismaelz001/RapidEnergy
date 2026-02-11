@@ -56,6 +56,8 @@ export default function CasoDetallePage() {
   const [notasCambio, setNotasCambio] = useState("");
   const [editandoCliente, setEditandoCliente] = useState(false);
   const [clienteEditado, setClienteEditado] = useState({});
+  const [editandoCaso, setEditandoCaso] = useState(false);
+  const [casoEditado, setCasoEditado] = useState({});
 
   useEffect(() => {
     fetchCaso();
@@ -140,6 +142,45 @@ export default function CasoDetallePage() {
     setEditandoCliente(true);
   };
 
+  const guardarCaso = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/casos/${params.id}`, {
+        method: "PATCH",
+        headers: getAuthHeaders(),
+        body: JSON.stringify(casoEditado)
+      });
+      
+      if (res.ok) {
+        setEditandoCaso(false);
+        fetchCaso();
+      } else {
+        const error = await res.json();
+        alert(`Error: ${error.detail || 'Error al actualizar caso'}`);
+      }
+    } catch (error) {
+      console.error("Error actualizando caso:", error);
+      alert("Error al actualizar caso");
+    }
+  };
+
+  const abrirEdicionCaso = () => {
+    setCasoEditado({
+      cups: caso.cups || "",
+      servicio: caso.servicio || "luz",
+      canal: caso.canal || "",
+      nueva_compania_text: caso.nueva_compania_text || "",
+      antigua_compania_text: caso.antigua_compania_text || "",
+      tarifa_nombre_text: caso.tarifa_nombre_text || "",
+      potencia_contratada: caso.potencia_contratada || "",
+      consumo_anual: caso.consumo_anual || "",
+      precio_energia: caso.precio_energia || "",
+      precio_potencia: caso.precio_potencia || "",
+      ahorro_estimado_anual: caso.ahorro_estimado_anual || "",
+      notas: caso.notas || ""
+    });
+    setEditandoCaso(true);
+  };
+
   const formatFecha = (fecha) => {
     if (!fecha) return "-";
     return new Date(fecha).toLocaleString("es-ES");
@@ -185,7 +226,15 @@ export default function CasoDetallePage() {
         <div className="lg:col-span-2 flex flex-col gap-6">
           {/* Datos del cliente */}
           <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.08)] rounded-lg p-6">
-            <h2 className="text-lg font-semibold text-white mb-4">Cliente</h2>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold text-white">Cliente</h2>
+              <button
+                onClick={abrirEdicionCliente}
+                className="text-sm text-[#60A5FA] hover:text-[#93C5FD] transition-colors"
+              >
+                ✏️ Editar
+              </button>
+            </div>
             <div className="grid grid-cols-2 gap-4 text-sm">
               <div>
                 <span className="text-[#94A3B8]">Nombre:</span>
@@ -208,7 +257,15 @@ export default function CasoDetallePage() {
 
           {/* Datos del caso */}
           <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.08)] rounded-lg p-6">
-            <h2 className="text-lg font-semibold text-white mb-4">Detalles del Contrato</h2>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold text-white">Detalles del Contrato</h2>
+              <button
+                onClick={abrirEdicionCaso}
+                className="text-sm text-[#60A5FA] hover:text-[#93C5FD] transition-colors"
+              >
+                ✏️ Editar
+              </button>
+            </div>
             <div className="grid grid-cols-2 gap-4 text-sm">
               <div>
                 <span className="text-[#94A3B8]">Servicio:</span>
@@ -482,6 +539,161 @@ export default function CasoDetallePage() {
                 onClick={guardarCliente}
                 disabled={!clienteEditado.nombre || !clienteEditado.dni}
                 className="flex-1 px-4 py-2 bg-[#1E3A8A] hover:bg-[#1E40AF] text-white rounded-lg font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Guardar Cambios
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* Modal editar caso */}
+      {editandoCaso && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setEditandoCaso(false)}>
+          <div className="bg-[#0F172A] border border-[rgba(255,255,255,0.1)] rounded-lg p-6 max-w-3xl w-full mx-4 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-xl font-semibold text-white mb-4">Editar Caso</h3>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm text-[#94A3B8] mb-2">CUPS</label>
+                <input
+                  type="text"
+                  value={casoEditado.cups}
+                  onChange={(e) => setCasoEditado({ ...casoEditado, cups: e.target.value })}
+                  className="w-full px-3 py-2 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-white font-mono text-sm"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm text-[#94A3B8] mb-2">Servicio</label>
+                <select
+                  value={casoEditado.servicio}
+                  onChange={(e) => setCasoEditado({ ...casoEditado, servicio: e.target.value })}
+                  className="w-full px-3 py-2 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-white [&>option]:bg-slate-800 [&>option]:text-white"
+                >
+                  <option value="luz">Luz</option>
+                  <option value="gas">Gas</option>
+                  <option value="luz_gas">Luz + Gas</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm text-[#94A3B8] mb-2">Canal</label>
+                <input
+                  type="text"
+                  value={casoEditado.canal}
+                  onChange={(e) => setCasoEditado({ ...casoEditado, canal: e.target.value })}
+                  className="w-full px-3 py-2 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-white"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm text-[#94A3B8] mb-2">Nueva Comercializadora</label>
+                <input
+                  type="text"
+                  value={casoEditado.nueva_compania_text}
+                  onChange={(e) => setCasoEditado({ ...casoEditado, nueva_compania_text: e.target.value })}
+                  className="w-full px-3 py-2 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-white"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm text-[#94A3B8] mb-2">Antigua Comercializadora</label>
+                <input
+                  type="text"
+                  value={casoEditado.antigua_compania_text}
+                  onChange={(e) => setCasoEditado({ ...casoEditado, antigua_compania_text: e.target.value })}
+                  className="w-full px-3 py-2 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-white"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm text-[#94A3B8] mb-2">Tarifa</label>
+                <input
+                  type="text"
+                  value={casoEditado.tarifa_nombre_text}
+                  onChange={(e) => setCasoEditado({ ...casoEditado, tarifa_nombre_text: e.target.value })}
+                  className="w-full px-3 py-2 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-white"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm text-[#94A3B8] mb-2">Potencia Contratada (kW)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={casoEditado.potencia_contratada}
+                  onChange={(e) => setCasoEditado({ ...casoEditado, potencia_contratada: e.target.value })}
+                  className="w-full px-3 py-2 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-white"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm text-[#94A3B8] mb-2">Consumo Anual (kWh)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={casoEditado.consumo_anual}
+                  onChange={(e) => setCasoEditado({ ...casoEditado, consumo_anual: e.target.value })}
+                  className="w-full px-3 py-2 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-white"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm text-[#94A3B8] mb-2">Precio Energía (€/kWh)</label>
+                <input
+                  type="number"
+                  step="0.0001"
+                  value={casoEditado.precio_energia}
+                  onChange={(e) => setCasoEditado({ ...casoEditado, precio_energia: e.target.value })}
+                  className="w-full px-3 py-2 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-white"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm text-[#94A3B8] mb-2">Precio Potencia (€/kW/día)</label>
+                <input
+                  type="number"
+                  step="0.0001"
+                  value={casoEditado.precio_potencia}
+                  onChange={(e) => setCasoEditado({ ...casoEditado, precio_potencia: e.target.value })}
+                  className="w-full px-3 py-2 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-white"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm text-[#94A3B8] mb-2">Ahorro Estimado Anual (€)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={casoEditado.ahorro_estimado_anual}
+                  onChange={(e) => setCasoEditado({ ...casoEditado, ahorro_estimado_anual: e.target.value })}
+                  className="w-full px-3 py-2 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-white"
+                />
+              </div>
+
+              <div className="md:col-span-2">
+                <label className="block text-sm text-[#94A3B8] mb-2">Notas</label>
+                <textarea
+                  value={casoEditado.notas}
+                  onChange={(e) => setCasoEditado({ ...casoEditado, notas: e.target.value })}
+                  rows={3}
+                  className="w-full px-3 py-2 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-white text-sm"
+                  placeholder="Notas adicionales..."
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-3 mt-6">
+              <button
+                onClick={() => setEditandoCaso(false)}
+                className="flex-1 px-4 py-2 bg-[rgba(255,255,255,0.05)] hover:bg-[rgba(255,255,255,0.1)] text-white rounded-lg transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={guardarCaso}
+                className="flex-1 px-4 py-2 bg-[#1E3A8A] hover:bg-[#1E40AF] text-white rounded-lg font-semibold transition-colors"
               >
                 Guardar Cambios
               </button>
