@@ -13,7 +13,7 @@ export default function HomePage() {
           </div>
           <div className="flex items-center gap-4">
             <Link
-              href="/dashboard"
+              href="/login"
               className="px-6 py-2.5 bg-[#16A34A] hover:bg-[#15803D] text-white font-semibold rounded-lg transition-all shadow-lg hover:shadow-xl"
             >
               Acceder al CRM
@@ -43,7 +43,7 @@ export default function HomePage() {
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
             <Link
-              href="/dashboard"
+              href="/login"
               className="px-8 py-4 bg-[#16A34A] hover:bg-[#15803D] text-white text-lg font-bold rounded-xl shadow-2xl hover:shadow-[#16A34A]/50 transition-all transform hover:scale-105"
             >
               Entrar al CRM
