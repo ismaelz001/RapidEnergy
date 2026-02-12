@@ -543,8 +543,22 @@ async def process_factura(
 
 
 @router.get("/facturas")
-def list_facturas(db: Session = Depends(get_db)):
-    facturas = db.query(Factura).options(joinedload(Factura.cliente)).all()
+def list_facturas(
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(get_current_user)
+):
+    query = db.query(Factura).options(joinedload(Factura.cliente))
+    
+    # Filtros por rol (basados en el comercial_id del cliente)
+    if not current_user.is_dev():
+        if current_user.is_ceo():
+            # CEO ve facturas de clientes de su company
+            query = query.join(Cliente).filter(Cliente.company_id == current_user.company_id)
+        elif current_user.is_comercial():
+            # COMERCIAL ve solo facturas de sus clientes
+            query = query.join(Cliente).filter(Cliente.comercial_id == current_user.id)
+    
+    facturas = query.all()
     return facturas
 
 
