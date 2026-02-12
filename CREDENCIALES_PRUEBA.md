@@ -26,17 +26,49 @@ User ID:  1
 
 ### 👔 ROL: CEO (Gestión Empresarial)
 
+#### CEO 1 - José Moreno (Asesoría Energética)
 ```
 Email:      jose@asesoria.com
 Password:   ceo2026!
 Role:       ceo
 User ID:    2
-Company ID: 1
+Company ID: 1 (Asesoría Energética)
 ```
 
-**Permisos:**
+**Comerciales a su cargo:**
+- Ana López (ID: 3)
+- Carlos Ruiz (ID: 4)
+- Juan Pérez (ID: 5)
+
+#### CEO 2 - Laura Martínez (EnergyPlus)
+```
+Email:      laura@energyplus.com
+Password:   ceo2026!
+Role:       ceo
+User ID:    6
+Company ID: 2 (EnergyPlus)
+```
+
+**Comerciales a su cargo:**
+- Pedro García (ID: 7)
+- Sofia Torres (ID: 8)
+
+#### CEO 3 - David Sánchez (PowerCo)
+```
+Email:      david@powerco.com
+Password:   ceo2026!
+Role:       ceo
+User ID:    9
+Company ID: 3 (PowerCo)
+```
+
+**Comerciales a su cargo:**
+- Miguel Ángel (ID: 10)
+- Elena Rodríguez (ID: 11)
+
+**Permisos CEO:**
 - ✅ Acceso al panel de gestión CRM
-- ✅ Ve casos y clientes de SU EMPRESA (company_id = 1)
+- ✅ Ve casos y clientes de SU EMPRESA únicamente
 - ✅ Ve comisiones de sus comerciales
 - ✅ Puede validar y pagar comisiones
 - ✅ Puede crear casos manuales
@@ -46,7 +78,9 @@ Company ID: 1
 
 ### 🤝 ROL: COMERCIAL/ASESOR (Solo Comparador)
 
-#### Comercial 1 - Ana López
+#### COMPANY 1: Asesoría Energética (José Moreno)
+
+**Comercial 1 - Ana López**
 ```
 Email:      ana@asesoria.com
 Password:   comercial2026!
@@ -56,7 +90,7 @@ Company ID: 1
 Manager:    José Moreno (CEO, ID=2)
 ```
 
-#### Comercial 2 - Carlos Ruiz
+**Comercial 2 - Carlos Ruiz**
 ```
 Email:      carlos@asesoria.com
 Password:   comercial2026!
@@ -66,7 +100,7 @@ Company ID: 1
 Manager:    José Moreno (CEO, ID=2)
 ```
 
-#### Comercial 3 - Juan Pérez
+**Comercial 3 - Juan Pérez**
 ```
 Email:      juan@test.com
 Password:   comercial2026!
@@ -76,7 +110,51 @@ Company ID: 1
 Manager:    José Moreno (CEO, ID=2)
 ```
 
-**Permisos:**
+#### COMPANY 2: EnergyPlus (Laura Martínez)
+
+**Comercial 4 - Pedro García**
+```
+Email:      pedro@energyplus.com
+Password:   comercial2026!
+Role:       comercial
+User ID:    7
+Company ID: 2
+Manager:    Laura Martínez (CEO, ID=6)
+```
+
+**Comercial 5 - Sofia Torres**
+```
+Email:      sofia@energyplus.com
+Password:   comercial2026!
+Role:       comercial
+User ID:    8
+Company ID: 2
+Manager:    Laura Martínez (CEO, ID=6)
+```
+
+#### COMPANY 3: PowerCo (David Sánchez)
+
+**Comercial 6 - Miguel Ángel**
+```
+Email:      miguel@powerco.com
+Password:   comercial2026!
+Role:       comercial
+User ID:    10
+Company ID: 3
+Manager:    David Sánchez (CEO, ID=9)
+```
+
+**Comercial 7 - Elena Rodríguez**
+```
+Email:      elena@powerco.com
+Password:   comercial2026!
+Role:       comercial
+User ID:    11
+Company ID: 3
+Manager:    David Sánchez (CEO, ID=9)
+```
+
+**Permisos COMERCIAL:**
 - ✅ Acceso al comparador de facturas
 - ✅ Ve SOLO sus propios clientes y casos
 - ✅ Puede crear casos asignados a sí mismo

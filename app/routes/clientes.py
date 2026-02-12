@@ -103,8 +103,8 @@ def get_clientes(
             # CEO ve solo clientes de su company
             query = query.filter(Cliente.company_id == current_user.company_id)
         elif current_user.is_comercial():
-            # COMERCIAL ve solo sus propios clientes
-            query = query.filter(Cliente.asesor_user_id == current_user.id)
+            # COMERCIAL ve solo sus propios clientes (campo comercial_id)
+            query = query.filter(Cliente.comercial_id == current_user.id)
     
     clientes = query.offset(skip).limit(limit).all()
     return clientes
