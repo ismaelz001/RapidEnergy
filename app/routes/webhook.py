@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session, joinedload
 from app.db.conn import get_db
 from app.db.models import Factura, Cliente, Comparativa
 from app.exceptions import DomainError
+from app.auth import get_current_user, CurrentUser
 from pydantic import BaseModel
 from typing import Optional
 import json
@@ -238,10 +239,15 @@ def _normalize_periodo_dias(value):
 
 @router.post("/upload_v2")
 @router.post("/upload")  # Alias para compatibilidad con frontend
-async def process_factura(file: UploadFile, db: Session = Depends(get_db)):
+async def process_factura(
+    file: UploadFile, 
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(get_current_user)
+):
     # --- LOGS DE DIAGNÓSTICO (OBJETIVO 1) ---
     print(f"\n🚀 [UPLOAD] Recibiendo archivo: {file.filename}")
     print(f"📁 Tipo: {file.content_type}")
+    print(f"👤 Usuario: {current_user.name} (ID={current_user.id}, role={current_user.role})")
     
     # 1. Leer el archivo
     file_bytes = await file.read()
@@ -371,12 +377,13 @@ async def process_factura(file: UploadFile, db: Session = Depends(get_db)):
                 telefono=telefono_ocr,
                 origen="factura_upload",
                 estado="lead",
-                comercial_id=None  # ⭐ BLOQUE 1 CRM: Asignar cuando haya auth
+                comercial_id=current_user.id if current_user.is_comercial() else None,
+                company_id=current_user.company_id
             )
             db.add(cliente_db)
             db.commit()
             db.refresh(cliente_db)
-            logger.info(f"[DEDUPE] Cliente nuevo creado: cliente_id={cliente_db.id}, CUPS={cups_extraido}")
+            logger.info(f"[DEDUPE] Cliente nuevo creado: cliente_id={cliente_db.id}, CUPS={cups_extraido}, comercial_id={cliente_db.comercial_id}")
             
             # TODO: BLOQUE 1 CRM - DEDUPE SECUNDARIA (FASE 2)
             # Buscar clientes similares por nombre/dirección con ILIKE:
@@ -387,12 +394,13 @@ async def process_factura(file: UploadFile, db: Session = Depends(get_db)):
         cliente_db = Cliente(
             origen="factura_upload_no_cups",
             estado="lead",
-            comercial_id=None  # ⭐ BLOQUE 1 CRM: Sin comercial
+            comercial_id=current_user.id if current_user.is_comercial() else None,
+            company_id=current_user.company_id
         )
         db.add(cliente_db)
         db.commit()
         db.refresh(cliente_db)
-        logger.info(f"[DEDUPE] Cliente sin CUPS creado: cliente_id={cliente_db.id}")
+        logger.info(f"[DEDUPE] Cliente sin CUPS creado: cliente_id={cliente_db.id}, comercial_id={cliente_db.comercial_id}")
         
     if cliente_db and cups_extraido:
         # Actualizar datos del cliente si faltan en BD y vienen del OCR

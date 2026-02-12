@@ -24,8 +24,16 @@ export default function Step2ValidarPage({ params }) {
   const [rawOcrData, setRawOcrData] = useState(null); // Para el panel de debug
   const [comerciales, setComerciales] = useState([]); // Lista de comerciales
   const [selectedComercial, setSelectedComercial] = useState(''); // Comercial seleccionado
+  const [userRole, setUserRole] = useState(''); // Rol del usuario actual
 
   const isTestMode = process.env.NEXT_PUBLIC_TEST_MODE === 'true';
+
+  // Cargar rol del usuario
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      setUserRole(localStorage.getItem('user_role') || '');
+    }
+  }, []);
 
   // QA: Blindaje de Navegación
   useEffect(() => {
@@ -609,32 +617,34 @@ export default function Step2ValidarPage({ params }) {
               />
             </div>
 
-            {/* 🆕 Selector de Comercial Responsable */}
-            <div className="pt-4 border-t border-[rgba(255,255,255,0.05)]">
-              <label htmlFor="comercial" className="label text-white">
-                Comercial Responsable
-                <span className="text-[#94A3B8] font-normal text-xs ml-2">(Gestiona este cliente)</span>
-              </label>
-              <select
-                id="comercial"
-                name="comercial"
-                value={selectedComercial}
-                onChange={(e) => setSelectedComercial(e.target.value)}
-                className="w-full px-4 py-3 bg-[#1E293B] border border-[rgba(255,255,255,0.1)] rounded-lg text-[#F1F5F9] focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
-              >
-                <option value="">Seleccionar comercial...</option>
-                {comerciales.map((comercial) => (
-                  <option key={comercial.id} value={comercial.id}>
-                    {comercial.name} ({comercial.email})
-                  </option>
-                ))}
-              </select>
-              {comerciales.length === 0 && (
-                <p className="text-xs text-ambar-alerta mt-1">
-                  No hay comerciales disponibles. Crea uno en Panel CEO → Colaboradores.
-                </p>
-              )}
-            </div>
+            {/* 🆕 Selector de Comercial Responsable - SOLO CEO/DEV */}
+            {(userRole === 'dev' || userRole === 'ceo') && (
+              <div className="pt-4 border-t border-[rgba(255,255,255,0.05)]">
+                <label htmlFor="comercial" className="label text-white">
+                  Comercial Responsable
+                  <span className="text-[#94A3B8] font-normal text-xs ml-2">(Gestiona este cliente)</span>
+                </label>
+                <select
+                  id="comercial"
+                  name="comercial"
+                  value={selectedComercial}
+                  onChange={(e) => setSelectedComercial(e.target.value)}
+                  className="w-full px-4 py-3 bg-[#1E293B] border border-[rgba(255,255,255,0.1)] rounded-lg text-[#F1F5F9] focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
+                >
+                  <option value="">Seleccionar comercial...</option>
+                  {comerciales.map((comercial) => (
+                    <option key={comercial.id} value={comercial.id}>
+                      {comercial.name} ({comercial.email})
+                    </option>
+                  ))}
+                </select>
+                {comerciales.length === 0 && (
+                  <p className="text-xs text-ambar-alerta mt-1">
+                    No hay comerciales disponibles. Crea uno en Panel CEO → Colaboradores.
+                  </p>
+                )}
+              </div>
+            )}
 
             <div className="pt-4 border-t border-[rgba(255,255,255,0.05)]">
               <label htmlFor="consumo_total" className="label text-white">

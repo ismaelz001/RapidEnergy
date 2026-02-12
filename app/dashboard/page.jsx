@@ -1,16 +1,33 @@
 "use client";
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import Link from "next/link";
 import Button from '../components/Button';
 import Badge from '../components/Badge';
 import { listFacturas } from '@/lib/apiClient';
 
 export default function DashboardPage() {
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState('casos');
   const [showKPIs, setShowKPIs] = useState(false);
   const [casos, setCasos] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [userName, setUserName] = useState('');
+  const [userRole, setUserRole] = useState('');
+
+  // Cargar datos de sesión
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      setUserName(localStorage.getItem('user_name') || 'Usuario');
+      setUserRole(localStorage.getItem('user_role') || '');
+    }
+  }, []);
+
+  const handleLogout = () => {
+    localStorage.clear();
+    router.push('/');
+  };
 
   // QA: Checklist de Bienvenida en Consola (Preserved)
   useEffect(() => {
@@ -79,9 +96,25 @@ export default function DashboardPage() {
   return (
     <div className="flex flex-col gap-8">
       
-      {/* Page Title & Tabs */}
-      <div className="flex flex-col gap-6 border-b border-[rgba(255,255,255,0.08)]">
+      {/* Header con usuario y logout */}
+      <div className="flex items-center justify-between">
         <h1 className="text-3xl font-bold text-white tracking-tight">Panel de Control</h1>
+        <div className="flex items-center gap-4">
+          <div className="text-right">
+            <p className="text-sm text-white font-medium">{userName}</p>
+            <p className="text-xs text-[#64748B] capitalize">{userRole}</p>
+          </div>
+          <button
+            onClick={handleLogout}
+            className="px-4 py-2 bg-[rgba(255,255,255,0.05)] hover:bg-[rgba(255,255,255,0.1)] text-[#94A3B8] hover:text-white rounded-lg text-sm transition-colors"
+          >
+            Cerrar Sesión
+          </button>
+        </div>
+      </div>
+      
+      {/* Tabs */}
+      <div className="flex flex-col gap-6 border-b border-[rgba(255,255,255,0.08)]">
         <div className="flex items-center gap-8 translate-y-[1px]">
           {['casos', 'tarifas', 'comisiones'].map((tab) => (
             <button
