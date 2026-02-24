@@ -6,6 +6,7 @@ from datetime import date, datetime
 from decimal import Decimal
 import json
 import logging
+import re  # ⭐ AÑADIDO: usado en _parse_date()
 from typing import Dict, Any, Optional
 
 from sqlalchemy import inspect, text
@@ -128,6 +129,81 @@ def _resolve_energy_prices(mapping):
         return "3p", (p1_price, p2_price, p3_price)
 
     return None, None
+
+
+def _fetch_precios_versiones(db, version_ids: list) -> Dict[int, Dict[str, Any]]:
+    """
+    Prefetch de precios de energía y potencia para múltiples versiones de tarifas.
+    Query única para evitar N+1.
+    
+    Returns:
+        {version_id: {'energia': {'P1': 0.15, 'P2': 0.12, '24H': None}, 
+                     'potencia': {'P1': 0.08, 'P2': 0.04}}}
+    """
+    if not version_ids:
+        return {}
+    
+    result = db.execute(
+        text("""
+            SELECT 
+                tarifa_version_id,
+                concepto,
+                periodo,
+                valor
+            FROM tarifa_precios
+            WHERE tarifa_version_id = ANY(:version_ids)
+        """),
+        {"version_ids": version_ids}
+    )
+    
+    rows = result.fetchall()
+    precios_map = {}
+    
+    for row in rows:
+        vid = row[0]
+        concepto = row[1]  # 'energia' o 'potencia'
+        periodo = row[2]  # 'P1', 'P2', '24H', etc.
+        precio = float(row[3])
+        
+        if vid not in precios_map:
+            precios_map[vid] = {'energia': {}, 'potencia': {}}
+        
+        precios_map[vid][concepto][periodo] = precio
+    
+    logger.info(f"[VERSIONADO] Prefetch precios: {len(precios_map)} versiones")
+    return precios_map
+
+
+def _get_precio_energia(precios_dict: Dict, periodo_idx: int) -> Optional[float]:
+    """
+    Obtiene precio de energía para periodo (1-6) desde dict de precios.
+    Soporta: 24H (plana), P1-P6 (discriminación), fallback P1 (legacy).
+    """
+    if not precios_dict:
+        return None
+    
+    # Prioridad 1: Tarifa plana 24H
+    if '24H' in precios_dict:
+        return precios_dict['24H']
+    
+    # Prioridad 2: Precio específico del periodo
+    periodo_key = f'P{periodo_idx}'
+    if periodo_key in precios_dict:
+        return precios_dict[periodo_key]
+    
+    # Prioridad 3: Fallback a P1 si solo existe P1
+    if periodo_idx > 1 and 'P1' in precios_dict and len(precios_dict) == 1:
+        return precios_dict['P1']
+    
+    return None
+
+
+def _get_precio_potencia(precios_dict: Dict, periodo_idx: int) -> Optional[float]:
+    """Obtiene precio de potencia para periodo (1-2) desde dict."""
+    if not precios_dict:
+        return None
+    periodo_key = f'P{periodo_idx}'
+    return precios_dict.get(periodo_key)
 
 
 def _get_table_columns(db, table_name: str) -> Dict[str, Dict[str, Any]]:
@@ -363,6 +439,7 @@ def _insert_ofertas(db, factura_id: int, comparativa_id: int, offers) -> bool:
             payload = {
                 "comparativa_id": comparativa_id,
                 "tarifa_id": tid,
+                "tarifa_version_id": offer.get("tarifa_version_id"),  # ⭐ NUEVO
                 "coste_estimado": offer.get("estimated_total_periodo"),
                 "ahorro_mensual": offer.get("ahorro_mensual_equiv"),
                 "ahorro_anual": offer.get("ahorro_anual_equiv"),
@@ -373,20 +450,20 @@ def _insert_ofertas(db, factura_id: int, comparativa_id: int, offers) -> bool:
             
             logger.debug(f"[OFERTAS] Inserting offer {idx+1}/{len(offers)}: tarifa_id={tid}, coste={payload['coste_estimado']}, comision={comision_eur:.2f}")  # DEBUG
             
-            # SQL explícito con CAST para JSONB en Postgres
+            # ⭐ VERSIONADO: Incluir tarifa_version_id
             if is_postgres:
                 stmt = text("""
                     INSERT INTO ofertas_calculadas 
-                    (comparativa_id, tarifa_id, coste_estimado, ahorro_mensual, ahorro_anual, comision_eur, comision_source, detalle_json)
+                    (comparativa_id, tarifa_id, tarifa_version_id, coste_estimado, ahorro_mensual, ahorro_anual, comision_eur, comision_source, detalle_json)
                     VALUES 
-                    (:comparativa_id, :tarifa_id, :coste_estimado, :ahorro_mensual, :ahorro_anual, :comision_eur, :comision_source, CAST(:detalle_json AS jsonb))
+                    (:comparativa_id, :tarifa_id, :tarifa_version_id, :coste_estimado, :ahorro_mensual, :ahorro_anual, :comision_eur, :comision_source, CAST(:detalle_json AS jsonb))
                 """)
             else:
                 stmt = text("""
                     INSERT INTO ofertas_calculadas 
-                    (comparativa_id, tarifa_id, coste_estimado, ahorro_mensual, ahorro_anual, comision_eur, comision_source, detalle_json)
+                    (comparativa_id, tarifa_id, tarifa_version_id, coste_estimado, ahorro_mensual, ahorro_anual, comision_eur, comision_source, detalle_json)
                     VALUES 
-                    (:comparativa_id, :tarifa_id, :coste_estimado, :ahorro_mensual, :ahorro_anual, :comision_eur, :comision_source, :detalle_json)
+                    (:comparativa_id, :tarifa_id, :tarifa_version_id, :coste_estimado, :ahorro_mensual, :ahorro_anual, :comision_eur, :comision_source, :detalle_json)
                 """)
                 
             try:
@@ -567,14 +644,48 @@ def compare_factura(factura, db) -> Dict[str, Any]:
         for i in range(1, num_periodos_potencia + 1):
             potencias.append(_to_float(getattr(factura, f"potencia_p{i}_kw", None)) or 0.0)
 
+    # ⭐ VERSIONADO: Query a tarifa_versiones vigentes HOY (JOIN con tarifas)
+    fecha_hoy = date.today()
+    
     result = db.execute(
-        text("SELECT * FROM tarifas WHERE atr = :atr"),
-        {"atr": atr},
+        text("""
+            SELECT 
+                tv.id as tarifa_version_id,
+                t.id as tarifa_id,
+                t.nombre,
+                t.comercializadora,
+                t.atr,
+                t.tipo
+            FROM tarifa_versiones tv
+            JOIN tarifas t ON tv.tarifa_id = t.id
+            WHERE t.atr = :atr
+              AND tv.vigente_desde <= :fecha
+              AND (tv.vigente_hasta IS NULL OR tv.vigente_hasta >= :fecha)
+            ORDER BY t.comercializadora, t.nombre
+        """),
+        {"atr": atr, "fecha": fecha_hoy}
     )
+    
     try:
         tarifas = result.mappings().all()
     except AttributeError:
         tarifas = [row._mapping for row in result.fetchall()]
+    
+    if not tarifas:
+        logger.warning(f"[VERSIONADO] No hay tarifas vigentes para {atr}")
+        return {
+            "ok": False,
+            "error_code": "NO_TARIFAS_VIGENTES",
+            "message": f"No hay tarifas disponibles para {atr}",
+            "factura_id": factura.id,
+            "ofertas": []
+        }
+    
+    # Prefetch precios
+    version_ids = [t['tarifa_version_id'] for t in tarifas]
+    precios_map = _fetch_precios_versiones(db, version_ids)
+    
+    logger.info(f"[VERSIONADO] {len(tarifas)} tarifas vigentes para {atr}")
     
     # ⭐ MÉTODO PO/NODOÁMBAR: Calcular subtotal sin impuestos de factura ACTUAL
     # mediante BACKSOLVE desde los importes totales (NO inventar precios)
@@ -664,24 +775,24 @@ def compare_factura(factura, db) -> Dict[str, Any]:
 
     offers = []
     for tarifa in tarifas:
-        # LOGICA DE PRECIOS ENERGÍA DINÁMICA (soporta 2.0TD y 3.0TD)
-        # Para 2.0TD: P1, P2, P3
-        # Para 3.0TD: P1, P2, P3, P4, P5, P6
+        # ⭐ VERSIONADO: Obtener precios desde tarifa_precios
+        version_id = tarifa['tarifa_version_id']
+        precios_version = precios_map.get(version_id)
         
-        # Obtener precios de energía según número de periodos
+        if not precios_version:
+            logger.warning(f"[VERSIONADO] Skip version_id={version_id}: sin precios")
+            continue
+        
+        # LOGICA DE PRECIOS ENERGÍA DINÁMICA
         precios_energia = []
         for i in range(1, num_periodos_energia + 1):
-            precio = _to_float(tarifa.get(f"energia_p{i}_eur_kwh"))
-            
-            # Fallback: Si P2+ son null, usar P1 (tarifa plana 24h)
-            if precio is None and i > 1:
-                precio = _to_float(tarifa.get("energia_p1_eur_kwh"))
-            
+            precio = _get_precio_energia(precios_version['energia'], i)
             precios_energia.append(precio)
         
         # Validar que al menos P1 tenga precio
         if precios_energia[0] is None:
-            continue  # Tarifa rota sin precio de energía
+            logger.warning(f"[VERSIONADO] Skip {tarifa['nombre']}: sin precio P1")
+            continue
         
         # Calcular coste de energía
         coste_energia = sum(
@@ -690,23 +801,20 @@ def compare_factura(factura, db) -> Dict[str, Any]:
         )
         modo_energia = f"{num_periodos_energia}p_dinamico"
 
-        # LOGICA DE PRECIOS POTENCIA DINÁMICA (soporta 2.0TD y 3.0TD)
-        # Para 2.0TD: P1, P2 (con fallback BOE 2025 si null)
-        # Para 3.0TD: P1, P2, P3, P4, P5, P6 (sin fallback, deben estar completos)
-        
+        # LOGICA DE PRECIOS POTENCIA DINÁMICA
         precios_potencia = []
         tiene_precios_potencia = True
         
         for i in range(1, num_periodos_potencia + 1):
-            precio = _to_float(tarifa.get(f"potencia_p{i}_eur_kw_dia"))
+            precio = _get_precio_potencia(precios_version['potencia'], i)
             
-            # Fallback BOE 2025 SOLO para 2.0TD (P1 y P2)
+            # Fallback BOE 2025 SOLO para 2.0TD si no hay precio
             if precio is None and atr == "2.0TD":
                 if i == 1:
                     precio = 0.073777  # BOE 2025 P1
                 elif i == 2:
                     precio = 0.001911  # BOE 2025 P2
-                tiene_precios_potencia = False  # Marca que usó fallback
+                tiene_precios_potencia = False
             
             precios_potencia.append(precio or 0.0)
         
@@ -811,18 +919,11 @@ def compare_factura(factura, db) -> Dict[str, Any]:
         total_kwh = sum(consumos)
         precio_medio_estructural = (subtotal_sin_impuestos_oferta / total_kwh) if total_kwh > 0 else 0.0
 
-        # Mapeo de nombres
-        tarifa_id = tarifa.get("id") or tarifa.get("tarifa_id")
-        provider = _pick_value(
-            tarifa,
-            ["comercializadora", "provider", "empresa", "brand"],
-            "Proveedor genérico",
-        )
-        plan_name = _pick_value(
-            tarifa,
-            ["nombre", "plan_name", "plan", "tarifa"],
-            "Tarifa 2.0TD",
-        )
+        # ⭐ VERSIONADO: Mapeo desde dict de versiones
+        tarifa_version_id = version_id
+        tarifa_id = tarifa.get("id") or tarifa.get("tarifa_id") or version_id  # Legacy compat
+        provider = tarifa.get("comercializadora") or "Proveedor genérico"
+        plan_name = tarifa.get("nombre") or "Tarifa 2.0TD"
 
         # ⭐ DEBUG: Logs especiales para factura 287
         if factura.id == 287:
@@ -831,6 +932,7 @@ def compare_factura(factura, db) -> Dict[str, Any]:
         
         offer = {
             "tarifa_id": tarifa_id,
+            "tarifa_version_id": tarifa_version_id,  # ⭐ NUEVO
             "provider": provider,
             "plan_name": plan_name,
             "estimated_total": round(estimated_total_periodo, 2),

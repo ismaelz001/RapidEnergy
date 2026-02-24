@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { listClientes } from "@/lib/apiClient";
+import ClienteDeleteButton from "./ClienteDeleteButton";
 
 export const dynamic = "force-dynamic";
 
@@ -53,10 +54,11 @@ export default async function ClientesPage() {
                     </span>
                   </td>
                   <td className="py-3 text-[#94A3B8]">{c.facturas?.length || 0}</td>
-                  <td className="py-3 text-right">
+                  <td className="py-3 text-right flex gap-3 justify-end">
                     <Link href={`/clientes/${c.id}`} className="text-emerald-400 hover:text-emerald-300">
                       Ver detalle
                     </Link>
+                    <ClienteDeleteButton clienteId={c.id} clienteNombre={c.nombre || "Sin nombre"} />
                   </td>
                 </tr>
               ))

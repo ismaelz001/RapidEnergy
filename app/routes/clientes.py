@@ -63,7 +63,10 @@ class ClienteDetail(ClienteBase):
 # --- Endpoints ---
 @router.put("/{cliente_id}", response_model=ClienteDetail)
 def update_cliente(cliente_id: int, cliente_update: ClienteUpdate, db: Session = Depends(get_db)):
-    cliente = db.query(Cliente).filter(Cliente.id == cliente_id).first()
+    cliente = db.query(Cliente).filter(
+        Cliente.id == cliente_id,
+        Cliente.deleted_at.is_(None)  # ⭐ Excluir eliminados
+    ).first()
     if not cliente:
         raise HTTPException(status_code=404, detail="Cliente no encontrado")
 
@@ -95,7 +98,9 @@ def get_clientes(
     db: Session = Depends(get_db),
     current_user: CurrentUser = Depends(get_current_user)
 ):
-    query = db.query(Cliente).options(joinedload(Cliente.facturas))
+    query = db.query(Cliente).options(joinedload(Cliente.facturas)).filter(
+        Cliente.deleted_at.is_(None)  # ⭐ Excluir eliminados
+    )
     
     # Filtros por rol
     if not current_user.is_dev():
@@ -118,7 +123,10 @@ def get_clientes(
 
 @router.get("/{cliente_id}", response_model=ClienteDetail)
 def get_cliente(cliente_id: int, db: Session = Depends(get_db)):
-    cliente = db.query(Cliente).options(joinedload(Cliente.facturas)).filter(Cliente.id == cliente_id).first()
+    cliente = db.query(Cliente).options(joinedload(Cliente.facturas)).filter(
+        Cliente.id == cliente_id,
+        Cliente.deleted_at.is_(None)  # ⭐ Excluir eliminados
+    ).first()
     if not cliente:
         raise HTTPException(status_code=404, detail="Cliente no encontrado")
     return cliente
@@ -152,15 +160,47 @@ def create_cliente(cliente: ClienteCreate, db: Session = Depends(get_db)):
     return db_cliente
 
 @router.delete("/{cliente_id}")
-def delete_cliente(cliente_id: int, db: Session = Depends(get_db)):
-    cliente = db.query(Cliente).filter(Cliente.id == cliente_id).first()
+def delete_cliente(
+    cliente_id: int, 
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(get_current_user)
+):
+    """Soft delete: marca deleted_at y anoniza datos. Solo dev/ceo."""
+    
+    # Permisos: solo dev o ceo pueden eliminar
+    if not (current_user.is_dev() or current_user.is_ceo()):
+        raise HTTPException(
+            status_code=403, 
+            detail="Solo dev o CEO pueden eliminar clientes"
+        )
+    
+    cliente = db.query(Cliente).filter(
+        Cliente.id == cliente_id,
+        Cliente.deleted_at.is_(None)  # Solo clientes NO eliminados
+    ).first()
+    
     if not cliente:
         raise HTTPException(status_code=404, detail="Cliente no encontrado")
     
     try:
-        db.delete(cliente)
+        from datetime import datetime, timezone
+        
+        # Anonización de datos sensibles (GDPR)
+        cliente.nombre = f"[ELIMINADO-{cliente_id}]"
+        cliente.email = f"deleted_{cliente_id}@anonimo.local"
+        cliente.dni = None
+        cliente.telefono = None
+        cliente.deleted_at = datetime.now(timezone.utc)
+        
         db.commit()
-        return {"message": "Cliente eliminado correctamente", "id": cliente_id}
+        return {
+            "message": "Cliente eliminado (soft delete)", 
+            "id": cliente_id,
+            "deleted_at": cliente.deleted_at.isoformat()
+        }
     except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=500, detail=f"Error al eliminar cliente: {str(e)}")
+        raise HTTPException(
+            status_code=500, 
+            detail=f"Error al eliminar cliente: {str(e)}"
+        )
