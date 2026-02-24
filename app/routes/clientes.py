@@ -179,19 +179,29 @@ def delete_cliente(
     
     try:
         from datetime import datetime, timezone
+        from app.db.models import Factura
         
-        # Anonización de datos sensibles (GDPR)
+        now = datetime.now(timezone.utc)
+        
+        # ⭐ CASCADA: Eliminar facturas relacionadas (soft delete)
+        facturas_count = db.query(Factura).filter(
+            Factura.cliente_id == cliente_id,
+            Factura.deleted_at.is_(None)
+        ).update({"deleted_at": now})
+        
+        # Anonización de datos sensibles del cliente (GDPR)
         cliente.nombre = f"[ELIMINADO-{cliente_id}]"
         cliente.email = f"deleted_{cliente_id}@anonimo.local"
         cliente.dni = None
         cliente.telefono = None
-        cliente.deleted_at = datetime.now(timezone.utc)
+        cliente.deleted_at = now
         
         db.commit()
         return {
-            "message": "Cliente eliminado (soft delete)", 
+            "message": "Cliente y facturas eliminadas (soft delete)", 
             "id": cliente_id,
-            "deleted_at": cliente.deleted_at.isoformat()
+            "deleted_at": cliente.deleted_at.isoformat(),
+            "facturas_eliminadas": facturas_count
         }
     except Exception as e:
         db.rollback()
