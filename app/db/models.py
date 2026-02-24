@@ -301,3 +301,81 @@ class HistorialCaso(Base):
     # Relaciones
     caso = relationship("Caso", back_populates="historial")
     user = relationship("User")
+
+
+# ===== FASE 1: SNAPSHOTS Y ALERTAS =====
+
+class SnapshotMensual(Base):
+    """Snapshots mensuales para auditoría y reporting histórico"""
+    __tablename__ = "snapshots_mensuales"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    periodo = Column(Date, nullable=False, index=True)  # Siempre día 1 del mes
+    tipo = Column(String(50), nullable=False, index=True)  # 'clientes_activos', 'comisiones_pendientes', etc.
+    data = Column(Text, nullable=False)  # JSON como texto
+    total_registros = Column(Integer, default=0)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+
+class AlertaRenovacion(Base):
+    """Alertas de renovación de contratos (9-12 meses)"""
+    __tablename__ = "alertas_renovacion"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    cliente_id = Column(Integer, ForeignKey("clientes.id", ondelete="CASCADE"), nullable=False, index=True)
+    comercial_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    
+    # Fechas críticas
+    fecha_contrato = Column(Date, nullable=False)
+    fecha_alerta = Column(Date, nullable=False, index=True)  # Contrato + 270 días
+    fecha_renovacion_estimada = Column(Date, nullable=False)  # Contrato + 365 días
+    
+    # Estado
+    estado = Column(String(20), default='pendiente', index=True)  # pendiente, gestionada, renovada, perdida, cancelada
+    prioridad = Column(String(20), default='normal')  # baja, normal, alta, urgente
+    
+    # Seguimiento
+    notas = Column(Text, nullable=True)
+    gestionada_at = Column(DateTime(timezone=True), nullable=True)
+    resultado = Column(String(50), nullable=True)
+    
+    # Auditoría
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    deleted_at = Column(DateTime(timezone=True), nullable=True, index=True)
+    
+    # Relaciones
+    cliente = relationship("Cliente")
+    comercial = relationship("User", foreign_keys=[comercial_id])
+
+
+class TareaCliente(Base):
+    """Tareas automáticas de seguimiento de clientes"""
+    __tablename__ = "tareas_clientes"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    cliente_id = Column(Integer, ForeignKey("clientes.id", ondelete="CASCADE"), nullable=False, index=True)
+    comercial_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    
+    # Detalles
+    tipo = Column(String(50), nullable=False, index=True)  # seguimiento_inicial, verificar_activacion, etc.
+    titulo = Column(String(200), nullable=False)
+    descripcion = Column(Text, nullable=True)
+    fecha_programada = Column(Date, nullable=False, index=True)
+    
+    # Estado
+    estado = Column(String(20), default='pendiente', index=True)  # pendiente, en_proceso, completada, cancelada
+    prioridad = Column(String(20), default='normal')
+    
+    # Resultado
+    completada_at = Column(DateTime(timezone=True), nullable=True)
+    notas_resultado = Column(Text, nullable=True)
+    
+    # Auditoría
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    
+    # Relaciones
+    cliente = relationship("Cliente")
+    comercial = relationship("User", foreign_keys=[comercial_id])
