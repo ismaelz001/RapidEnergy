@@ -4,12 +4,7 @@ from app.db.conn import get_db
 from app.db.models import Cliente
 from pydantic import BaseModel, Field
 from typing import Optional, List
-
-# Autenticación opcional (por ahora sin usar)
-try:
-    from app.auth import get_current_user, CurrentUser
-except ImportError:
-    pass
+from app.auth import get_current_user, CurrentUser
 
 router = APIRouter(prefix="/api/clientes", tags=["clientes"])
 
