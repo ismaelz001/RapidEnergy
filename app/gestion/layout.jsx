@@ -36,6 +36,7 @@ export default function GestionLayout({ children }) {
   
   const tabs = [
     { id: 'resumen', label: 'Resumen', href: '/gestion/resumen' },
+    { id: 'agenda', label: '📅 Agenda', href: '/gestion/agenda' },
     { id: 'casos', label: 'Casos', href: '/gestion/casos' },
     { id: 'comisiones', label: 'Comisiones', href: '/gestion/comisiones' },
     { id: 'pagos', label: 'Pagos', href: '/gestion/pagos' },
