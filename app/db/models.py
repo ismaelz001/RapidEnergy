@@ -56,6 +56,7 @@ class Cliente(Base):
     
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    deleted_at = Column(DateTime(timezone=True), nullable=True, default=None)
 
     # Relación: Un cliente tiene muchas facturas
     facturas = relationship("Factura", back_populates="cliente", cascade="all, delete-orphan")
