@@ -11,9 +11,15 @@ export default function ClienteDeleteButton({ clienteId, clienteNombre }) {
   const handleDelete = async () => {
     setIsDeleting(true);
     try {
-      const res = await fetch(`/api/clientes/${clienteId}`, {
+      // Obtener userId del localStorage (mock auth)
+      const userId = typeof window !== 'undefined' ? localStorage.getItem('userId') : '1';
+      
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/clientes/${clienteId}`, {
         method: "DELETE",
-        credentials: "include", // Enviar cookies de sesión
+        credentials: "include",
+        headers: {
+          'X-User-Id': userId || '1', // Mock auth header
+        },
       });
 
       if (res.ok) {
