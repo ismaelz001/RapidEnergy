@@ -19,8 +19,13 @@ export default function RootLayout({ children }) {
   return (
     <html lang="es">
       <body className={`min-h-screen bg-[#0B1220] text-[#F1F5F9] ${poppins.variable} font-sans`}>
+        {/* Banner legacy */}
+        <div className="fixed top-0 w-full z-[60] bg-[#7C3AED] text-white text-center text-xs py-1.5 font-medium">
+          Entorno legacy en transición. La operativa principal se está integrando en EnergyCRM.
+        </div>
+
         {/* Header EnergyLuz Gradient */}
-        <header className="fixed top-0 w-full z-50 h-[72px] bg-gradient-premium border-b border-[rgba(255,255,255,0.08)] shadow-lg">
+        <header className="fixed top-[30px] w-full z-50 h-[72px] bg-gradient-premium border-b border-[rgba(255,255,255,0.08)] shadow-lg">
           <div className="mx-auto flex h-full max-w-7xl items-center justify-between px-6">
             {/* Logo */}
             <div className="flex items-center gap-3">
