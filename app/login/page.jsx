@@ -128,48 +128,7 @@ export default function LoginPage() {
           </button>
         </form>
 
-        <div className="mt-6 pt-6 border-t border-[rgba(255,255,255,0.08)]">
-          <p className="text-xs font-semibold text-[#94A3B8] mb-3">🔐 Usuarios de Prueba Disponibles:</p>
-          
-          <div className="space-y-3">
-            {/* DEV */}
-            <div className="bg-[rgba(255,255,255,0.03)] p-3 rounded-lg">
-              <p className="text-xs font-semibold text-[#60A5FA] mb-2">👨‍💻 DESARROLLADOR</p>
-              <div className="space-y-1 text-xs text-[#94A3B8]">
-                <p>• ismael@rodorte.com / dev2026!</p>
-              </div>
-            </div>
 
-            {/* CEOs */}
-            <div className="bg-[rgba(255,255,255,0.03)] p-3 rounded-lg">
-              <p className="text-xs font-semibold text-[#A78BFA] mb-2">👔 CEOs (3 Companies)</p>
-              <div className="space-y-1 text-xs text-[#94A3B8]">
-                <p>• jose@asesoria.com / ceo2026! <span className="text-[#64748B]">(Asesoría)</span></p>
-                <p>• laura@energyplus.com / ceo2026! <span className="text-[#64748B]">(EnergyPlus)</span></p>
-                <p>• david@powerco.com / ceo2026! <span className="text-[#64748B]">(PowerCo)</span></p>
-              </div>
-            </div>
-
-            {/* COMERCIALES */}
-            <div className="bg-[rgba(255,255,255,0.03)] p-3 rounded-lg">
-              <p className="text-xs font-semibold text-[#34D399] mb-2">🤝 COMERCIALES (7 usuarios)</p>
-              <div className="space-y-1 text-xs text-[#94A3B8]">
-                <p className="text-[#64748B] font-medium">Company 1 - Asesoría:</p>
-                <p>• ana@asesoria.com / comercial2026!</p>
-                <p>• carlos@asesoria.com / comercial2026!</p>
-                <p>• juan@test.com / comercial2026!</p>
-                
-                <p className="text-[#64748B] font-medium mt-2">Company 2 - EnergyPlus:</p>
-                <p>• pedro@energyplus.com / comercial2026!</p>
-                <p>• sofia@energyplus.com / comercial2026!</p>
-                
-                <p className="text-[#64748B] font-medium mt-2">Company 3 - PowerCo:</p>
-                <p>• miguel@powerco.com / comercial2026!</p>
-                <p>• elena@powerco.com / comercial2026!</p>
-              </div>
-            </div>
-          </div>
-        </div>
       </div>
     </div>
   );
