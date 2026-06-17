@@ -1,7 +1,8 @@
-import "./globals.css";
 import { Poppins } from "next/font/google"; // EnergyLuz Font
 import AlertasBadge from "./components/AlertasBadge";
+import CookieBannerWrapper from "./components/CookieBannerWrapper";
 import GestionLink from "./components/GestionLink";
+import "./globals.css";
 /* eslint-disable @next/next/no-img-element */ // Using img for logo since it's in public
 
 const poppins = Poppins({
@@ -60,6 +61,8 @@ export default function RootLayout({ children }) {
               
               {/* 🔔 Alertas */}
               <AlertasBadge />
+
+              <GestionarCookiesBtn />
               
               <a href="/wizard/new/step-1-factura" className="inline-flex items-center justify-center h-10 px-5 text-sm font-bold text-white bg-[#0073EC] hover:bg-blue-600 rounded-lg shadow-lg shadow-blue-500/40 transition-all hover:scale-105 active:scale-95">
                 + Nueva Factura
@@ -72,6 +75,7 @@ export default function RootLayout({ children }) {
         <main className="mx-auto max-w-7xl px-6 pt-28 pb-12">
           {children}
         </main>
+        <CookieBannerWrapper />
       </body>
     </html>
   );
